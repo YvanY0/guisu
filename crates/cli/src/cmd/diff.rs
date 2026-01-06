@@ -34,12 +34,14 @@ use crate::utils::path::SourceDirExt;
 use guisu_config::Config;
 
 // File permission constants
-const PERM_MASK: u32 = 0o7777; // Permission bits mask (rwxrwxrwx)
-const S_IFREG: u32 = 0o100_000; // Regular file type bit
-const DEFAULT_FILE_MODE: u32 = 0o644; // Default file permissions (rw-r--r--)
+const PERM_MASK: u32 = 0o7777;
+const S_IFREG: u32 = 0o100_000;
+const DEFAULT_FILE_MODE: u32 = 0o100_644;
+#[cfg(test)]
+const DEFAULT_EXEC_MODE: u32 = 0o100_755;
 
 // Binary detection constants
-const BINARY_CHECK_BYTES: usize = 8000; // Check first 8KB for null bytes
+const BINARY_CHECK_BYTES: usize = 8000;
 
 /// Diff command
 #[derive(Args)]
@@ -524,6 +526,7 @@ fn run_impl(
 }
 
 /// Diff a single target entry against destination
+#[allow(clippy::too_many_lines)]
 fn diff_target_entry(entry: &TargetEntry, dest_abs: &AbsPath, stats: &DiffStats) -> Result<String> {
     let target_path = entry.path();
     let dest_path = dest_abs.join(target_path);
@@ -537,6 +540,31 @@ fn diff_target_entry(entry: &TargetEntry, dest_abs: &AbsPath, stats: &DiffStats)
     // Check if destination exists
     if !dest_path.as_path().exists() {
         stats.inc_added();
+        // Check if content is binary before formatting
+        if is_binary(&source_content) {
+            let mut output = String::new();
+
+            // File header with mode
+            let effective_mode = source_mode.or(Some(DEFAULT_FILE_MODE));
+            let new_mode_str = format_file_mode(effective_mode);
+
+            let _ = writeln!(
+                output,
+                "{} {}",
+                format!("+++ b/{}", target_path.as_path().display()).bold(),
+                new_mode_str.dimmed()
+            );
+
+            // Binary file to be added message at the end
+            let _ = writeln!(
+                output,
+                "{} {} {}",
+                "Binary file".bold(),
+                format!("b/{}", target_path.as_path().display()).cyan(),
+                "to be added".green()
+            );
+            return Ok(output);
+        }
         return Ok(format_new_file(
             target_path.as_path(),
             &source_content,
@@ -575,14 +603,33 @@ fn diff_target_entry(entry: &TargetEntry, dest_abs: &AbsPath, stats: &DiffStats)
         if source_content != dest_content || mode_differs {
             stats.inc_modified();
             let mut output = String::new();
-            if mode_differs {
-                output.push_str(&format_mode_diff(dest_mode, source_mode));
-            }
+
+            // File headers with mode
+            // If source doesn't specify mode, inherit from dest
+            let effective_source_mode = source_mode.or(dest_mode);
+            let old_mode_str = format_file_mode(dest_mode);
+            let new_mode_str = format_file_mode(effective_source_mode);
+
             let _ = writeln!(
                 output,
-                "{} {} differ",
+                "{} {}",
+                format!("--- a/{}", target_path.as_path().display()).bold(),
+                old_mode_str.dimmed()
+            );
+            let _ = writeln!(
+                output,
+                "{} {}",
+                format!("+++ b/{}", target_path.as_path().display()).bold(),
+                new_mode_str.dimmed()
+            );
+
+            // Binary files message at the end
+            let _ = writeln!(
+                output,
+                "{} {} and {} differ",
                 "Binary files".bold(),
-                target_path.as_path().display().to_string().cyan()
+                format!("a/{}", target_path.as_path().display()).dimmed(),
+                format!("b/{}", target_path.as_path().display()).cyan()
             );
             return Ok(output);
         }
@@ -601,26 +648,25 @@ fn diff_target_entry(entry: &TargetEntry, dest_abs: &AbsPath, stats: &DiffStats)
     }
 
     stats.inc_modified();
+    // If source doesn't specify mode, inherit from dest
+    let effective_source_mode = source_mode.or(dest_mode);
     Ok(generate_unified_diff(
         &dest_str,
         &source_str,
         &format!("a/{target_path}"),
         &format!("b/{target_path}"),
         dest_mode,
-        source_mode,
+        effective_source_mode,
     ))
 }
 
-/// Format mode diff header
-fn format_mode_diff(old_mode: Option<u32>, new_mode: Option<u32>) -> String {
-    // Ensure both modes include file type bits for consistent display
-    let old_mode_full = old_mode.unwrap_or(DEFAULT_FILE_MODE | S_IFREG);
-    let new_mode_full = new_mode.map_or(DEFAULT_FILE_MODE | S_IFREG, |m| {
-        // If mode only has permission bits (< octal 10000), add file type
-        if m < 0o10000 { m | S_IFREG } else { m }
-    });
-
-    format!("old mode {old_mode_full:06o}\nnew mode {new_mode_full:06o}\n")
+/// Format file mode for display in file headers
+fn format_file_mode(mode: Option<u32>) -> String {
+    mode.map_or_else(String::new, |m| {
+        // Ensure file type bits are included
+        let mode_full = if m < 0o10000 { m | S_IFREG } else { m };
+        format!("{mode_full:06o}")
+    })
 }
 
 /// Check if content is binary
@@ -647,22 +693,24 @@ fn generate_unified_diff(
 ) -> String {
     let mut output = String::new();
 
-    // Add mode diff if permission bits differ
-    let mode_differs = match (old_mode, new_mode) {
-        (Some(old), Some(new)) => (old & PERM_MASK) != (new & PERM_MASK),
-        (None, Some(_)) | (Some(_), None) => true,
-        (None, None) => false,
-    };
-
-    if mode_differs {
-        output.push_str(&format_mode_diff(old_mode, new_mode));
-    }
-
     let diff = TextDiff::from_lines(old, new);
 
-    // Add file headers
-    let _ = writeln!(output, "{}", format!("--- {old_path}").bold());
-    let _ = writeln!(output, "{}", format!("+++ {new_path}").bold());
+    // Add file headers with mode
+    let old_mode_str = format_file_mode(old_mode);
+    let new_mode_str = format_file_mode(new_mode);
+
+    let _ = writeln!(
+        output,
+        "{} {}",
+        format!("--- {old_path}").bold(),
+        old_mode_str.dimmed()
+    );
+    let _ = writeln!(
+        output,
+        "{} {}",
+        format!("+++ {new_path}").bold(),
+        new_mode_str.dimmed()
+    );
 
     // Use similar's UnifiedDiff to generate hunks, but manually color each line
     // based on ChangeTag instead of parsing string output
@@ -724,14 +772,16 @@ fn format_new_file(path: &Path, content: &[u8], mode: Option<u32>) -> String {
     let content_str = String::from_utf8_lossy(content);
     let mut output = String::new();
 
-    // Add mode if present
-    if let Some(m) = mode {
-        let _ = writeln!(output, "new file mode {m:06o}");
-    }
+    // Add file header with mode
+    let effective_mode = mode.or(Some(DEFAULT_FILE_MODE));
+    let mode_str = format_file_mode(effective_mode);
 
-    // Add file headers
-    let _ = writeln!(output, "{}", "--- /dev/null".bold());
-    let _ = writeln!(output, "{}", format!("+++ b/{}", path.display()).bold());
+    let _ = writeln!(
+        output,
+        "{} {}",
+        format!("+++ b/{}", path.display()).bold(),
+        mode_str.dimmed()
+    );
 
     // Add hunk header
     let line_count = content_str.lines().count();
@@ -1435,57 +1485,6 @@ mod tests {
         assert!(cmd.interactive);
     }
 
-    // Tests for format_mode_diff
-
-    #[test]
-    fn test_format_mode_diff_both_provided() {
-        let result = format_mode_diff(Some(0o644), Some(0o755));
-        // old_mode without file type bits when provided directly
-        assert!(result.contains("old mode 000644"));
-        // new_mode gets S_IFREG added (0o100000 | 0o755 = 0o100755)
-        assert!(result.contains("new mode 100755"));
-    }
-
-    #[test]
-    fn test_format_mode_diff_old_none() {
-        let result = format_mode_diff(None, Some(0o755));
-        // Default old mode should be 0o644 with S_IFREG (0o100000)
-        assert!(result.contains("old mode 100644"));
-        assert!(result.contains("new mode 100755"));
-    }
-
-    #[test]
-    fn test_format_mode_diff_new_none() {
-        let result = format_mode_diff(Some(0o755), None);
-        assert!(result.contains("old mode 000755"));
-        // Default new mode should be 0o644 with S_IFREG
-        assert!(result.contains("new mode 100644"));
-    }
-
-    #[test]
-    fn test_format_mode_diff_both_none() {
-        let result = format_mode_diff(None, None);
-        // Both default to 0o644 with S_IFREG
-        assert!(result.contains("old mode 100644"));
-        assert!(result.contains("new mode 100644"));
-    }
-
-    #[test]
-    fn test_format_mode_diff_permission_only() {
-        // Test when new mode only has permission bits (< 0o10000)
-        let result = format_mode_diff(Some(0o100_644), Some(0o755));
-        assert!(result.contains("old mode 100644")); // Already has file type
-        assert!(result.contains("new mode 100755")); // Should add S_IFREG
-    }
-
-    #[test]
-    fn test_format_mode_diff_with_file_type() {
-        // Test when new mode already has file type bits
-        let result = format_mode_diff(Some(0o100_644), Some(0o100_755));
-        assert!(result.contains("old mode 100644"));
-        assert!(result.contains("new mode 100755"));
-    }
-
     // Tests for is_binary
 
     #[test]
@@ -1595,11 +1594,20 @@ mod tests {
         let old = "content\n";
         let new = "content\n";
 
-        let result = generate_unified_diff(old, new, "a/file", "b/file", Some(0o644), Some(0o755));
+        let result = generate_unified_diff(
+            old,
+            new,
+            "a/file",
+            "b/file",
+            Some(DEFAULT_FILE_MODE),
+            Some(DEFAULT_EXEC_MODE),
+        );
 
-        // Should include mode diff
-        assert!(result.contains("old mode"));
-        assert!(result.contains("new mode"));
+        // Should include mode in file headers
+        assert!(result.contains("--- a/file"));
+        assert!(result.contains("100644"));
+        assert!(result.contains("+++ b/file"));
+        assert!(result.contains("100755"));
     }
 
     #[test]
@@ -1649,7 +1657,6 @@ mod tests {
         let result = format_new_file(path, content, None);
 
         // Output contains ANSI color codes, check for plain content
-        assert!(result.contains("--- /dev/null"));
         assert!(result.contains("+++ b/test.txt"));
         assert!(result.contains("line1")); // Content without sign
         assert!(result.contains("line2"));
@@ -1663,9 +1670,8 @@ mod tests {
         let result = format_new_file(path, content, Some(0o755));
 
         // Output contains ANSI color codes, check for plain content
-        assert!(result.contains("new file mode 000755"));
-        assert!(result.contains("--- /dev/null"));
         assert!(result.contains("+++ b/script.sh"));
+        assert!(result.contains("100755")); // Mode in header (0o755 becomes 0o100755 with S_IFREG)
         assert!(result.contains("#!/bin/bash")); // Content without sign
         assert!(result.contains("echo hello"));
     }
@@ -1677,7 +1683,6 @@ mod tests {
 
         let result = format_new_file(path, content, None);
 
-        assert!(result.contains("--- /dev/null"));
         assert!(result.contains("+++ b/empty.txt"));
         assert!(result.contains("@@ -0,0 +1,0 @@"));
     }
@@ -1689,7 +1694,6 @@ mod tests {
 
         let result = format_new_file(path, content, None);
 
-        assert!(result.contains("--- /dev/null"));
         assert!(result.contains("+++ b/single.txt"));
         assert!(result.contains("@@ -0,0 +1,1 @@"));
         assert!(result.contains("+single line"));
@@ -1788,5 +1792,14 @@ mod tests {
         assert!(result.contains("modify_old"));
         assert!(result.contains("modify_new"));
         assert!(result.contains("add"));
+    }
+
+    #[test]
+    fn test_is_binary_png() {
+        // Binary content with null bytes (PNG header)
+        let content = b"\x89PNG\r\n\x1a\n\0\0\0\rIHDR";
+
+        // Verify content is detected as binary
+        assert!(is_binary(content));
     }
 }
