@@ -286,6 +286,31 @@ pub struct AgeConfig {
     pub fail_on_decrypt_error: bool,
 }
 
+/// Edit command configuration
+///
+/// Configure default behavior for the edit command.
+///
+/// ```toml
+/// [edit]
+/// apply = true  # Automatically apply changes after editing (default: false)
+/// ```
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+pub struct EditConfig {
+    /// Apply changes immediately after editing
+    ///
+    /// When true, automatically runs `apply` after editing files.
+    /// This is equivalent to always passing `--apply` to `guisu edit`.
+    ///
+    /// Default: false (matches chezmoi's default behavior)
+    ///
+    /// ```toml
+    /// [edit]
+    /// apply = true  # Auto-apply after editing
+    /// ```
+    #[serde(default)]
+    pub apply: bool,
+}
+
 /// Guisu configuration
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
 pub struct Config {
@@ -296,6 +321,10 @@ pub struct Config {
     /// Age encryption configuration
     #[serde(default)]
     pub age: AgeConfig,
+
+    /// Edit command configuration
+    #[serde(default)]
+    pub edit: EditConfig,
 
     /// Bitwarden configuration
     #[serde(default)]

@@ -37,29 +37,48 @@ pub struct EditCommand {
 impl Command for EditCommand {
     type Output = ();
     fn execute(&self, context: &RuntimeContext) -> crate::error::Result<()> {
-        run_impl(
+        // Determine whether to apply: command line flag takes precedence over config
+        // If --apply is passed on command line, use it
+        // Otherwise, use config.edit.apply as default
+        let should_apply = self.apply || context.config.edit.apply;
+
+        // Edit the file and check if it was modified
+        let modified = edit_file(
             context.source_dir(),
             context.dest_dir().as_path(),
             &self.target,
-            self.apply,
             &context.config,
-        )
-        .map_err(Into::into)
+        )?;
+
+        // Apply only if requested AND file was modified
+        if should_apply && modified {
+            // Create ApplyCommand with target file
+            let apply_cmd = crate::cmd::apply::ApplyCommand {
+                files: vec![self.target.clone()],
+                dry_run: false,
+                force: false,
+                interactive: false,
+                include: vec![],
+                exclude: vec![],
+            };
+
+            // Execute apply with the existing context (no database lock issue)
+            apply_cmd.execute(context)?;
+        }
+
+        Ok(())
     }
 }
 
-/// Run the edit command implementation
-fn run_impl(
-    source_dir: &Path,
-    dest_dir: &Path,
-    target: &Path,
-    apply: bool,
-    config: &Config,
-) -> Result<()> {
-    // Find the source file corresponding to the target
+/// Edit a file in the source directory
+/// Returns true if the file was modified
+fn edit_file(source_dir: &Path, dest_dir: &Path, target: &Path, config: &Config) -> Result<bool> {
     let source_file = find_source_file(source_dir, dest_dir, target, config)?;
 
-    // Check if the file is encrypted
+    // Read original content
+    let before = fs::read(&source_file)?;
+
+    // Edit the file
     let is_encrypted = source_file
         .extension()
         .and_then(|e| e.to_str())
@@ -71,27 +90,9 @@ fn run_impl(
         edit_regular_file(&source_file, config)?;
     }
 
-    // Apply if requested
-    if apply {
-        println!("\n  {} Applying changes...", "→".bright_blue());
-
-        // Create ApplyCommand with target file
-        let apply_cmd = crate::cmd::apply::ApplyCommand {
-            files: vec![target.to_path_buf()],
-            dry_run: false,
-            force: false,
-            interactive: false,
-            include: vec![],
-            exclude: vec![],
-        };
-
-        // Create RuntimeContext and execute
-        let context = crate::common::RuntimeContext::new(config.clone(), source_dir, dest_dir)?;
-        apply_cmd.execute(&context)?;
-    }
-
-    println!();
-    Ok(())
+    // Check if modified
+    let after = fs::read(&source_file)?;
+    Ok(before != after)
 }
 
 /// Find the source file corresponding to a target file
