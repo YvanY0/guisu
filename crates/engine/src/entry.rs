@@ -143,6 +143,18 @@ pub enum TargetEntry {
         /// Path to remove from the destination
         path: RelPath,
     },
+
+    /// A script that modifies an existing file in-place
+    Modify {
+        /// Path to the file to modify
+        path: RelPath,
+        /// Script content (after template rendering and decryption)
+        script: Vec<u8>,
+        /// Content hash (blake3) for change detection
+        content_hash: [u8; 32],
+        /// Interpreter to use (e.g., "/bin/bash", "/usr/bin/env python3")
+        interpreter: String,
+    },
 }
 
 impl TargetEntry {
@@ -154,7 +166,8 @@ impl TargetEntry {
             TargetEntry::File { path, .. }
             | TargetEntry::Directory { path, .. }
             | TargetEntry::Symlink { path, .. }
-            | TargetEntry::Remove { path } => path,
+            | TargetEntry::Remove { path }
+            | TargetEntry::Modify { path, .. } => path,
         }
     }
 
@@ -272,6 +285,7 @@ impl DestEntry {
                 self.link_target.as_ref() == Some(target)
             }
             (EntryKind::Missing, TargetEntry::Remove { .. }) => true,
+            // Modify entries don't have a direct destination counterpart
             _ => false,
         }
     }

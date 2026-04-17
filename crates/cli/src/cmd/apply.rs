@@ -80,6 +80,26 @@ fn get_last_written_hash(
     }
 }
 
+/// Get the last written script hash for a modify entry from the database
+///
+/// Returns the script hash if the modify entry has state in the database.
+/// Returns None if no state exists.
+fn get_last_script_hash(
+    db: &guisu_engine::state::RedbPersistentState,
+    entry: &TargetEntry,
+) -> Option<[u8; 32]> {
+    match entry {
+        TargetEntry::Modify { .. } => {
+            let path_str = format!("{}:modify", entry.path());
+            guisu_engine::database::get_entry_state(db, &path_str)
+                .ok()
+                .flatten()
+                .map(|state| state.content_hash)
+        }
+        _ => None,
+    }
+}
+
 /// Load and prepare all variables for template rendering
 fn load_all_variables(
     source_dir: &std::path::Path,
@@ -414,38 +434,79 @@ fn apply_entry_with_error_handling(
     stats: &ApplyStats,
     show_icons: bool,
     fail_on_decrypt_error: bool,
+    db: &guisu_engine::state::RedbPersistentState,
 ) -> Option<BatchEntryData> {
-    match apply_target_entry(entry, dest_path, identities, fail_on_decrypt_error) {
-        Ok(()) => {
-            debug!(path = %entry.path(), "Applied entry successfully");
-            print_success_entry(entry, show_icons);
-            stats.record_success(entry);
+    // Check if this is a modify script with unchanged content
+    let should_execute = match entry {
+        TargetEntry::Modify { content_hash, .. } => {
+            let last_hash = get_last_script_hash(db, entry);
+            match last_hash {
+                Some(last) if last == *content_hash => {
+                    debug!(path = %entry.path(), "Modify script unchanged, skipping execution");
+                    false
+                }
+                _ => true,
+            }
+        }
+        _ => true,
+    };
 
-            // Return entry data for batch save (only for files)
-            if let TargetEntry::File { content, mode, .. } = entry {
-                // Save decrypted content to match what was written to disk
-                let final_content = match decrypt_inline_age_values(
-                    content,
-                    identities,
-                    fail_on_decrypt_error,
-                ) {
-                    Ok(decrypted) => decrypted,
-                    Err(e) => {
-                        warn!(path = %entry.path(), error = %e, "Failed to decrypt inline age values for state saving");
-                        // Fall back to original content to avoid data loss
-                        content.clone()
+    if should_execute {
+        match apply_target_entry(entry, dest_path, identities, fail_on_decrypt_error) {
+            Ok(()) => {
+                debug!(path = %entry.path(), "Applied entry successfully");
+                print_success_entry(entry, show_icons);
+                stats.record_success(entry);
+
+                // Return entry data for batch save (for files and modify scripts)
+                match entry {
+                    TargetEntry::File { content, mode, .. } => {
+                        // Save decrypted content to match what was written to disk
+                        let final_content = match decrypt_inline_age_values(
+                            content,
+                            identities,
+                            fail_on_decrypt_error,
+                        ) {
+                            Ok(decrypted) => decrypted,
+                            Err(e) => {
+                                warn!(path = %entry.path(), error = %e, "Failed to decrypt inline age values for state saving");
+                                // Fall back to original content to avoid data loss
+                                content.clone()
+                            }
+                        };
+                        Some((entry.path().to_string(), final_content, *mode))
                     }
-                };
-                Some((entry.path().to_string(), final_content, *mode))
-            } else {
+                    TargetEntry::Modify {
+                        script,
+                        content_hash: _content_hash,
+                        ..
+                    } => {
+                        // Save script hash for change detection
+                        let script_path = format!("{}:modify", entry.path());
+                        Some((script_path, script.clone(), None))
+                    }
+                    _ => None,
+                }
+            }
+            Err(e) => {
+                warn!(path = %entry.path(), error = %e, "Failed to apply entry");
+                print_error_entry(entry, &e, show_icons);
+                stats.record_failure();
                 None
             }
         }
-        Err(e) => {
-            warn!(path = %entry.path(), error = %e, "Failed to apply entry");
-            print_error_entry(entry, &e, show_icons);
-            stats.record_failure();
-            None
+    } else {
+        // Script unchanged, but still return state data to ensure hash is saved
+        match entry {
+            TargetEntry::Modify {
+                script,
+                content_hash: _content_hash,
+                ..
+            } => {
+                let script_path = format!("{}:modify", entry.path());
+                Some((script_path, script.clone(), None))
+            }
+            _ => None,
         }
     }
 }
@@ -508,6 +569,7 @@ fn process_entries_sequential(
                     stats,
                     show_icons,
                     fail_on_decrypt_error,
+                    db,
                 )
             {
                 batch_entries.push(state_data);
@@ -978,10 +1040,17 @@ fn needs_update(
             // Always needs update if file exists
             Ok(dest_path.as_path().exists())
         }
+        TargetEntry::Modify { .. } => {
+            // Modify scripts don't write to destination, they modify existing files
+            // Execution is handled separately
+            // Always execute modify scripts (they should be idempotent)
+            Ok(true)
+        }
     }
 }
 
 /// Apply a single target entry to the destination
+#[allow(clippy::too_many_lines)]
 fn apply_target_entry(
     entry: &TargetEntry,
     dest_path: &AbsPath,
@@ -1118,6 +1187,16 @@ fn apply_target_entry(
             }
             Ok(())
         }
+        TargetEntry::Modify {
+            script,
+            interpreter,
+            ..
+        } => {
+            // Execute modify script to modify target file in-place
+            let executor = guisu_engine::modify::ModifyExecutor::new();
+            executor.execute(script, interpreter, dest_path, &[])?;
+            Ok(())
+        }
     }
 }
 impl ApplyStats {
@@ -1126,7 +1205,7 @@ impl ApplyStats {
             TargetEntry::File { .. } => self.inc_files(),
             TargetEntry::Directory { .. } => self.inc_directories(),
             TargetEntry::Symlink { .. } => self.inc_symlinks(),
-            TargetEntry::Remove { .. } => {}
+            TargetEntry::Remove { .. } | TargetEntry::Modify { .. } => {}
         }
     }
 
@@ -1157,7 +1236,9 @@ fn print_dry_run_entry(entry: &TargetEntry, use_nerd_fonts: bool) {
 
     // Get file icon
     let (is_directory, is_symlink) = match entry {
-        TargetEntry::File { .. } | TargetEntry::Remove { .. } => (false, false),
+        TargetEntry::File { .. } | TargetEntry::Remove { .. } | TargetEntry::Modify { .. } => {
+            (false, false)
+        }
         TargetEntry::Directory { .. } => (true, false),
         TargetEntry::Symlink { .. } => (false, true),
     };
@@ -1191,7 +1272,9 @@ fn print_success_entry(entry: &TargetEntry, use_nerd_fonts: bool) {
 
     // Get file icon
     let (is_directory, is_symlink) = match entry {
-        TargetEntry::File { .. } | TargetEntry::Remove { .. } => (false, false),
+        TargetEntry::File { .. } | TargetEntry::Remove { .. } | TargetEntry::Modify { .. } => {
+            (false, false)
+        }
         TargetEntry::Directory { .. } => (true, false),
         TargetEntry::Symlink { .. } => (false, true),
     };
@@ -1225,7 +1308,9 @@ fn print_error_entry(entry: &TargetEntry, error: &anyhow::Error, use_nerd_fonts:
 
     // Get file icon
     let (is_directory, is_symlink) = match entry {
-        TargetEntry::File { .. } | TargetEntry::Remove { .. } => (false, false),
+        TargetEntry::File { .. } | TargetEntry::Remove { .. } | TargetEntry::Modify { .. } => {
+            (false, false)
+        }
         TargetEntry::Directory { .. } => (true, false),
         TargetEntry::Symlink { .. } => (false, true),
     };

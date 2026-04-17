@@ -1300,6 +1300,29 @@ impl TargetState {
         Ok(target_state)
     }
 
+    /// Parse shebang line from script content to determine interpreter
+    ///
+    /// Returns the interpreter path (e.g., "/bin/bash", "/usr/bin/env python3").
+    /// If no shebang is found, defaults to "/bin/sh".
+    fn parse_shebang(content: &[u8]) -> String {
+        // Convert to string for parsing (shebang is ASCII)
+        let content_str = String::from_utf8_lossy(content);
+        let trimmed = content_str.trim_start();
+
+        if trimmed.starts_with("#!") {
+            // Extract the shebang line (up to newline)
+            let shebang_line = trimmed.lines().next().unwrap_or("");
+            // Get everything after "#!"
+            let shebang_args = shebang_line[2..].trim();
+            // Take first token as interpreter (allow spaces for env with args)
+            // e.g., "/usr/bin/env python3" -> "/usr/bin/env python3"
+            shebang_args.to_string()
+        } else {
+            // Default shell interpreter
+            "/bin/sh".to_string()
+        }
+    }
+
     /// Process a single source entry into a target entry
     ///
     /// This applies the appropriate transformations based on the entry type:
@@ -1331,15 +1354,41 @@ impl TargetState {
                 let processed_content =
                     processor.process_file(&abs_source_path, attributes, context)?;
 
-                let mode = attributes.mode();
                 let content_hash = crate::hash::hash_content(&processed_content);
 
-                Ok(TargetEntry::File {
-                    path: target_path.clone(),
-                    content: processed_content,
-                    content_hash,
-                    mode,
-                })
+                // Handle special file types based on attributes
+                if attributes.is_modify() {
+                    let interpreter = Self::parse_shebang(&processed_content);
+                    Ok(TargetEntry::Modify {
+                        path: target_path.clone(),
+                        script: processed_content,
+                        content_hash,
+                        interpreter,
+                    })
+                } else if attributes.is_remove() {
+                    Ok(TargetEntry::Remove {
+                        path: target_path.clone(),
+                    })
+                } else if attributes.is_symlink() {
+                    // Symlink target is the content of the file (after processing)
+                    // Trim whitespace/newlines from the target path
+                    let target_str = String::from_utf8_lossy(&processed_content)
+                        .trim()
+                        .to_string();
+                    Ok(TargetEntry::Symlink {
+                        path: target_path.clone(),
+                        target: std::path::PathBuf::from(target_str),
+                    })
+                } else {
+                    // Regular file
+                    let mode = attributes.mode();
+                    Ok(TargetEntry::File {
+                        path: target_path.clone(),
+                        content: processed_content,
+                        content_hash,
+                        mode,
+                    })
+                }
             }
 
             SourceEntry::Directory {

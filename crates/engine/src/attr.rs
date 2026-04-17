@@ -56,7 +56,7 @@ const STANDARD_EXEC: u32 = 0o755;
 bitflags::bitflags! {
     /// Attributes that can be encoded in a filename
     #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
-    pub struct FileAttributes: u8 {
+    pub struct FileAttributes: u16 {
         /// Should this file be hidden (start with a dot)?
         const DOT = 1 << 0;
         /// Should this file have restrictive permissions (private)?
@@ -69,6 +69,14 @@ bitflags::bitflags! {
         const TEMPLATE = 1 << 4;
         /// Is this file encrypted?
         const ENCRYPTED = 1 << 5;
+        /// Is this a modify script?
+        const MODIFY = 1 << 6;
+        /// Should this file be removed?
+        const REMOVE = 1 << 7;
+        /// Is this a symlink?
+        const SYMLINK = 1 << 8;
+        /// Should exact mode be used (remove unmanaged files)?
+        const EXACT = 1 << 9;
     }
 }
 
@@ -121,6 +129,34 @@ impl FileAttributes {
         self.contains(Self::ENCRYPTED)
     }
 
+    /// Check if file is a modify script
+    #[inline]
+    #[must_use]
+    pub fn is_modify(&self) -> bool {
+        self.contains(Self::MODIFY)
+    }
+
+    /// Check if file should be removed
+    #[inline]
+    #[must_use]
+    pub fn is_remove(&self) -> bool {
+        self.contains(Self::REMOVE)
+    }
+
+    /// Check if file is a symlink
+    #[inline]
+    #[must_use]
+    pub fn is_symlink(&self) -> bool {
+        self.contains(Self::SYMLINK)
+    }
+
+    /// Check if exact mode should be used (remove unmanaged files)
+    #[inline]
+    #[must_use]
+    pub fn is_exact(&self) -> bool {
+        self.contains(Self::EXACT)
+    }
+
     /// Set whether file should be hidden (start with a dot)
     #[inline]
     pub fn set_dot(&mut self, value: bool) {
@@ -155,6 +191,30 @@ impl FileAttributes {
     #[inline]
     pub fn set_encrypted(&mut self, value: bool) {
         self.set(Self::ENCRYPTED, value);
+    }
+
+    /// Set whether file is a modify script
+    #[inline]
+    pub fn set_modify(&mut self, value: bool) {
+        self.set(Self::MODIFY, value);
+    }
+
+    /// Set whether file should be removed
+    #[inline]
+    pub fn set_remove(&mut self, value: bool) {
+        self.set(Self::REMOVE, value);
+    }
+
+    /// Set whether file is a symlink
+    #[inline]
+    pub fn set_symlink(&mut self, value: bool) {
+        self.set(Self::SYMLINK, value);
+    }
+
+    /// Set whether exact mode should be used (remove unmanaged files)
+    #[inline]
+    pub fn set_exact(&mut self, value: bool) {
+        self.set(Self::EXACT, value);
     }
 
     /// Parse attributes from a source file
@@ -198,6 +258,39 @@ impl FileAttributes {
         let mut attrs = Self::new();
         let mut target_name = filename.to_string();
 
+        // Strip prefixes (e.g., private_, exact_, symlink_, remove_, modify_, dot_, executable_, readonly_)
+        // Prefixes can be stacked and are stripped in order they appear
+        loop {
+            let lower = target_name.to_lowercase();
+            if lower.starts_with("private_") {
+                attrs.set_private(true);
+                target_name = target_name["private_".len()..].to_string();
+            } else if lower.starts_with("exact_") {
+                attrs.set_exact(true);
+                target_name = target_name["exact_".len()..].to_string();
+            } else if lower.starts_with("symlink_") {
+                attrs.set_symlink(true);
+                target_name = target_name["symlink_".len()..].to_string();
+            } else if lower.starts_with("remove_") {
+                attrs.set_remove(true);
+                target_name = target_name["remove_".len()..].to_string();
+            } else if lower.starts_with("modify_") {
+                attrs.set_modify(true);
+                target_name = target_name["modify_".len()..].to_string();
+            } else if lower.starts_with("dot_") {
+                attrs.set_dot(true);
+                target_name = target_name["dot_".len()..].to_string();
+            } else if lower.starts_with("executable_") {
+                attrs.set_executable(true);
+                target_name = target_name["executable_".len()..].to_string();
+            } else if lower.starts_with("readonly_") {
+                attrs.set_readonly(true);
+                target_name = target_name["readonly_".len()..].to_string();
+            } else {
+                break;
+            }
+        }
+
         // Check for .age extension (must be last) - case insensitive
         if target_name.to_lowercase().ends_with(".age") {
             attrs.set_encrypted(true);
@@ -212,6 +305,11 @@ impl FileAttributes {
             // Strip the extension preserving the original case
             let ext_len = ".j2".len();
             target_name.truncate(target_name.len() - ext_len);
+        }
+
+        // If dot flag is set, prepend a dot to the target name
+        if attrs.is_dot() && !target_name.starts_with('.') {
+            target_name.insert(0, '.');
         }
 
         // Parse permissions from Unix mode
@@ -287,13 +385,17 @@ impl Serialize for FileAttributes {
         S: Serializer,
     {
         use serde::ser::SerializeStruct;
-        let mut state = serializer.serialize_struct("FileAttributes", 6)?;
+        let mut state = serializer.serialize_struct("FileAttributes", 10)?;
         state.serialize_field("is_dot", &self.is_dot())?;
         state.serialize_field("is_private", &self.is_private())?;
         state.serialize_field("is_readonly", &self.is_readonly())?;
         state.serialize_field("is_executable", &self.is_executable())?;
         state.serialize_field("is_template", &self.is_template())?;
         state.serialize_field("is_encrypted", &self.is_encrypted())?;
+        state.serialize_field("is_modify", &self.is_modify())?;
+        state.serialize_field("is_remove", &self.is_remove())?;
+        state.serialize_field("is_symlink", &self.is_symlink())?;
+        state.serialize_field("is_exact", &self.is_exact())?;
         state.end()
     }
 }
@@ -317,6 +419,10 @@ impl<'de> Deserialize<'de> for FileAttributes {
             IsExecutable,
             IsTemplate,
             IsEncrypted,
+            IsModify,
+            IsRemove,
+            IsSymlink,
+            IsExact,
         }
 
         struct FileAttributesVisitor;
@@ -360,6 +466,22 @@ impl<'de> Deserialize<'de> for FileAttributes {
                             let value: bool = map.next_value()?;
                             attrs.set(FileAttributes::ENCRYPTED, value);
                         }
+                        Field::IsModify => {
+                            let value: bool = map.next_value()?;
+                            attrs.set(FileAttributes::MODIFY, value);
+                        }
+                        Field::IsRemove => {
+                            let value: bool = map.next_value()?;
+                            attrs.set(FileAttributes::REMOVE, value);
+                        }
+                        Field::IsSymlink => {
+                            let value: bool = map.next_value()?;
+                            attrs.set(FileAttributes::SYMLINK, value);
+                        }
+                        Field::IsExact => {
+                            let value: bool = map.next_value()?;
+                            attrs.set(FileAttributes::EXACT, value);
+                        }
                     }
                 }
 
@@ -374,6 +496,10 @@ impl<'de> Deserialize<'de> for FileAttributes {
             "is_executable",
             "is_template",
             "is_encrypted",
+            "is_modify",
+            "is_remove",
+            "is_symlink",
+            "is_exact",
         ];
         deserializer.deserialize_struct("FileAttributes", FIELDS, FileAttributesVisitor)
     }

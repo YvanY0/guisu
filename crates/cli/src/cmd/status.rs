@@ -488,6 +488,10 @@ fn determine_entry_status(
             // Remove entries should not be in status
             FileStatus::Behind
         }
+        TargetEntry::Modify { .. } => {
+            // Modify scripts are not displayed in status for now
+            FileStatus::Steady
+        }
     }
 }
 

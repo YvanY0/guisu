@@ -19,6 +19,7 @@ pub mod entry;
 pub mod git;
 pub mod hash;
 pub mod hooks;
+pub mod modify;
 pub mod processor;
 pub mod state;
 pub mod system;

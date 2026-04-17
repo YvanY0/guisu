@@ -12,6 +12,7 @@ pub struct ModifyExecutor;
 
 impl ModifyExecutor {
     /// Create a new modify executor
+    #[must_use]
     pub fn new() -> Self {
         Self
     }
@@ -39,7 +40,7 @@ impl ModifyExecutor {
         env: &[(String, String)],
     ) -> Result<()> {
         // Create temporary script file
-        let mut temp_script = NamedTempFile::new().map_err(|e| {
+        let temp_script = NamedTempFile::new().map_err(|e| {
             guisu_core::Error::Message(format!("Failed to create temporary script file: {e}"))
         })?;
 
