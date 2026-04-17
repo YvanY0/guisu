@@ -21,7 +21,7 @@ impl BwsCli {
 
     fn check_access_token() -> Result<()> {
         if std::env::var("BWS_ACCESS_TOKEN").is_err() {
-            return Err(Error::AuthenticationRequired(
+            return Err(Error::VaultAuthenticationRequired(
                 "BWS_ACCESS_TOKEN environment variable not set.\n\
                  Get your access token from Bitwarden Secrets Manager:\n\
                  1. Go to your organization's Secrets Manager\n\
@@ -48,7 +48,7 @@ impl SecretProvider for BwsCli {
 
     fn execute(&self, args: &[&str]) -> Result<JsonValue> {
         if args.is_empty() {
-            return Err(Error::InvalidArguments(
+            return Err(Error::VaultInvalidArguments(
                 "At least one argument required".to_string(),
             ));
         }
@@ -67,15 +67,15 @@ impl SecretProvider for BwsCli {
 
         if !output.status.success() {
             let stderr = String::from_utf8_lossy(&output.stderr);
-            return Err(Error::ExecutionFailed(stderr.trim().to_string()));
+            return Err(Error::VaultExecutionFailed(stderr.trim().to_string()));
         }
 
         let stdout = String::from_utf8_lossy(&output.stdout);
         if stdout.trim().is_empty() {
-            return Err(Error::ParseError("Empty output".to_string()));
+            return Err(Error::VaultParseError("Empty output".to_string()));
         }
 
-        serde_json::from_str(&stdout).map_err(|e| Error::ParseError(e.to_string()))
+        serde_json::from_str(&stdout).map_err(|e| Error::VaultParseError(e.to_string()))
     }
 
     fn is_available(&self) -> bool {

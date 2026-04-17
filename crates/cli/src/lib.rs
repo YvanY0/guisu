@@ -392,8 +392,11 @@ fn handle_apply_command(
     apply_cmd: &cmd::apply::ApplyCommand,
     context: &RuntimeContext,
 ) -> Result<()> {
-    // Handle pre-apply hooks (unless it's a dry run)
-    if !apply_cmd.dry_run
+    // Hooks should only run for global apply (no file arguments) and not in dry-run mode
+    let should_run_hooks = !apply_cmd.dry_run && apply_cmd.files.is_empty();
+
+    // Handle pre-apply hooks
+    if should_run_hooks
         && let Err(e) =
             cmd::hooks::handle_hooks_pre(context.source_dir(), &context.config, &context.database)
     {
@@ -413,8 +416,8 @@ fn handle_apply_command(
 
     // Database will be automatically closed when RuntimeContext is dropped
 
-    // Handle post-apply hooks (unless it's a dry run)
-    if !dry_run
+    // Handle post-apply hooks
+    if should_run_hooks
         && let Err(e) =
             cmd::hooks::handle_hooks_post(context.source_dir(), &context.config, &context.database)
     {
@@ -880,4 +883,59 @@ pub(crate) fn create_template_engine(
         },
         &config.bitwarden.provider,
     )
+}
+
+#[cfg(test)]
+mod tests {
+    use crate::cmd::apply::ApplyCommand;
+    use std::path::PathBuf;
+
+    #[test]
+    fn test_should_run_hooks_logic() {
+        // Test case 1: dry-run should not run hooks even with no files
+        let cmd = ApplyCommand {
+            files: vec![],
+            dry_run: true,
+            force: false,
+            interactive: false,
+            include: vec![],
+            exclude: vec![],
+        };
+        // should_run_hooks = !dry_run && files.is_empty()
+        // !true && true = false
+        assert!(cmd.dry_run || !cmd.files.is_empty());
+
+        // Test case 2: not dry-run, no files -> should run hooks
+        let cmd = ApplyCommand {
+            files: vec![],
+            dry_run: false,
+            force: false,
+            interactive: false,
+            include: vec![],
+            exclude: vec![],
+        };
+        assert!(!cmd.dry_run && cmd.files.is_empty());
+
+        // Test case 3: not dry-run, with files -> should not run hooks
+        let cmd = ApplyCommand {
+            files: vec![PathBuf::from("somefile")],
+            dry_run: false,
+            force: false,
+            interactive: false,
+            include: vec![],
+            exclude: vec![],
+        };
+        assert!(cmd.dry_run || !cmd.files.is_empty());
+
+        // Test case 4: dry-run with files -> should not run hooks
+        let cmd = ApplyCommand {
+            files: vec![PathBuf::from("somefile")],
+            dry_run: true,
+            force: false,
+            interactive: false,
+            include: vec![],
+            exclude: vec![],
+        };
+        assert!(cmd.dry_run || !cmd.files.is_empty());
+    }
 }

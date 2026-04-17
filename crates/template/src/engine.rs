@@ -254,7 +254,9 @@ impl TemplateEngine {
     ///
     /// Returns error if template rendering fails
     pub fn render_str(&self, template: &str, context: &TemplateContext) -> Result<String> {
-        self.env.render_str(template, context).map_err(Error::from)
+        self.env
+            .render_str(template, context)
+            .map_err(|e| crate::convert_minijinja_error(&e))
     }
 
     /// Render a template string with a specific name for better error messages
@@ -287,7 +289,7 @@ impl TemplateEngine {
     ) -> Result<String> {
         self.env
             .render_named_str(name, template, context)
-            .map_err(Error::from)
+            .map_err(|e| crate::convert_minijinja_error(&e))
     }
 
     /// Render template content (bytes) with the given context
@@ -300,7 +302,7 @@ impl TemplateEngine {
     /// Returns error if template is not valid UTF-8 or rendering fails
     pub fn render(&self, template: &[u8], context: &TemplateContext) -> Result<Vec<u8>> {
         let template_str = std::str::from_utf8(template)
-            .map_err(|e| Error::Syntax(format!("Template is not valid UTF-8: {e}")))?;
+            .map_err(|e| Error::TemplateSyntax(format!("Template is not valid UTF-8: {e}")))?;
 
         let rendered = self.render_str(template_str, context)?;
         Ok(rendered.into_bytes())
@@ -344,7 +346,7 @@ impl guisu_core::TemplateRenderer for TemplateEngine {
     ) -> guisu_core::Result<String> {
         self.env
             .render_str(template, context)
-            .map_err(|e| guisu_core::Error::Message(Error::from(e).to_string()))
+            .map_err(|e| guisu_core::Error::Message(crate::convert_minijinja_error(&e).to_string()))
     }
 
     fn render_named_str(
@@ -355,7 +357,7 @@ impl guisu_core::TemplateRenderer for TemplateEngine {
     ) -> guisu_core::Result<String> {
         self.env
             .render_named_str(name, template, context)
-            .map_err(|e| guisu_core::Error::Message(Error::from(e).to_string()))
+            .map_err(|e| guisu_core::Error::Message(crate::convert_minijinja_error(&e).to_string()))
     }
 }
 

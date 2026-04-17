@@ -78,164 +78,19 @@ impl AgeEncryption {
 // Implement EncryptionProvider trait for AgeEncryption
 impl guisu_core::EncryptionProvider for AgeEncryption {
     fn encrypt(&self, data: &[u8]) -> guisu_core::Result<Vec<u8>> {
-        encrypt(data, &self.recipients).map_err(|e| guisu_core::Error::Message(e.to_string()))
+        encrypt(data, &self.recipients)
     }
 
     fn decrypt(&self, data: &[u8]) -> guisu_core::Result<Vec<u8>> {
-        decrypt(data, &self.identities).map_err(|e| guisu_core::Error::Message(e.to_string()))
+        decrypt(data, &self.identities)
     }
 }
 
-use thiserror::Error;
+// Re-export guisu_core types for use in this crate and by consumers
+pub use guisu_core::Error;
 
 /// Result type for crypto operations
-pub type Result<T> = std::result::Result<T, Error>;
-
-/// Crypto-related errors
-#[derive(Error, Debug)]
-pub enum Error {
-    /// Age encryption/decryption error
-    #[error("Age encryption error: {0}")]
-    Age(String),
-
-    /// No recipients provided for encryption
-    #[error(
-        "No recipients provided for encryption\n\
-         \n\
-         To fix this:\n\
-         1. Add recipients to your .guisu.toml:\n\
-         \n\
-         [age]\n\
-         recipient = \"age1ql3z7hjy54pw3hyww5ayyfg7zqgvc7w3j2elw8zmrj2kg5sfn9aqmcac8p\"\n\
-         \n\
-         2. Or generate a recipient from your identity:\n\
-            guisu age generate --show-recipient"
-    )]
-    NoRecipients,
-
-    /// Identity file not found
-    #[error(
-        "Identity file not found: {path}\n\
-         \n\
-         To fix this:\n\
-         1. Generate a new identity:    guisu age generate\n\
-         2. Or check the file path:     ls {path}\n\
-         3. Or configure in .guisu.toml:\n\
-         \n\
-         [age]\n\
-         identity = \"{path}\""
-    )]
-    IdentityNotFound {
-        /// Path to the identity file that was not found
-        path: String,
-    },
-
-    /// Identity file IO error (read/write failures)
-    #[error(
-        "Failed to {operation} identity file: {path}\n\
-         Error: {source}\n\
-         \n\
-         To fix this:\n\
-         1. Check file permissions:     ls -la {path}\n\
-         2. Ensure directory exists:    mkdir -p $(dirname {path})\n\
-         3. Check disk space:           df -h"
-    )]
-    IdentityFile {
-        /// Operation that failed (read/write)
-        operation: String,
-        /// Path to the identity file
-        path: String,
-        /// Underlying IO error
-        #[source]
-        source: std::io::Error,
-    },
-
-    /// Invalid identity format or content
-    #[error(
-        "Invalid identity: {reason}\n\
-         \n\
-         Expected format:\n\
-         - Age identity:  AGE-SECRET-KEY-1...\n\
-         - SSH key:       -----BEGIN OPENSSH PRIVATE KEY-----\n\
-         \n\
-         To fix this:\n\
-         1. Generate a new identity:    guisu age generate\n\
-         2. Or use an SSH key:          ~/.ssh/id_ed25519\n\
-         3. Check file contents:        cat {path}"
-    )]
-    InvalidIdentity {
-        /// Reason for the invalid identity
-        reason: String,
-        /// Path to the identity file
-        path: String,
-    },
-
-    /// Invalid recipient format
-    #[error(
-        "Invalid recipient: {recipient}\n\
-         Reason: {reason}\n\
-         \n\
-         Expected format: age1ql3z7hjy54pw3hyww5ayyfg7zqgvc7w3j2elw8zmrj2kg5sfn9aqmcac8p\n\
-         \n\
-         To fix this:\n\
-         1. Get recipient from identity:  guisu age generate --show-recipient\n\
-         2. Or from public key file:      cat ~/.config/guisu/key.txt.pub\n\
-         3. Check the recipient string carefully"
-    )]
-    InvalidRecipient {
-        /// Invalid recipient string
-        recipient: String,
-        /// Reason for the invalid recipient
-        reason: String,
-    },
-
-    /// Decryption failed due to wrong key
-    #[error("Decryption failed - wrong key or corrupted data")]
-    WrongKey,
-
-    /// Decryption failed for other reasons
-    #[error(
-        "Decryption failed: {reason}\n\
-         \n\
-         To fix this:\n\
-         1. Check the encrypted file:   cat <file>\n\
-         2. Verify identity is loaded:  guisu doctor\n\
-         3. Check file format is valid"
-    )]
-    DecryptionFailed {
-        /// Reason for decryption failure
-        reason: String,
-    },
-
-    /// No identity available for decryption
-    #[error(
-        "No identity available for decryption\n\
-         \n\
-         To fix this:\n\
-         1. Generate a new identity:  guisu age generate\n\
-         2. Or configure an existing identity in .guisu.toml:\n\
-         \n\
-         [age]\n\
-         identity = \"~/.ssh/id_ed25519\"  # Use SSH key\n\
-         # or\n\
-         identity = \"~/.config/guisu/key.txt\"  # Use age key"
-    )]
-    NoIdentity,
-
-    /// Attempted to encrypt empty value
-    #[error(
-        "Cannot encrypt empty value\n\
-         \n\
-         To fix this:\n\
-         1. Provide non-empty content to encrypt\n\
-         2. Or remove the encrypted file attribute if not needed"
-    )]
-    EmptyValue,
-
-    /// IO error
-    #[error("IO error: {0}")]
-    Io(#[from] std::io::Error),
-}
+pub type Result<T> = guisu_core::Result<T>;
 
 #[cfg(test)]
 mod tests {

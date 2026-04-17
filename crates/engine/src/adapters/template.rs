@@ -1,21 +1,9 @@
 //! Template adapter that implements the `TemplateRenderer` trait from engine
 
 use crate::content::TemplateRenderer;
+use guisu_core::{Error, Result};
 use guisu_template::{TemplateContext, TemplateEngine};
 use std::sync::Arc;
-use thiserror::Error;
-
-/// Error type for template adapter
-#[derive(Error, Debug)]
-pub enum TemplateError {
-    /// Template rendering error from `guisu_template`
-    #[error(transparent)]
-    Template(#[from] guisu_template::Error),
-
-    /// Failed to convert template context
-    #[error("Failed to convert context: {0}")]
-    ContextConversion(String),
-}
 
 /// Adapter that wraps `TemplateEngine` to implement `engine::content::TemplateRenderer`
 pub struct TemplateRendererAdapter {
@@ -38,23 +26,21 @@ impl TemplateRendererAdapter {
 }
 
 impl TemplateRenderer for TemplateRendererAdapter {
-    type Error = TemplateError;
+    type Error = Error;
 
-    fn render(&self, template: &str, context: &serde_json::Value) -> Result<String, Self::Error> {
+    fn render(&self, template: &str, context: &serde_json::Value) -> Result<String> {
         // Convert serde_json::Value to TemplateContext
         let variables = if let serde_json::Value::Object(map) = context {
             map.iter().map(|(k, v)| (k.clone(), v.clone())).collect()
         } else {
-            return Err(TemplateError::ContextConversion(
+            return Err(Error::TemplateContextConversion(
                 "Context must be a JSON object".to_string(),
             ));
         };
 
         let template_context = TemplateContext::new().with_variables(variables);
 
-        self.engine
-            .render_str(template, &template_context)
-            .map_err(Into::into)
+        self.engine.render_str(template, &template_context)
     }
 }
 
@@ -149,10 +135,10 @@ mod tests {
         let array_context = json!(["item1", "item2"]);
         let result = adapter.render(template, &array_context);
         assert!(result.is_err(), "Should fail with array context");
-        if let Err(TemplateError::ContextConversion(msg)) = result {
+        if let Err(Error::TemplateContextConversion(msg)) = result {
             assert!(msg.contains("JSON object"));
         } else {
-            panic!("Expected ContextConversion error");
+            panic!("Expected TemplateContextConversion error");
         }
 
         // Try with string context
@@ -298,11 +284,6 @@ mod tests {
         let result = adapter.render(template, &context);
         assert!(result.is_err());
 
-        match result {
-            Err(TemplateError::Template(_)) => {
-                // Expected error type
-            }
-            _ => panic!("Expected TemplateError::Template variant"),
-        }
+        assert!(result.is_err(), "Expected template rendering error");
     }
 }

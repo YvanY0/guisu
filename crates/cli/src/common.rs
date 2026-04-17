@@ -184,10 +184,7 @@ impl RuntimeContext {
         }
 
         // Initialize if not cached
-        let identities = self
-            .config
-            .age_identities()
-            .map_err(crate::error::CommandError::identity_load)?;
+        let identities = self.config.age_identities()?;
         let arc_identities = Arc::from(identities.into_boxed_slice());
 
         // Try to set the value (ignore if another thread already set it)

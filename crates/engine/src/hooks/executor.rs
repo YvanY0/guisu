@@ -181,7 +181,7 @@ where
                     .once_executed
                     .lock()
                     .expect("Once-executed mutex poisoned")
-                    .contains(&hook.name)
+                    .contains(hook.name.as_str())
                 {
                     tracing::debug!("Skipping hook: already executed in this session");
                     return (
@@ -193,7 +193,7 @@ where
                 }
 
                 // Check if executed in previous sessions
-                if self.persistent_once.contains(&hook.name) {
+                if self.persistent_once.contains(hook.name.as_str()) {
                     tracing::debug!("Skipping hook: already executed previously");
                     return (true, "already executed previously (mode=once)", None, None);
                 }
@@ -232,7 +232,7 @@ where
                     .onchange_hashes
                     .lock()
                     .expect("OnChange hashes mutex poisoned")
-                    .get(&hook.name)
+                    .get(hook.name.as_str())
                     && session_hash == &current_hash
                 {
                     tracing::debug!("Skipping hook: content unchanged in this session");
@@ -245,7 +245,7 @@ where
                 }
 
                 // Check if content changed from previous sessions
-                if let Some(stored_hash) = self.persistent_onchange.get(&hook.name) {
+                if let Some(stored_hash) = self.persistent_onchange.get(hook.name.as_str()) {
                     use subtle::ConstantTimeEq;
                     if bool::from(stored_hash.ct_eq(&current_hash)) {
                         tracing::debug!("Skipping hook: content unchanged from previous session");
@@ -282,7 +282,7 @@ where
                 self.once_executed
                     .lock()
                     .expect("Once-executed mutex poisoned")
-                    .insert(hook.name.clone());
+                    .insert(hook.name.to_string());
             }
 
             HookMode::OnChange => {
@@ -295,14 +295,14 @@ where
                 self.onchange_hashes
                     .lock()
                     .expect("OnChange hashes mutex poisoned")
-                    .insert(hook.name.clone(), content_hash);
+                    .insert(hook.name.to_string(), content_hash);
 
                 // Save rendered content if available (for diff display)
                 if let Some(content) = rendered_content {
                     self.onchange_rendered
                         .lock()
                         .expect("OnChange rendered mutex poisoned")
-                        .insert(hook.name.clone(), content);
+                        .insert(hook.name.to_string(), content);
                 }
             }
         }
@@ -1129,6 +1129,7 @@ mod tests {
     #![allow(clippy::unwrap_used, clippy::panic)]
     use super::*;
     use crate::hooks::config::{Hook, HookCollections, HookMode};
+    use crate::hooks::types::HookName;
     use indexmap::IndexMap;
     use std::collections::{HashMap, HashSet};
     use std::fs;
@@ -1277,7 +1278,7 @@ mod tests {
 
     fn create_test_hook(name: &str, mode: HookMode) -> Hook {
         Hook {
-            name: name.to_string(),
+            name: HookName::new(name).unwrap(),
             order: 100,
             platforms: vec![],
             cmd: Some("echo test".to_string()),

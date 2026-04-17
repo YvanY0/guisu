@@ -18,7 +18,7 @@ name = "guisu"
 
 [dependencies]
 guisu-config = { path = "../config" }
-guisu-core = { path = "../core" }
+guisu-core = { path = "../core", features = ["anyhow"] }
 guisu-crypto = { path = "../crypto" }
 guisu-engine = { path = "../engine" }
 guisu-template = { path = "../template" }

@@ -41,25 +41,23 @@ impl IgnoreMatcher {
             .map_err(|e| crate::Error::Io(std::io::Error::other(e.to_string())))?;
         let platform = CURRENT_PLATFORM.os;
 
-        // Collect all patterns for current platform
-        let mut all_patterns = config.global.clone();
-
-        // Add platform-specific patterns
-        match platform {
-            "darwin" => all_patterns.extend(config.darwin),
-            "linux" => all_patterns.extend(config.linux),
-            "windows" => all_patterns.extend(config.windows),
-            _ => {}
-        }
+        // Collect platform-specific patterns without cloning
+        let platform_patterns: &[String] = match platform {
+            "darwin" => &config.darwin,
+            "linux" => &config.linux,
+            "windows" => &config.windows,
+            _ => &[],
+        };
 
         // Build gitignore matcher using ignore crate
         let mut builder = GitignoreBuilder::new(source_dir);
 
-        for pattern in all_patterns {
+        // Helper closure to add pattern and its directory content variant
+        let mut add_pattern = |pattern: &str| -> Result<()> {
             // add_line returns error if pattern is invalid
             // We use None for the source path (means pattern is not from a file)
             builder
-                .add_line(None, &pattern)
+                .add_line(None, pattern)
                 .map_err(|e| crate::Error::Io(std::io::Error::other(e.to_string())))?;
 
             // For patterns that might match directories, also add a pattern to match their contents
@@ -77,27 +75,49 @@ impl IgnoreMatcher {
                 !pattern.ends_with("**/")
             } else {
                 // Check if the last path component contains wildcards
-                let last_component = pattern.rsplit('/').next().unwrap_or(&pattern);
+                let last_component = pattern.rsplit('/').next().unwrap_or(pattern);
                 !last_component.contains('*') && !last_component.contains('?')
             };
 
             if needs_content_pattern {
                 // Remove trailing / if present
-                let base = pattern.strip_suffix('/').unwrap_or(&pattern);
+                let base = pattern.strip_suffix('/').unwrap_or(pattern);
 
                 // Add **/ prefix if pattern doesn't start with / (meaning it should match at any level)
+                // Pre-allocate string with exact capacity to avoid reallocation
                 let content_pattern = if base.starts_with('/') {
                     // Pattern starts with / - only matches at root
-                    format!("{base}/**")
+                    // Capacity: base.len() + 3 for "/**"
+                    let mut s = String::with_capacity(base.len() + 3);
+                    s.push_str(base);
+                    s.push_str("/**");
+                    s
                 } else {
                     // Pattern doesn't start with / - should match at any level
-                    format!("**/{base}/**")
+                    // Capacity: base.len() + 7 for "**/" prefix and "/**" suffix
+                    let mut s = String::with_capacity(base.len() + 7);
+                    s.push_str("**/");
+                    s.push_str(base);
+                    s.push_str("/**");
+                    s
                 };
 
                 builder
                     .add_line(None, &content_pattern)
                     .map_err(|e| crate::Error::Io(std::io::Error::other(e.to_string())))?;
             }
+
+            Ok(())
+        };
+
+        // Process global patterns first
+        for pattern in &config.global {
+            add_pattern(pattern)?;
+        }
+
+        // Process platform-specific patterns
+        for pattern in platform_patterns {
+            add_pattern(pattern)?;
         }
 
         let gitignore = builder

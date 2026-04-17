@@ -1095,7 +1095,7 @@ fn print_hooks_status(
                     let current_hash = guisu_engine::hash::hash_content(rendered.as_bytes());
 
                     // Compare with saved hash
-                    if let Some(saved_hash) = state.onchange_hashes.get(&hook.name) {
+                    if let Some(saved_hash) = state.onchange_hashes.get(hook.name.as_str()) {
                         if &current_hash != saved_hash {
                             has_changes = true;
                         }

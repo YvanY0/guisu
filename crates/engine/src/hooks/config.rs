@@ -7,6 +7,8 @@ use guisu_core::{Error, Result};
 use indexmap::IndexMap;
 use serde::{Deserialize, Serialize};
 
+use super::types::HookName;
+
 /// Type alias for hook environment variables
 pub type HookEnvVars = IndexMap<String, String>;
 
@@ -40,7 +42,7 @@ impl HookCollections {
 #[derive(Debug, Clone, Serialize, Deserialize, bincode::Encode, bincode::Decode)]
 pub struct Hook {
     /// Name of the hook (for logging and identification)
-    pub name: String,
+    pub name: HookName,
 
     /// Execution order (lower numbers run first)
     #[serde(default = "default_order")]
@@ -124,10 +126,7 @@ impl Hook {
         // Supported platforms
         const VALID_PLATFORMS: &[&str] = &["darwin", "linux", "windows"];
 
-        // Check name is not empty
-        if self.name.is_empty() {
-            return Err(Error::HookConfig("Hook name cannot be empty".to_string()));
-        }
+        // Note: Hook name validation happens during deserialization via HookName::deserialize
 
         // Check cmd/script exclusivity
         match (&self.cmd, &self.script) {
@@ -302,7 +301,7 @@ mod tests {
         assert!(collections.is_empty());
 
         collections.pre.push(Hook {
-            name: "test".to_string(),
+            name: HookName::new("test").unwrap(),
             order: 100,
             platforms: vec![],
             cmd: Some("echo test".to_string()),
@@ -334,7 +333,7 @@ mod tests {
 
     fn create_test_hook(name: &str) -> Hook {
         Hook {
-            name: name.to_string(),
+            name: HookName::new(name).unwrap(),
             order: 100,
             platforms: vec![],
             cmd: Some("echo test".to_string()),
@@ -350,7 +349,7 @@ mod tests {
     #[test]
     fn test_hook_get_content_cmd() {
         let hook = Hook {
-            name: "test".to_string(),
+            name: HookName::new("test").unwrap(),
             order: 100,
             platforms: vec![],
             cmd: Some("echo hello".to_string()),
@@ -368,7 +367,7 @@ mod tests {
     #[test]
     fn test_hook_get_content_script() {
         let hook = Hook {
-            name: "test".to_string(),
+            name: HookName::new("test").unwrap(),
             order: 100,
             platforms: vec![],
             cmd: None,
@@ -386,7 +385,7 @@ mod tests {
     #[test]
     fn test_hook_get_content_empty() {
         let hook = Hook {
-            name: "test".to_string(),
+            name: HookName::new("test").unwrap(),
             order: 100,
             platforms: vec![],
             cmd: None,
@@ -403,20 +402,8 @@ mod tests {
 
     #[test]
     fn test_hook_validate_empty_name() {
-        let hook = Hook {
-            name: String::new(),
-            order: 100,
-            platforms: vec![],
-            cmd: Some("echo test".to_string()),
-            script: None,
-            script_content: None,
-            env: IndexMap::new(),
-            failfast: true,
-            mode: HookMode::Always,
-            timeout: 0,
-        };
-
-        let result = hook.validate();
+        // Empty names are now rejected during HookName construction
+        let result = HookName::new("");
         assert!(result.is_err());
         assert!(
             result
@@ -429,7 +416,7 @@ mod tests {
     #[test]
     fn test_hook_validate_no_cmd_or_script() {
         let hook = Hook {
-            name: "test".to_string(),
+            name: HookName::new("test").unwrap(),
             order: 100,
             platforms: vec![],
             cmd: None,
@@ -449,7 +436,7 @@ mod tests {
     #[test]
     fn test_hook_validate_both_cmd_and_script() {
         let hook = Hook {
-            name: "test".to_string(),
+            name: HookName::new("test").unwrap(),
             order: 100,
             platforms: vec![],
             cmd: Some("echo test".to_string()),
@@ -469,7 +456,7 @@ mod tests {
     #[test]
     fn test_hook_validate_valid_cmd() {
         let hook = Hook {
-            name: "test".to_string(),
+            name: HookName::new("test").unwrap(),
             order: 100,
             platforms: vec![],
             cmd: Some("echo test".to_string()),
@@ -487,7 +474,7 @@ mod tests {
     #[test]
     fn test_hook_validate_valid_script() {
         let hook = Hook {
-            name: "test".to_string(),
+            name: HookName::new("test").unwrap(),
             order: 100,
             platforms: vec![],
             cmd: None,
@@ -505,7 +492,7 @@ mod tests {
     #[test]
     fn test_hook_validate_empty_cmd() {
         let hook = Hook {
-            name: "test".to_string(),
+            name: HookName::new("test").unwrap(),
             order: 100,
             platforms: vec![],
             cmd: Some("   ".to_string()),
@@ -530,7 +517,7 @@ mod tests {
     #[test]
     fn test_hook_validate_empty_script() {
         let hook = Hook {
-            name: "test".to_string(),
+            name: HookName::new("test").unwrap(),
             order: 100,
             platforms: vec![],
             cmd: None,
@@ -558,7 +545,7 @@ mod tests {
         env.insert(String::new(), "value".to_string());
 
         let hook = Hook {
-            name: "test".to_string(),
+            name: HookName::new("test").unwrap(),
             order: 100,
             platforms: vec![],
             cmd: Some("echo test".to_string()),
@@ -586,7 +573,7 @@ mod tests {
         env.insert("123VAR".to_string(), "value".to_string());
 
         let hook = Hook {
-            name: "test".to_string(),
+            name: HookName::new("test").unwrap(),
             order: 100,
             platforms: vec![],
             cmd: Some("echo test".to_string()),
@@ -614,7 +601,7 @@ mod tests {
         env.insert("VAR-NAME".to_string(), "value".to_string());
 
         let hook = Hook {
-            name: "test".to_string(),
+            name: HookName::new("test").unwrap(),
             order: 100,
             platforms: vec![],
             cmd: Some("echo test".to_string()),
@@ -645,7 +632,7 @@ mod tests {
         env.insert("VAR123".to_string(), "value".to_string());
 
         let hook = Hook {
-            name: "test".to_string(),
+            name: HookName::new("test").unwrap(),
             order: 100,
             platforms: vec![],
             cmd: Some("echo test".to_string()),
@@ -737,7 +724,7 @@ mod tests {
     #[test]
     fn test_hook_serialization_toml() {
         let hook = Hook {
-            name: "test".to_string(),
+            name: HookName::new("test").unwrap(),
             order: 100,
             platforms: vec!["darwin".to_string()],
             cmd: Some("echo test".to_string()),
@@ -770,7 +757,7 @@ mode = "once"
 "#;
 
         let hook: Hook = toml::from_str(toml).unwrap();
-        assert_eq!(hook.name, "test");
+        assert_eq!(hook.name.as_str(), "test");
         assert_eq!(hook.cmd, Some("echo hello".to_string()));
         assert_eq!(hook.mode, HookMode::Once);
         assert_eq!(hook.order, 100); // default
@@ -805,14 +792,14 @@ cmd = "echo post"
         let collections: HookCollections = toml::from_str(toml).unwrap();
         assert_eq!(collections.pre.len(), 1);
         assert_eq!(collections.post.len(), 1);
-        assert_eq!(collections.pre[0].name, "pre-hook");
-        assert_eq!(collections.post[0].name, "post-hook");
+        assert_eq!(collections.pre[0].name.as_str(), "pre-hook");
+        assert_eq!(collections.post[0].name.as_str(), "post-hook");
     }
 
     #[test]
     fn test_hook_with_script_content() {
         let hook = Hook {
-            name: "test".to_string(),
+            name: HookName::new("test").unwrap(),
             order: 100,
             platforms: vec![],
             cmd: None,
@@ -842,7 +829,7 @@ cmd = "echo post"
         env.insert("_ANOTHER".to_string(), "value2".to_string());
 
         let hook = Hook {
-            name: "complex-hook".to_string(),
+            name: HookName::new("test").unwrap(),
             order: 50,
             platforms: vec!["darwin".to_string(), "linux".to_string()],
             cmd: Some("echo 'complex command'".to_string()),
@@ -878,7 +865,7 @@ cmd = "echo post"
         let original = create_test_hook("test");
         let cloned = original.clone();
 
-        assert_eq!(original.name, cloned.name);
+        assert_eq!(original.name.as_str(), cloned.name.as_str());
         assert_eq!(original.order, cloned.order);
         assert_eq!(original.cmd, cloned.cmd);
         assert_eq!(original.mode, cloned.mode);
@@ -891,6 +878,6 @@ cmd = "echo post"
 
         let cloned = original.clone();
         assert_eq!(original.pre.len(), cloned.pre.len());
-        assert_eq!(original.pre[0].name, cloned.pre[0].name);
+        assert_eq!(original.pre[0].name.as_str(), cloned.pre[0].name.as_str());
     }
 }

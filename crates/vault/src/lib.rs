@@ -5,54 +5,11 @@
 
 use indexmap::IndexMap;
 use serde_json::Value as JsonValue;
-use thiserror::Error;
+// Re-export guisu_core types for use in this crate and by consumers
+pub use guisu_core::Error;
 
 /// Result type for vault operations
-pub type Result<T> = std::result::Result<T, Error>;
-
-/// Error types for secret providers
-#[derive(Error, Debug)]
-pub enum Error {
-    /// Secret provider is not available or not installed
-    #[error("Provider not available: {0}")]
-    ProviderNotAvailable(String),
-
-    /// Authentication is required to access the vault
-    #[error("Authentication required: {0}")]
-    AuthenticationRequired(String),
-
-    /// The requested secret was not found in the vault
-    #[error("Secret not found: {0}")]
-    SecretNotFound(String),
-
-    /// Invalid arguments provided to the provider
-    #[error("Invalid arguments: {0}")]
-    InvalidArguments(String),
-
-    /// Command execution failed
-    #[error("Command execution failed: {0}")]
-    ExecutionFailed(String),
-
-    /// Failed to parse provider response
-    #[error("Failed to parse response: {0}")]
-    ParseError(String),
-
-    /// User cancelled the operation
-    #[error("User cancelled operation")]
-    Cancelled,
-
-    /// IO error occurred
-    #[error("IO error: {0}")]
-    Io(#[from] std::io::Error),
-
-    /// JSON parsing error
-    #[error("JSON error: {0}")]
-    Json(#[from] serde_json::Error),
-
-    /// Other error
-    #[error("{0}")]
-    Other(String),
-}
+pub type Result<T> = guisu_core::Result<T>;
 
 // Bitwarden Vault (personal/team passwords)
 // Provides BwCli and RbwCli
@@ -196,55 +153,61 @@ mod tests {
 
     #[test]
     fn test_error_provider_not_available() {
-        let err = Error::ProviderNotAvailable("test".to_string());
+        let err = Error::VaultProviderNotAvailable("test".to_string());
         assert_eq!(err.to_string(), "Provider not available: test");
     }
 
     #[test]
     fn test_error_authentication_required() {
-        let err = Error::AuthenticationRequired("login needed".to_string());
+        let err = Error::VaultAuthenticationRequired("login needed".to_string());
         assert_eq!(err.to_string(), "Authentication required: login needed");
     }
 
     #[test]
     fn test_error_secret_not_found() {
-        let err = Error::SecretNotFound("my-secret".to_string());
+        let err = Error::VaultSecretNotFound("my-secret".to_string());
         assert_eq!(err.to_string(), "Secret not found: my-secret");
     }
 
     #[test]
     fn test_error_invalid_arguments() {
-        let err = Error::InvalidArguments("bad args".to_string());
-        assert_eq!(err.to_string(), "Invalid arguments: bad args");
+        let err = Error::VaultInvalidArguments("bad args".to_string());
+        assert_eq!(err.to_string(), "Invalid vault arguments: bad args");
     }
 
     #[test]
     fn test_error_execution_failed() {
-        let err = Error::ExecutionFailed("command failed".to_string());
-        assert_eq!(err.to_string(), "Command execution failed: command failed");
+        let err = Error::VaultExecutionFailed("command failed".to_string());
+        assert_eq!(
+            err.to_string(),
+            "Vault command execution failed: command failed"
+        );
     }
 
     #[test]
     fn test_error_parse_error() {
-        let err = Error::ParseError("invalid json".to_string());
-        assert_eq!(err.to_string(), "Failed to parse response: invalid json");
+        let err = Error::VaultParseError("invalid json".to_string());
+        assert_eq!(
+            err.to_string(),
+            "Failed to parse vault response: invalid json"
+        );
     }
 
     #[test]
     fn test_error_cancelled() {
-        let err = Error::Cancelled;
-        assert_eq!(err.to_string(), "User cancelled operation");
+        let err = Error::VaultCancelled;
+        assert_eq!(err.to_string(), "User cancelled vault operation");
     }
 
     #[test]
     fn test_error_other() {
-        let err = Error::Other("custom error".to_string());
+        let err = Error::Message("custom error".to_string());
         assert_eq!(err.to_string(), "custom error");
     }
 
     #[test]
     fn test_error_debug() {
-        let err = Error::SecretNotFound("test".to_string());
+        let err = Error::VaultSecretNotFound("test".to_string());
         let debug = format!("{err:?}");
         assert!(debug.contains("SecretNotFound"));
     }

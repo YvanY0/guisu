@@ -3,6 +3,7 @@
 //! Loads hook definitions from the .guisu/hooks directory structure.
 
 use super::config::{Hook, HookCollections, HookMode};
+use super::types::HookName;
 use guisu_core::{Error, Result};
 use indexmap::IndexMap;
 use std::fs;
@@ -140,7 +141,7 @@ impl HookLoader {
 
                     // File is executable - create hook
                     let hook = Hook {
-                        name: file_name.to_string(),
+                        name: HookName::new(file_name.to_string())?,
                         order: base_order,
                         platforms: vec![],
                         cmd: Some(path.to_string_lossy().to_string()),
@@ -381,7 +382,7 @@ cmd = "echo test"
         let result = loader.load().unwrap();
 
         assert_eq!(result.pre.len(), 1);
-        assert_eq!(result.pre[0].name, "test-hook");
+        assert_eq!(result.pre[0].name.as_str(), "test-hook");
         assert_eq!(result.pre[0].cmd, Some("echo test".to_string()));
     }
 
@@ -408,8 +409,8 @@ cmd = "echo test"
         let result = loader.load().unwrap();
 
         assert_eq!(result.post.len(), 2);
-        assert_eq!(result.post[0].name, "hook1");
-        assert_eq!(result.post[1].name, "hook2");
+        assert_eq!(result.post[0].name.as_str(), "hook1");
+        assert_eq!(result.post[1].name.as_str(), "hook2");
     }
 
     #[test]
@@ -438,7 +439,7 @@ cmd = "echo test"
 
         // Should only load the visible file
         assert_eq!(result.pre.len(), 1);
-        assert_eq!(result.pre[0].name, "visible");
+        assert_eq!(result.pre[0].name.as_str(), "visible");
     }
 
     #[test]
@@ -460,7 +461,7 @@ cmd = "echo test"
 
         // Should only load the normal file
         assert_eq!(result.pre.len(), 1);
-        assert_eq!(result.pre[0].name, "normal");
+        assert_eq!(result.pre[0].name.as_str(), "normal");
     }
 
     #[test]
@@ -489,8 +490,8 @@ cmd = "echo test"
 
         assert_eq!(result.pre.len(), 1);
         assert_eq!(result.post.len(), 1);
-        assert_eq!(result.pre[0].name, "pre");
-        assert_eq!(result.post[0].name, "post");
+        assert_eq!(result.pre[0].name.as_str(), "pre");
+        assert_eq!(result.post[0].name.as_str(), "post");
     }
 
     #[test]
@@ -522,9 +523,9 @@ cmd = "echo test"
 
         assert_eq!(result.pre.len(), 3);
         // Should be sorted by filename
-        assert_eq!(result.pre[0].name, "first");
-        assert_eq!(result.pre[1].name, "second");
-        assert_eq!(result.pre[2].name, "third");
+        assert_eq!(result.pre[0].name.as_str(), "first");
+        assert_eq!(result.pre[1].name.as_str(), "second");
+        assert_eq!(result.pre[2].name.as_str(), "third");
     }
 
     #[test]
@@ -719,7 +720,7 @@ script = "script.sh"
         let result = loader.load().unwrap();
 
         assert_eq!(result.pre.len(), 1);
-        assert_eq!(result.pre[0].name, "executable.sh");
+        assert_eq!(result.pre[0].name.as_str(), "executable.sh");
         assert!(result.pre[0].cmd.is_some());
     }
 

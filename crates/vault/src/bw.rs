@@ -124,21 +124,23 @@ impl BwCli {
             if let Some(code) = output.status.code()
                 && code == 1
             {
-                return Err(Error::Cancelled);
+                return Err(Error::VaultCancelled);
             }
 
             let stderr = String::from_utf8_lossy(&output.stderr);
             if stderr.is_empty() {
-                return Err(Error::AuthenticationRequired(
+                return Err(Error::VaultAuthenticationRequired(
                     "Failed to unlock. Wrong password?".to_string(),
                 ));
             }
-            return Err(Error::AuthenticationRequired(stderr.trim().to_string()));
+            return Err(Error::VaultAuthenticationRequired(
+                stderr.trim().to_string(),
+            ));
         }
 
         let session_key = String::from_utf8_lossy(&output.stdout).trim().to_string();
         if session_key.is_empty() {
-            return Err(Error::AuthenticationRequired(
+            return Err(Error::VaultAuthenticationRequired(
                 "Failed to get session key".to_string(),
             ));
         }
@@ -179,7 +181,7 @@ impl BwCli {
         let stderr = String::from_utf8_lossy(&output.stderr);
 
         if !output.status.success() {
-            return Err(Error::ExecutionFailed(format!(
+            return Err(Error::VaultExecutionFailed(format!(
                 "Command failed: {}",
                 if stderr.trim().is_empty() {
                     "Unknown error"
@@ -194,10 +196,10 @@ impl BwCli {
 
     fn parse_json(stdout: &str) -> Result<JsonValue> {
         if stdout.trim().is_empty() {
-            return Err(Error::ParseError("Empty output".to_string()));
+            return Err(Error::VaultParseError("Empty output".to_string()));
         }
 
-        serde_json::from_str(stdout).map_err(|e| Error::ParseError(e.to_string()))
+        serde_json::from_str(stdout).map_err(|e| Error::VaultParseError(e.to_string()))
     }
 }
 
@@ -214,7 +216,7 @@ impl SecretProvider for BwCli {
 
     fn execute(&self, args: &[&str]) -> Result<JsonValue> {
         if args.is_empty() {
-            return Err(Error::InvalidArguments(
+            return Err(Error::VaultInvalidArguments(
                 "At least one argument required".to_string(),
             ));
         }
@@ -367,14 +369,14 @@ impl RbwCli {
         if !output.status.success() {
             // Check for common error cases
             if stderr.contains("not found") || stderr.contains("no entry") {
-                return Err(Error::SecretNotFound(format!(
+                return Err(Error::VaultSecretNotFound(format!(
                     "Entry not found: {}",
                     stderr.trim()
                 )));
             }
 
             // Return rbw's original error message for all other cases
-            return Err(Error::ExecutionFailed(format!(
+            return Err(Error::VaultExecutionFailed(format!(
                 "rbw error: {}",
                 stderr.trim()
             )));
@@ -390,11 +392,11 @@ impl RbwCli {
     /// code can treat rbw output the same as bw output.
     fn parse_and_transform(stdout: &str) -> Result<JsonValue> {
         if stdout.trim().is_empty() {
-            return Err(Error::ParseError("Empty output from rbw".to_string()));
+            return Err(Error::VaultParseError("Empty output from rbw".to_string()));
         }
 
         let mut json: JsonValue = serde_json::from_str(stdout)
-            .map_err(|e| Error::ParseError(format!("Failed to parse rbw JSON: {e}")))?;
+            .map_err(|e| Error::VaultParseError(format!("Failed to parse rbw JSON: {e}")))?;
 
         // Transform rbw format to bw-compatible format internally
         Self::transform_to_bw_format(&mut json);
@@ -416,7 +418,7 @@ impl SecretProvider for RbwCli {
 
     fn execute(&self, args: &[&str]) -> Result<JsonValue> {
         if args.is_empty() {
-            return Err(Error::InvalidArguments(
+            return Err(Error::VaultInvalidArguments(
                 "At least one argument required".to_string(),
             ));
         }
@@ -483,7 +485,7 @@ impl guisu_core::VaultProvider for BwCli {
             .and_then(|v| {
                 v.as_str()
                     .map(std::string::ToString::to_string)
-                    .ok_or(Error::ParseError("Expected string value".to_string()))
+                    .ok_or(Error::VaultParseError("Expected string value".to_string()))
             })
             .map_err(|e| guisu_core::Error::Message(e.to_string()))
     }
@@ -512,7 +514,7 @@ impl guisu_core::VaultProvider for RbwCli {
             .and_then(|v| {
                 v.as_str()
                     .map(std::string::ToString::to_string)
-                    .ok_or(Error::ParseError("Expected string value".to_string()))
+                    .ok_or(Error::VaultParseError("Expected string value".to_string()))
             })
             .map_err(|e| guisu_core::Error::Message(e.to_string()))
     }

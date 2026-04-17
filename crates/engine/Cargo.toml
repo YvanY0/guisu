@@ -51,5 +51,9 @@ tempfile.workspace = true
 name = "state_benchmarks"
 harness = false
 
+[[bench]]
+name = "database_operations"
+harness = false
+
 [lints]
 workspace = true

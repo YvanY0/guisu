@@ -21,9 +21,11 @@ pub mod config;
 pub mod executor;
 pub mod loader;
 pub mod state;
+pub mod types;
 
 // Re-export main types for convenience
 pub use config::{Hook, HookCollections, HookMode, HookStage};
 pub use executor::{HookRunner, HookRunnerBuilder, NoOpRenderer, TemplateRenderer};
 pub use loader::HookLoader;
 pub use state::HookConfigState;
+pub use types::{HookName, HookScript, PlatformName};

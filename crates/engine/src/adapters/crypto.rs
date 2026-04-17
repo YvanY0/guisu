@@ -1,17 +1,9 @@
 //! Crypto adapter that implements the Decryptor trait from engine
 
 use crate::content::Decryptor;
+use guisu_core::{Error, Result};
 use guisu_crypto::Identity;
 use std::sync::Arc;
-use thiserror::Error;
-
-/// Error type for crypto adapter
-#[derive(Error, Debug)]
-pub enum CryptoError {
-    /// Cryptography error from `guisu_crypto`
-    #[error(transparent)]
-    Crypto(#[from] guisu_crypto::Error),
-}
 
 /// Adapter that wraps crypto functions to implement `engine::content::Decryptor`
 pub struct CryptoDecryptorAdapter {
@@ -39,14 +31,14 @@ impl CryptoDecryptorAdapter {
 }
 
 impl Decryptor for CryptoDecryptorAdapter {
-    type Error = CryptoError;
+    type Error = Error;
 
-    fn decrypt(&self, encrypted: &[u8]) -> Result<Vec<u8>, Self::Error> {
-        guisu_crypto::decrypt(encrypted, &[self.identity.as_ref().clone()]).map_err(Into::into)
+    fn decrypt(&self, encrypted: &[u8]) -> Result<Vec<u8>> {
+        guisu_crypto::decrypt(encrypted, &[self.identity.as_ref().clone()])
     }
 
-    fn decrypt_inline(&self, text: &str) -> Result<String, Self::Error> {
-        guisu_crypto::decrypt_inline(text, &[self.identity.as_ref().clone()]).map_err(Into::into)
+    fn decrypt_inline(&self, text: &str) -> Result<String> {
+        guisu_crypto::decrypt_inline(text, &[self.identity.as_ref().clone()])
     }
 }
 
@@ -192,11 +184,6 @@ mod tests {
         // Trigger an error and verify it converts correctly
         let result = adapter.decrypt(b"invalid");
 
-        match result {
-            Err(CryptoError::Crypto(_)) => {
-                // Expected error type
-            }
-            _ => panic!("Expected CryptoError::Crypto variant"),
-        }
+        assert!(result.is_err(), "Expected decryption error");
     }
 }

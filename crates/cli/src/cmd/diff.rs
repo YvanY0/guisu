@@ -1306,7 +1306,7 @@ pub fn compare_and_print_hooks(
                 let current_hash = guisu_engine::hash::hash_content(rendered.as_bytes());
 
                 // Compare with saved hash
-                if let Some(saved_hash) = onchange_hashes.get(&hook.name) {
+                if let Some(saved_hash) = onchange_hashes.get(hook.name.as_str()) {
                     if current_hash != *saved_hash {
                         has_changes = true;
                     }
@@ -1335,7 +1335,7 @@ pub fn compare_and_print_hooks(
                             render_script_content(source_dir, script, content, config);
 
                         // Get old rendered content from state
-                        if let Some(old_rendered) = onchange_rendered.get(&hook.name) {
+                        if let Some(old_rendered) = onchange_rendered.get(hook.name.as_str()) {
                             // Generate unified diff
                             let display_script = display_script_name(script);
                             let diff = generate_unified_diff(

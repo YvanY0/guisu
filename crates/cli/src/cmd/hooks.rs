@@ -61,8 +61,8 @@ pub fn run_hooks(
 
     // Filter hooks if a specific hook name is provided
     if let Some(filter_name) = hook_filter {
-        collections.pre.retain(|h| h.name == filter_name);
-        collections.post.retain(|h| h.name == filter_name);
+        collections.pre.retain(|h| h.name.as_str() == filter_name);
+        collections.post.retain(|h| h.name.as_str() == filter_name);
 
         if collections.is_empty() {
             println!("{}", format!("Hook '{filter_name}' not found.").yellow());
@@ -328,7 +328,7 @@ pub fn run_show(source_dir: &Path, config: &Config, hook_name: &str) -> Result<(
         .pre
         .iter()
         .chain(collections.post.iter())
-        .find(|h| h.name == hook_name);
+        .find(|h| h.name.as_str() == hook_name);
 
     if let Some(hook) = hook {
         let stage = determine_hook_stage(&collections, hook_name);
@@ -364,7 +364,7 @@ fn determine_hook_stage(
     collections: &guisu_engine::hooks::HookCollections,
     hook_name: &str,
 ) -> &'static str {
-    if collections.pre.iter().any(|h| h.name == hook_name) {
+    if collections.pre.iter().any(|h| h.name.as_str() == hook_name) {
         "pre"
     } else {
         "post"
@@ -539,7 +539,7 @@ pub fn handle_hooks_pre(
             // Note: OnChange mode requires template rendering, which is done in the executor
             // We skip the pre-check here and let the executor handle it
             match h.mode {
-                HookMode::Once => !state.once_executed.contains(&h.name),
+                HookMode::Once => !state.once_executed.contains(h.name.as_str()),
                 HookMode::Always | HookMode::OnChange => true, // Let executor decide after rendering templates
             }
         })
@@ -629,7 +629,7 @@ pub fn handle_hooks_post(
             // Note: OnChange mode requires template rendering, which is done in the executor
             // We skip the pre-check here and let the executor handle it
             match h.mode {
-                HookMode::Once => !state.once_executed.contains(&h.name),
+                HookMode::Once => !state.once_executed.contains(h.name.as_str()),
                 HookMode::Always | HookMode::OnChange => true, // Let executor decide after rendering templates
             }
         })
