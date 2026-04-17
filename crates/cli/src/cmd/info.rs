@@ -239,8 +239,7 @@ fn get_git_info(source_dir: &Path, all: bool) -> GitInfo {
                 opts.include_untracked(true);
                 opts.include_ignored(false);
                 repo.statuses(Some(&mut opts))
-                    .map(|statuses| !statuses.is_empty())
-                    .unwrap_or(false)
+                    .is_ok_and(|statuses| !statuses.is_empty())
             } else {
                 false
             };

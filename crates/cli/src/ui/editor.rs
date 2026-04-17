@@ -199,8 +199,7 @@ fn get_editor() -> String {
         if Command::new("which")
             .arg("nano")
             .output()
-            .map(|o| o.status.success())
-            .unwrap_or(false)
+            .is_ok_and(|o| o.status.success())
         {
             "nano".to_string()
         } else {

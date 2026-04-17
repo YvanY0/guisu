@@ -400,9 +400,8 @@ impl InteractiveDiffViewer {
                                 .add_modifier(Modifier::BOLD),
                         )]),
                         DiffLine::Add { line_num, content } => {
-                            let num_str = line_num
-                                .map(|n| format!("{n:4} "))
-                                .unwrap_or_else(|| "     ".to_string());
+                            let num_str =
+                                line_num.map_or_else(|| "     ".to_string(), |n| format!("{n:4} "));
                             Line::from(vec![
                                 Span::styled(num_str, Style::default().fg(Color::DarkGray)),
                                 Span::styled(
@@ -415,9 +414,8 @@ impl InteractiveDiffViewer {
                             ])
                         }
                         DiffLine::Remove { line_num, content } => {
-                            let num_str = line_num
-                                .map(|n| format!("{n:4} "))
-                                .unwrap_or_else(|| "     ".to_string());
+                            let num_str =
+                                line_num.map_or_else(|| "     ".to_string(), |n| format!("{n:4} "));
                             Line::from(vec![
                                 Span::styled(num_str, Style::default().fg(Color::DarkGray)),
                                 Span::styled(
@@ -428,9 +426,8 @@ impl InteractiveDiffViewer {
                             ])
                         }
                         DiffLine::Context { line_num, content } => {
-                            let num_str = line_num
-                                .map(|n| format!("{n:4} "))
-                                .unwrap_or_else(|| "     ".to_string());
+                            let num_str =
+                                line_num.map_or_else(|| "     ".to_string(), |n| format!("{n:4} "));
                             Line::from(vec![
                                 Span::styled(num_str, Style::default().fg(Color::DarkGray)),
                                 Span::raw(" "),

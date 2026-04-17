@@ -38,16 +38,16 @@ repos:
       - id: taplo-lint
         args: ["--no-schema"]
   - repo: https://github.com/gitleaks/gitleaks
-    rev: v8.29.0
+    rev: v8.30.1
     hooks:
       - id: gitleaks
   - repo: https://github.com/adhtruong/mirrors-typos
-    rev: v1.39.0
+    rev: v1.45.1
     hooks:
       - id: typos
         args: ["--force-exclude"]
   - repo: https://github.com/alessandrojcm/commitlint-pre-commit-hook
-    rev: v9.23.0
+    rev: v9.24.0
     hooks:
       - id: commitlint
         additional_dependencies: ["@commitlint/config-conventional"]

@@ -17,9 +17,7 @@ static HOME_DIR_CACHE: OnceLock<String> = OnceLock::new();
 ///
 /// Usage: `{{ env("PATH") }}`
 pub fn env(name: &str) -> std::borrow::Cow<'static, str> {
-    env::var(name)
-        .map(std::borrow::Cow::Owned)
-        .unwrap_or(std::borrow::Cow::Borrowed(""))
+    env::var(name).map_or(std::borrow::Cow::Borrowed(""), std::borrow::Cow::Owned)
 }
 
 /// Get the operating system name

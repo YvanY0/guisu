@@ -922,15 +922,14 @@ fn extract_variables(value: &serde_json::Value, prefix: &str) -> Vec<TemplateVar
                 variables.extend(extract_variables(val, &path));
             }
         }
-        serde_json::Value::String(s) => {
+        serde_json::Value::String(s)
             // Direct string value
-            if !prefix.is_empty() {
+            if !prefix.is_empty() => {
                 variables.push(TemplateVariable {
                     path: prefix.to_string(),
                     value: s.clone(),
                 });
             }
-        }
         _ => {
             // Ignore other types (numbers, booleans, arrays, null)
         }

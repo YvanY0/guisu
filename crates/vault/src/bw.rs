@@ -228,8 +228,7 @@ impl SecretProvider for BwCli {
         Command::new("bw")
             .arg("--version")
             .output()
-            .map(|o| o.status.success())
-            .unwrap_or(false)
+            .is_ok_and(|o| o.status.success())
     }
 
     fn help(&self) -> &'static str {
@@ -433,8 +432,7 @@ impl SecretProvider for RbwCli {
             .stdout(Stdio::null())
             .stderr(Stdio::null())
             .status()
-            .map(|s| s.success())
-            .unwrap_or(false)
+            .is_ok_and(|s| s.success())
     }
 
     fn help(&self) -> &'static str {
