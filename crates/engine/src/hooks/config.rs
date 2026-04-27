@@ -13,7 +13,7 @@ use super::types::HookName;
 pub type HookEnvVars = IndexMap<String, String>;
 
 /// Collections of hooks for different stages
-#[derive(Debug, Clone, Default, Serialize, Deserialize, bincode::Encode, bincode::Decode)]
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub struct HookCollections {
     /// Hooks to run before applying dotfiles
     #[serde(default)]
@@ -39,7 +39,7 @@ impl HookCollections {
 }
 
 /// A single hook definition
-#[derive(Debug, Clone, Serialize, Deserialize, bincode::Encode, bincode::Decode)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Hook {
     /// Name of the hook (for logging and identification)
     pub name: HookName,
@@ -66,7 +66,6 @@ pub struct Hook {
 
     /// Environment variables to set
     #[serde(default)]
-    #[bincode(with_serde)]
     pub env: HookEnvVars,
 
     /// Fail fast on error (default: true)
@@ -240,18 +239,7 @@ impl HookStage {
 ///
 /// Controls when a hook should be executed based on its execution history
 /// and content changes.
-#[derive(
-    Debug,
-    Clone,
-    Copy,
-    PartialEq,
-    Eq,
-    Serialize,
-    Deserialize,
-    Default,
-    bincode::Encode,
-    bincode::Decode,
-)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
 #[serde(rename_all = "lowercase")]
 pub enum HookMode {
     /// Always run the hook (default behavior)

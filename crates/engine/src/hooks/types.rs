@@ -15,7 +15,7 @@ use std::fmt;
 /// - Identification in logs and error messages
 /// - Tracking execution in persistent state (for mode=once)
 /// - Display in status output
-#[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, bincode::Encode, bincode::Decode)]
+#[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize)]
 #[serde(transparent)]
 pub struct HookName(String);
 
@@ -81,18 +81,7 @@ impl Borrow<str> for HookName {
 ///
 /// Platform names must be one of the supported platforms: darwin, linux, windows.
 /// This ensures compile-time prevention of typos in platform names.
-#[derive(
-    Debug,
-    Clone,
-    Copy,
-    PartialEq,
-    Eq,
-    Hash,
-    Serialize,
-    Deserialize,
-    bincode::Encode,
-    bincode::Decode,
-)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
 pub enum PlatformName {
     /// macOS platform
@@ -160,7 +149,7 @@ impl AsRef<str> for PlatformName {
 /// - A direct command string (from `cmd` field)
 /// - A script file path (from `script` field)
 /// - Loaded script content (from reading the script file)
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, bincode::Encode, bincode::Decode)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(transparent)]
 pub struct HookScript(String);
 

@@ -53,11 +53,10 @@ mod systemtime_serde {
 }
 
 /// State tracking for hook execution
-#[derive(Debug, Clone, Serialize, Deserialize, bincode::Encode, bincode::Decode)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct HookState {
     /// Last time hooks were executed
     #[serde(with = "systemtime_serde")]
-    #[bincode(with_serde)]
     pub last_executed: Option<std::time::SystemTime>,
     /// blake3 hash of the hooks directory content (fixed 32-byte array)
     pub content_hash: Option<[u8; 32]>,
@@ -243,22 +242,20 @@ impl HookState {
         Ok(*hasher.finalize().as_bytes())
     }
 
-    /// Serialize to bytes for database storage using bincode
+    /// Serialize to bytes for database storage
     ///
     /// # Errors
     ///
     /// Returns an error if serialization fails (e.g., encoding error)
     pub fn to_bytes(&self) -> Result<Vec<u8>> {
-        bincode::encode_to_vec(self, bincode::config::standard())
+        postcard::to_allocvec(self)
             .map_err(|e| Error::State(format!("Failed to serialize HookState: {e}")))
     }
 
-    /// Deserialize from bytes using bincode
+    /// Deserialize from bytes
     #[must_use]
     pub fn from_bytes(bytes: &[u8]) -> Option<Self> {
-        bincode::decode_from_slice(bytes, bincode::config::standard())
-            .ok()
-            .map(|(state, _len)| state)
+        postcard::from_bytes(bytes).ok()
     }
 }
 
@@ -293,10 +290,10 @@ impl<'a, T: PersistentState> HookStatePersistence<'a, T> {
 
         match self.db.get(HOOK_STATE_BUCKET, HOOK_STATE_KEY)? {
             Some(bytes) => {
-                // Try to deserialize, but if it fails (e.g., schema changed), return new state
-                // This allows graceful migration when adding new fields
+                // Try to deserialize, but if it fails (e.g., bincode→postcard migration), reset state
                 Ok(HookState::from_bytes(&bytes).unwrap_or_else(|| {
                     tracing::warn!("Failed to deserialize hook state (possibly due to schema change), creating new state");
+                    let _ = self.db.delete(HOOK_STATE_BUCKET, HOOK_STATE_KEY);
                     HookState::new()
                 }))
             }
@@ -805,7 +802,7 @@ pub fn hash_data(data: &[u8]) -> [u8; 32] {
 }
 
 /// Entry state - tracks file state
-#[derive(Debug, Clone, PartialEq, Eq, bincode::Encode, bincode::Decode)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct EntryState {
     /// blake3 hash of the file content (fixed 32-byte array)
     pub content_hash: [u8; 32],
@@ -823,27 +820,25 @@ impl EntryState {
         }
     }
 
-    /// Serialize to bytes using bincode
+    /// Serialize to bytes
     ///
     /// # Errors
     ///
     /// Returns an error if serialization fails (e.g., encoding error)
     pub fn to_bytes(&self) -> Result<Vec<u8>> {
-        bincode::encode_to_vec(self, bincode::config::standard())
+        postcard::to_allocvec(self)
             .map_err(|e| Error::State(format!("Failed to serialize EntryState: {e}")))
     }
 
-    /// Deserialize from bytes using bincode
+    /// Deserialize from bytes
     #[must_use]
     pub fn from_bytes(bytes: &[u8]) -> Option<Self> {
-        bincode::decode_from_slice(bytes, bincode::config::standard())
-            .ok()
-            .map(|(state, _len)| state)
+        postcard::from_bytes(bytes).ok()
     }
 }
 
 /// Script state - tracks script execution
-#[derive(Debug, Clone, PartialEq, Eq, bincode::Encode, bincode::Decode)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct ScriptState {
     /// blake3 hash of the script content (fixed 32-byte array)
     pub content_hash: [u8; 32],
@@ -858,22 +853,20 @@ impl ScriptState {
         }
     }
 
-    /// Serialize to bytes using bincode
+    /// Serialize to bytes
     ///
     /// # Errors
     ///
     /// Returns an error if serialization fails (e.g., encoding error)
     pub fn to_bytes(&self) -> Result<Vec<u8>> {
-        bincode::encode_to_vec(self, bincode::config::standard())
+        postcard::to_allocvec(self)
             .map_err(|e| Error::State(format!("Failed to serialize ScriptState: {e}")))
     }
 
-    /// Deserialize from bytes using bincode
+    /// Deserialize from bytes
     #[must_use]
     pub fn from_bytes(bytes: &[u8]) -> Option<Self> {
-        bincode::decode_from_slice(bytes, bincode::config::standard())
-            .ok()
-            .map(|(state, _len)| state)
+        postcard::from_bytes(bytes).ok()
     }
 }
 
@@ -881,7 +874,7 @@ impl ScriptState {
 ///
 /// Stores the rendered configuration file content along with a hash of the template source.
 /// This enables caching: if the template hasn't changed, we can use the cached rendered config.
-#[derive(Debug, Clone, PartialEq, Eq, bincode::Encode, bincode::Decode)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct ConfigMetadata {
     /// blake3 hash of the config template source file (fixed 32-byte array)
     /// Used to detect changes in .guisu.toml.j2
@@ -901,22 +894,20 @@ impl ConfigMetadata {
         }
     }
 
-    /// Serialize to bytes using bincode
+    /// Serialize to bytes
     ///
     /// # Errors
     ///
     /// Returns an error if serialization fails (e.g., encoding error)
     pub fn to_bytes(&self) -> Result<Vec<u8>> {
-        bincode::encode_to_vec(self, bincode::config::standard())
+        postcard::to_allocvec(self)
             .map_err(|e| Error::State(format!("Failed to serialize ConfigMetadata: {e}")))
     }
 
-    /// Deserialize from bytes using bincode
+    /// Deserialize from bytes
     #[must_use]
-    pub fn from_bytes(bytes: &[u8]) -> Option<Self> {
-        bincode::decode_from_slice(bytes, bincode::config::standard())
-            .ok()
-            .map(|(metadata, _len)| metadata)
+    pub fn from_bytes(bytes: &[u8]) -> Option<ConfigMetadata> {
+        postcard::from_bytes(bytes).ok()
     }
 
     /// Check if template source matches stored hash (for cache validation)
@@ -1455,74 +1446,5 @@ impl TargetState {
 impl Default for TargetState {
     fn default() -> Self {
         Self::new()
-    }
-}
-
-#[cfg(test)]
-#[allow(
-    clippy::unwrap_used,
-    clippy::cast_possible_truncation,
-    clippy::cast_possible_wrap
-)]
-mod bincode_compat_verification {
-    use super::*;
-
-    #[derive(Debug, bincode::Encode, bincode::Decode)]
-    struct OldEntryState {
-        content_hash: Vec<u8>,
-        mode: Option<u32>,
-    }
-
-    #[test]
-    fn verify_vec_to_array_breaks_compatibility() {
-        // Simulate old EntryState in database (using Vec<u8>)
-        let old = OldEntryState {
-            content_hash: vec![0xAB; 32],
-            mode: Some(0o644),
-        };
-
-        let old_bytes =
-            bincode::encode_to_vec(&old, bincode::config::standard()).expect("Failed to encode");
-        println!("\n=== Bincode Compatibility Test ===");
-        println!("Old format Vec<u8>(len=32): {} bytes", old_bytes.len());
-
-        // Try to read old data with new EntryState ([u8; 32])
-        let result = EntryState::from_bytes(&old_bytes);
-
-        if result.is_some() {
-            println!("Warning: Successfully read! This should not happen!");
-            panic!("Vec<u8> and [u8; 32] should be incompatible!");
-        } else {
-            println!("Confirmed: Vec<u8> -> [u8; 32] is a breaking change");
-            println!("   Old database will not be readable!");
-        }
-    }
-
-    #[test]
-    fn compare_serialization_sizes() {
-        // Vec<u8> format (old)
-        let old = OldEntryState {
-            content_hash: vec![0x12; 32],
-            mode: Some(0o644),
-        };
-        let old_bytes =
-            bincode::encode_to_vec(&old, bincode::config::standard()).expect("Failed to encode");
-
-        // [u8; 32] format (new)
-        let new = EntryState::new(&[0x12; 32], Some(0o644));
-        let new_bytes = new.to_bytes().expect("Failed to convert to bytes");
-
-        println!("\n=== Serialization Size Comparison ===");
-        println!("Vec<u8>:   {} bytes (with length prefix)", old_bytes.len());
-        println!("[u8; 32]:  {} bytes (no length prefix)", new_bytes.len());
-
-        let size_diff = old_bytes.len().saturating_sub(new_bytes.len());
-        println!("Difference: {size_diff} bytes");
-
-        assert_ne!(
-            old_bytes.len(),
-            new_bytes.len(),
-            "Serialization formats are completely different!"
-        );
     }
 }
