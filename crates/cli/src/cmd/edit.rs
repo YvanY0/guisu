@@ -58,8 +58,6 @@ impl Command for EditCommand {
                 dry_run: false,
                 force: false,
                 interactive: false,
-                include: vec![],
-                exclude: vec![],
             };
 
             // Execute apply with the existing context (no database lock issue)

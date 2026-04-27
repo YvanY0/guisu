@@ -240,8 +240,6 @@ fn apply_changes_after_update(context: &RuntimeContext) -> Result<()> {
         dry_run: false,
         force: false,
         interactive: false,
-        include: vec![],
-        exclude: vec![],
     };
 
     apply_cmd

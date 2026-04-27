@@ -376,8 +376,6 @@ fn handle_init_command(
             dry_run: false,
             force: false,
             interactive: false,
-            include: vec![],
-            exclude: vec![],
         };
 
         // Create RuntimeContext and execute
@@ -898,8 +896,6 @@ mod tests {
             dry_run: true,
             force: false,
             interactive: false,
-            include: vec![],
-            exclude: vec![],
         };
         // should_run_hooks = !dry_run && files.is_empty()
         // !true && true = false
@@ -911,8 +907,6 @@ mod tests {
             dry_run: false,
             force: false,
             interactive: false,
-            include: vec![],
-            exclude: vec![],
         };
         assert!(!cmd.dry_run && cmd.files.is_empty());
 
@@ -922,8 +916,6 @@ mod tests {
             dry_run: false,
             force: false,
             interactive: false,
-            include: vec![],
-            exclude: vec![],
         };
         assert!(cmd.dry_run || !cmd.files.is_empty());
 
@@ -933,8 +925,6 @@ mod tests {
             dry_run: true,
             force: false,
             interactive: false,
-            include: vec![],
-            exclude: vec![],
         };
         assert!(cmd.dry_run || !cmd.files.is_empty());
     }

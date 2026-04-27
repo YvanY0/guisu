@@ -50,14 +50,6 @@ pub struct ApplyCommand {
     /// Interactive mode - prompt on conflicts
     #[arg(short, long)]
     pub interactive: bool,
-
-    /// Include only these entry types (comma-separated)
-    #[arg(long, value_delimiter = ',')]
-    pub include: Vec<String>,
-
-    /// Exclude these entry types (comma-separated)
-    #[arg(long, value_delimiter = ',')]
-    pub exclude: Vec<String>,
 }
 
 /// Get the last written content hash for an entry from the database
@@ -237,13 +229,10 @@ fn filter_entries_to_apply<'a>(
             // Filter by files or directories
             if let Some(filter) = filter_paths {
                 let matches = filter.iter().any(|filter_path| {
-                    // Exact match (file or directory itself)
                     if filter_path == target_path {
                         return true;
                     }
 
-                    // Check if target is under the filter directory
-                    // Ensure we don't match ".config/zsh-backup" when filter is ".config/zsh"
                     let filter_str = filter_path.as_path().to_str().unwrap_or("");
                     let target_str = target_path.as_path().to_str().unwrap_or("");
 
@@ -256,12 +245,8 @@ fn filter_entries_to_apply<'a>(
                 }
             }
 
-            // Skip if file is ignored
             if ignore_matcher.is_ignored(entry.path().as_path(), None) {
-                debug!(
-                    path = %target_path,
-                    "Skipping ignored file"
-                );
+                debug!(path = %target_path, "Skipping ignored file");
                 return false;
             }
 
@@ -270,10 +255,7 @@ fn filter_entries_to_apply<'a>(
             {
                 let dest_path = dest_abs.join(entry.path());
                 if dest_path.as_path().exists() {
-                    debug!(
-                        path = %target_path,
-                        "Skipping create-once file that already exists"
-                    );
+                    debug!(path = %target_path, "Skipping create-once file that already exists");
                     return false;
                 }
             }
@@ -282,12 +264,9 @@ fn filter_entries_to_apply<'a>(
         })
         .collect();
 
-    // Sort entries by path for consistent output
     entries.sort_by(|a, b| a.path().as_path().cmp(b.path().as_path()));
     entries
 }
-
-/// Display drift warnings for files modified both locally and in source
 fn display_drift_warnings(drift_warnings: &[String]) {
     if !drift_warnings.is_empty() {
         println!("\n{}", "Configuration Drift Detected".yellow().bold());
@@ -756,15 +735,6 @@ impl Command for ApplyCommand {
     type Output = ApplyStats;
     #[allow(clippy::too_many_lines)]
     fn execute(&self, context: &RuntimeContext) -> crate::error::Result<ApplyStats> {
-        // Parse entry type filters
-        let include_types: Result<Vec<EntryType>> =
-            self.include.iter().map(|s| s.parse()).collect();
-        let _include_types = include_types?;
-
-        let exclude_types: Result<Vec<EntryType>> =
-            self.exclude.iter().map(|s| s.parse()).collect();
-        let _exclude_types = exclude_types?;
-
         // Extract paths, config, and database from context
         let source_abs = context.dotfiles_dir();
         let dest_abs = context.dest_dir();
@@ -903,32 +873,6 @@ impl Command for ApplyCommand {
     }
 }
 
-/// Entry type filter for apply command
-#[derive(Debug, Clone, Copy, PartialEq)]
-enum EntryType {
-    Files,
-    Dirs,
-    Symlinks,
-    Templates,
-    Encrypted,
-}
-
-impl std::str::FromStr for EntryType {
-    type Err = anyhow::Error;
-
-    fn from_str(s: &str) -> Result<Self> {
-        match s.to_lowercase().as_str() {
-            "files" | "file" => Ok(EntryType::Files),
-            "dirs" | "dir" | "directories" => Ok(EntryType::Dirs),
-            "symlinks" | "symlink" => Ok(EntryType::Symlinks),
-            "templates" | "template" => Ok(EntryType::Templates),
-            "encrypted" | "encrypt" => Ok(EntryType::Encrypted),
-            _ => anyhow::bail!(
-                "Invalid entry type: {s}. Valid types: files, dirs, symlinks, templates, encrypted"
-            ),
-        }
-    }
-}
 /// Check if a target entry needs to be updated at the destination
 ///
 /// Returns true if:
@@ -1483,103 +1427,6 @@ mod tests {
     #![allow(clippy::unwrap_used, clippy::panic)]
     use super::*;
 
-    // Tests for EntryType
-
-    #[test]
-    fn test_entry_type_from_str_files() {
-        assert_eq!("files".parse::<EntryType>().unwrap(), EntryType::Files);
-        assert_eq!("file".parse::<EntryType>().unwrap(), EntryType::Files);
-        assert_eq!("FILES".parse::<EntryType>().unwrap(), EntryType::Files);
-    }
-
-    #[test]
-    fn test_entry_type_from_str_dirs() {
-        assert_eq!("dirs".parse::<EntryType>().unwrap(), EntryType::Dirs);
-        assert_eq!("dir".parse::<EntryType>().unwrap(), EntryType::Dirs);
-        assert_eq!("directories".parse::<EntryType>().unwrap(), EntryType::Dirs);
-        assert_eq!("DIRS".parse::<EntryType>().unwrap(), EntryType::Dirs);
-    }
-
-    #[test]
-    fn test_entry_type_from_str_symlinks() {
-        assert_eq!(
-            "symlinks".parse::<EntryType>().unwrap(),
-            EntryType::Symlinks
-        );
-        assert_eq!("symlink".parse::<EntryType>().unwrap(), EntryType::Symlinks);
-        assert_eq!(
-            "SYMLINKS".parse::<EntryType>().unwrap(),
-            EntryType::Symlinks
-        );
-    }
-
-    #[test]
-    fn test_entry_type_from_str_templates() {
-        assert_eq!(
-            "templates".parse::<EntryType>().unwrap(),
-            EntryType::Templates
-        );
-        assert_eq!(
-            "template".parse::<EntryType>().unwrap(),
-            EntryType::Templates
-        );
-        assert_eq!(
-            "TEMPLATES".parse::<EntryType>().unwrap(),
-            EntryType::Templates
-        );
-    }
-
-    #[test]
-    fn test_entry_type_from_str_encrypted() {
-        assert_eq!(
-            "encrypted".parse::<EntryType>().unwrap(),
-            EntryType::Encrypted
-        );
-        assert_eq!(
-            "encrypt".parse::<EntryType>().unwrap(),
-            EntryType::Encrypted
-        );
-        assert_eq!(
-            "ENCRYPTED".parse::<EntryType>().unwrap(),
-            EntryType::Encrypted
-        );
-    }
-
-    #[test]
-    fn test_entry_type_from_str_invalid() {
-        let result = "invalid".parse::<EntryType>();
-        assert!(result.is_err());
-        assert!(
-            result
-                .unwrap_err()
-                .to_string()
-                .contains("Invalid entry type")
-        );
-    }
-
-    #[test]
-    fn test_entry_type_equality() {
-        assert_eq!(EntryType::Files, EntryType::Files);
-        assert_eq!(EntryType::Dirs, EntryType::Dirs);
-        assert_ne!(EntryType::Files, EntryType::Dirs);
-    }
-
-    #[test]
-    fn test_entry_type_clone() {
-        let entry_type = EntryType::Files;
-        let cloned = entry_type;
-        assert_eq!(entry_type, cloned);
-    }
-
-    #[test]
-    fn test_entry_type_copy() {
-        let entry_type = EntryType::Templates;
-        let copied = entry_type;
-        // After copy, original should still be usable
-        assert_eq!(entry_type, EntryType::Templates);
-        assert_eq!(copied, EntryType::Templates);
-    }
-
     // Tests for decrypt_inline_age_values
 
     #[test]
@@ -1640,16 +1487,12 @@ mod tests {
             dry_run: false,
             force: false,
             interactive: false,
-            include: vec![],
-            exclude: vec![],
         };
 
         assert!(cmd.files.is_empty());
         assert!(!cmd.dry_run);
         assert!(!cmd.force);
         assert!(!cmd.interactive);
-        assert!(cmd.include.is_empty());
-        assert!(cmd.exclude.is_empty());
     }
 
     #[test]
@@ -1659,8 +1502,6 @@ mod tests {
             dry_run: false,
             force: false,
             interactive: false,
-            include: vec![],
-            exclude: vec![],
         };
 
         assert_eq!(cmd.files.len(), 2);
@@ -1674,8 +1515,6 @@ mod tests {
             dry_run: true,
             force: false,
             interactive: false,
-            include: vec![],
-            exclude: vec![],
         };
 
         assert!(cmd.dry_run);
@@ -1688,8 +1527,6 @@ mod tests {
             dry_run: false,
             force: true,
             interactive: false,
-            include: vec![],
-            exclude: vec![],
         };
 
         assert!(cmd.force);
@@ -1702,28 +1539,9 @@ mod tests {
             dry_run: false,
             force: false,
             interactive: true,
-            include: vec![],
-            exclude: vec![],
         };
 
         assert!(cmd.interactive);
-    }
-
-    #[test]
-    fn test_apply_command_with_filters() {
-        let cmd = ApplyCommand {
-            files: vec![],
-            dry_run: false,
-            force: false,
-            interactive: false,
-            include: vec!["files".to_string(), "dirs".to_string()],
-            exclude: vec!["encrypted".to_string()],
-        };
-
-        assert_eq!(cmd.include.len(), 2);
-        assert_eq!(cmd.exclude.len(), 1);
-        assert_eq!(cmd.include[0], "files");
-        assert_eq!(cmd.exclude[0], "encrypted");
     }
 
     #[test]
@@ -1733,8 +1551,6 @@ mod tests {
             dry_run: true,
             force: false,
             interactive: false,
-            include: vec!["files".to_string()],
-            exclude: vec![],
         };
 
         let cloned = cmd.clone();
@@ -1742,7 +1558,5 @@ mod tests {
         assert_eq!(cloned.dry_run, cmd.dry_run);
         assert_eq!(cloned.force, cmd.force);
         assert_eq!(cloned.interactive, cmd.interactive);
-        assert_eq!(cloned.include, cmd.include);
-        assert_eq!(cloned.exclude, cmd.exclude);
     }
 }
