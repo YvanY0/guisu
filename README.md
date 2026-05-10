@@ -301,16 +301,15 @@ Beautiful TUI shows:
 - Parallel processing (rayon)
 - Platform-specific configuration
 - Bitwarden integration (bw, rbw, bws)
+- **Hooks system** (pre/post scripts with mode: always/once/onchange)
+- **Modify file type** (`modify_*` prefix for in-place modification)
+- **Remove file type** (`remove_*` prefix)
 
 ### Missing Features vs Chezmoi
 
-**Critical**:
-- Script execution system (`run_before_*`, `run_after_*`, `run_once_*`, `run_onchange_*`)
-- External resources (`.chezmoiexternal` equivalent)
-- Modify file type (`modify_*` prefix)
-- Create-only files (`create_*` prefix)
-
 **High Priority**:
+- External resources (`.chezmoiexternal` equivalent)
+- Create-only files (`create_*` prefix)
 - Limited password manager support (only Bitwarden; missing 1Password, LastPass, Pass, Vault, etc.)
 - Limited template functions (~30 vs 200+ in chezmoi)
 
@@ -321,7 +320,7 @@ See [ROADMAP.md](docs/development/ROADMAP.md) for detailed development plan.
 
 ## Documentation
 
-- [Architecture Overview](docs/architecture/README.md) - System architecture and design
+- [Architecture Overview](docs/architecture/containers.md) - System architecture and design
 - [Container Architecture](docs/architecture/containers.md) - Crate structure
 - [Component Design](docs/architecture/components.md) - Internal components
 - [Data Flow](docs/architecture/data-flow.md) - Processing pipeline

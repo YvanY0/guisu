@@ -1,17 +1,9 @@
-# Guisu Development Roadmap / Guisu 开发路线图
-
-[English](#english) | [中文](#中文)
-
----
-
-<a name="english"></a>
-
-## English
+# Guisu Development Roadmap
 
 This document outlines the development roadmap for Guisu, organized by priority and target quarters.
 
-**Current Status**: Early Development (v0.1.x)
-**Target v1.0**: Q4 2025
+**Current Status**: Active Development (v0.1.x)
+**Target v1.0**: TBD (roadmap dates need refresh)
 
 ### Priority Legend
 
@@ -26,40 +18,33 @@ This document outlines the development roadmap for Guisu, organized by priority 
 
 #### P0: Script Execution System
 
-**Status**: Not Started
+**Status**: Completed ✅ (Implemented as Hooks System)
 **Effort**: 4-6 weeks
-**Owner**: TBD
+**Owner**: Implemented
 
-**Description**: Implement the script execution system, the most critical missing feature compared to chezmoi.
+**Description**: Implemented as the Hooks System with directory-based structure under `.guisu/hooks/`.
 
-**Tasks**:
-- [ ] Design ScriptType enum and attributes parsing
-- [ ] Add Script entry type to TargetEntry
-- [ ] Extend persistent state for script tracking
-- [ ] Create ScriptExecutor module
-  - [ ] Implement `run_before_*` support
-  - [ ] Implement `run_after_*` support
-  - [ ] Implement `run_once_*` support
-  - [ ] Implement `run_onchange_*` support
-- [ ] Integrate into apply pipeline
-- [ ] Add configuration options
-- [ ] Write comprehensive tests
-- [ ] Update documentation
+**Implementation**:
+- Pre/post hook directories (`pre/`, `post/`)
+- Execution modes: `always`, `once`, `onchange`
+- Platform filtering
+- Template rendering in hook commands
+- Parallel execution with rayon
 
-**Acceptance Criteria**:
-- All four script types working correctly
-- State tracking prevents re-running `run_once_*` scripts
-- Content hash tracking for `run_onchange_*` scripts
-- Scripts execute in correct order (numeric prefixes)
-- Errors handled gracefully
+**Migration from chezmoi**:
+```bash
+# chezmoi
+.run_before_10-install-packages.sh.tmpl
 
-**Related Issues**: #TBD
+# guisu
+.guisu/hooks/pre/10-install-packages.sh.j2
+```
 
 ---
 
 #### P0: Doctor Command
 
-**Status**: Not Started
+**Status**: Partially Implemented ⚠️ (`info` command exists, full diagnostics planned)
 **Effort**: 1 week
 **Owner**: TBD
 
@@ -84,35 +69,35 @@ This document outlines the development roadmap for Guisu, organized by priority 
 
 #### P1: Template Functions Expansion (Phase 1)
 
-**Status**: Not Started
+**Status**: ~80% Complete (16/20 functions + blake3 as alternative to SHA)
 **Effort**: 2-3 weeks
-**Owner**: TBD
+**Owner**: Implemented (partial)
 
 **Description**: Add 20 most commonly used template functions from chezmoi.
 
 **Tasks**:
-- [ ] File operations (5 functions)
-  - [ ] `include(path)` - Include file contents
-  - [ ] `includeTemplate(path)` - Include and render
+- [x] File operations (2/5 functions)
+  - [x] `include(path)` - Include file contents
+  - [x] `includeTemplate(path)` - Include and render
   - [ ] `readFile(path)` - Read arbitrary file
   - [ ] `glob(pattern)` - Match file patterns
   - [ ] `stat(path)` - File information
-- [ ] Data formats (4 functions)
-  - [ ] `toJson(value)` - Convert to JSON
-  - [ ] `fromJson(string)` - Parse JSON
-  - [ ] `toToml(value)` - Convert to TOML
-  - [ ] `fromToml(string)` - Parse TOML
-- [ ] String processing (5 functions)
-  - [ ] `regexMatch(pattern, string)` - Regex matching
-  - [ ] `regexReplaceAll(pattern, replacement, string)` - Regex replacement
-  - [ ] `split(separator, string)` - String splitting
-  - [ ] `join(separator, array)` - String joining
+- [x] Data formats (4/4 functions)
+  - [x] `toJson(value)` - Convert to JSON
+  - [x] `fromJson(string)` - Parse JSON
+  - [x] `toToml(value)` - Convert to TOML
+  - [x] `fromToml(string)` - Parse TOML
+- [ ] String processing (4/5 functions)
+  - [x] `regexMatch(pattern, string)` - Regex matching
+  - [x] `regexReplaceAll(pattern, replacement, string)` - Regex replacement
+  - [x] `split(separator, string)` - String splitting
+  - [x] `join(separator, array)` - String joining
   - [ ] `base64Encode/Decode(string)` - Base64 encoding/decoding
-- [ ] Encryption (4 functions)
-  - [ ] `sha256sum(content)` - Compute SHA256
-  - [ ] `sha512sum(content)` - Compute SHA512
-  - [ ] `md5sum(content)` - Compute MD5 (for compatibility)
-  - [ ] `encryptFile/decryptFile(path)` - File encryption helpers
+- [x] Encryption (alternative implementation)
+  - [x] `blake3sum(content)` - Compute BLAKE3 (faster, more secure than SHA)
+  - [x] `encrypt(value)` - Encrypt with age
+  - [x] `decrypt(value)` - Decrypt with age
+  - Note: SHA variants not implemented; blake3sum is the preferred hash function
 
 **Acceptance Criteria**:
 - All functions working correctly
@@ -169,26 +154,23 @@ This document outlines the development roadmap for Guisu, organized by priority 
 
 #### P0: Modify File Type
 
-**Status**: Not Started
+**Status**: Completed ✅
 **Effort**: 2 weeks
-**Owner**: TBD
+**Owner**: Implemented
 
-**Description**: Implement `modify_*` prefix for in-place file modification.
+**Description**: Implemented as `modify_*` prefix for in-place file modification.
 
-**Tasks**:
-- [ ] Add Modify entry type
-- [ ] Design modify script execution
-- [ ] Set environment variables for target file
-- [ ] Implement modify executor
-- [ ] Add to apply pipeline
-- [ ] Write tests
-- [ ] Add documentation
+**Implementation**:
+- `modify_*` prefix parsed in `attr.rs`
+- `ModifyExecutor` in `engine/modify.rs`
+- Target file path passed via `$GUISU_TARGET` env var
+- Script interpreter auto-detected from shebang
 
-**Acceptance Criteria**:
-- Can modify existing files
-- Script receives target file path
-- Changes applied atomically
-- Errors handled gracefully
+**Usage**:
+```bash
+# Source: modify_config.toml → Target: config.toml (modified in place)
+# Script receives target path and modifies file contents
+```
 
 ---
 
@@ -246,22 +228,10 @@ This document outlines the development roadmap for Guisu, organized by priority 
 
 ---
 
-#### P1: Re-add Command
+#### ~~P1: Re-add Command~~ — Covered by `add --force`
 
-**Status**: Not Started
-**Effort**: 1 week
-**Owner**: TBD
-
-**Description**: Update source from modified destination files.
-
-**Tasks**:
-- [ ] Find files that differ from state
-- [ ] Compare with persistent database
-- [ ] Update source files
-- [ ] Preserve attributes
-- [ ] Handle encryption
-- [ ] Handle templates
-- [ ] Write tests
+**Status**: Not Needed
+**Description**: The `add --force` flag already overwrites source with destination content. Templates and encryption flags compose with `--force`. No separate command is needed.
 
 ---
 
@@ -498,13 +468,13 @@ This document outlines the development roadmap for Guisu, organized by priority 
 
 ### Release Schedule
 
-| Version | Target Date | Key Features |
-|---------|------------|--------------|
-| v0.2.0 | Q1 2025 | Script execution, doctor command |
-| v0.3.0 | Q2 2025 | External resources, modify files, 1Password |
-| v0.4.0 | Q3 2025 | Remaining template functions, more commands |
-| v0.5.0 | Q4 2025 | Polish, testing, documentation |
-| v1.0.0 | Q4 2025 | Stable release |
+| Version | Target Date | Key Features | Status |
+|---------|------------|--------------|--------|
+| v0.2.0 | Q1 2025 | Script execution, doctor command | Hooks ✅, Doctor ❌ |
+| v0.3.0 | Q2 2025 | External resources, modify files, 1Password | Modify ✅, External ❌, 1Password ❌ |
+| v0.4.0 | Q3 2025 | Remaining template functions, more commands | Phase 1 ~80% ✅, Phase 2 ❌ |
+| v0.5.0 | TBD | Polish, testing, documentation | — |
+| v1.0.0 | TBD | Stable release | — |
 
 ---
 
@@ -513,10 +483,11 @@ This document outlines the development roadmap for Guisu, organized by priority 
 See [CONTRIBUTING.md](CONTRIBUTING.md) for detailed guidelines.
 
 **High-Impact Areas**:
-1. Script execution system (P0)
-2. Password manager integrations (P1)
-3. Template functions (P1)
-4. Testing and documentation (P0)
+1. External resources system (P0)
+2. Doctor command (P0)
+3. Password manager integrations (P1)
+4. Template functions phase 2 (P1)
+5. Testing and documentation (P0)
 
 **Good First Issues**:
 - Add template functions (start with simple ones)
@@ -524,186 +495,3 @@ See [CONTRIBUTING.md](CONTRIBUTING.md) for detailed guidelines.
 - Add tests
 - Fix documentation typos
 
----
-
-<a name="中文"></a>
-
-## 中文
-
-本文档概述了 Guisu 的开发路线图，按优先级和目标季度组织。
-
-**当前状态**：早期开发（v0.1.x）
-**目标 v1.0**：2025 年第四季度
-
-### 优先级图例
-
-- **P0（关键）**：阻塞 v1.0 发布
-- **P1（高）**：功能平价的重要内容
-- **P2（中）**：最好有
-- **P3（低）**：未来增强
-
----
-
-### 2025 年第一季度（1-3 月）：核心功能
-
-#### P0：脚本执行系统
-
-**状态**：未开始
-**工作量**：4-6 周
-**负责人**：待定
-
-**描述**：实现脚本执行系统，与 chezmoi 相比最关键的缺失功能。
-
-**任务**：
-- [ ] 设计 ScriptType 枚举和属性解析
-- [ ] 将 Script 条目类型添加到 TargetEntry
-- [ ] 扩展脚本跟踪的持久化状态
-- [ ] 创建 ScriptExecutor 模块
-  - [ ] 实现 `run_before_*` 支持
-  - [ ] 实现 `run_after_*` 支持
-  - [ ] 实现 `run_once_*` 支持
-  - [ ] 实现 `run_onchange_*` 支持
-- [ ] 集成到 apply 管道
-- [ ] 添加配置选项
-- [ ] 编写全面的测试
-- [ ] 更新文档
-
-**验收标准**：
-- 所有四种脚本类型正常工作
-- 状态跟踪防止重新运行 `run_once_*` 脚本
-- `run_onchange_*` 脚本的内容哈希跟踪
-- 脚本按正确顺序执行（数字前缀）
-- 优雅地处理错误
-
----
-
-#### P0：Doctor 命令
-
-**状态**：未开始
-**工作量**：1 周
-**负责人**：待定
-
-**描述**：实现系统诊断命令以验证安装和配置。
-
-**任务**：
-- [ ] 检查 guisu 版本
-- [ ] 验证配置文件
-- [ ] 检查 age 身份文件
-- [ ] 验证 git 仓库
-- [ ] 测试 vault 提供者可用性
-- [ ] 检查模板引擎
-- [ ] 验证持久化状态数据库
-- [ ] 显示摘要报告
-
----
-
-#### P1：模板函数扩展（第一阶段）
-
-**状态**：未开始
-**工作量**：2-3 周
-**负责人**：待定
-
-**描述**：从 chezmoi 添加 20 个最常用的模板函数。
-
-**任务**：（与英文版相同）
-
----
-
-### 2025 年第二季度（4-6 月）：高价值功能
-
-#### P0：外部资源系统
-
-**状态**：未开始
-**工作量**：3-4 周
-**负责人**：待定
-
-**描述**：实现 `.guisu.external.toml` 用于下载和管理外部文件/存档。
-
----
-
-#### P0：修改文件类型
-
-**状态**：未开始
-**工作量**：2 周
-**负责人**：待定
-
-**描述**：实现 `modify_*` 前缀用于就地文件修改。
-
----
-
-#### P1：密码管理器扩展
-
-**状态**：未开始
-**工作量**：4 周（每个提供者 1 周）
-**负责人**：待定
-
-**描述**：添加对主要密码管理器的支持。
-
-**优先顺序**：
-1. **1Password**（高 - 非常流行）
-2. **Pass**（高 - Unix 标准）
-3. **系统钥匙串**（中）
-4. **HashiCorp Vault**（中 - 企业）
-
----
-
-### 2025 年第三季度（7-9 月）：质量和完整性
-
-#### P1：模板函数扩展（第二阶段）
-
-**状态**：未开始
-**工作量**：3-4 周
-**负责人**：待定
-
-**描述**：添加剩余的常用模板函数。
-
----
-
-### 2025 年第四季度（10-12 月）：完善和 v1.0
-
-#### P0：文档
-
-**状态**：进行中
-**工作量**：持续
-**负责人**：当前
-
-**任务**：
-- [x] 架构文档
-- [x] C4 模型图
-- [x] 数据流文档
-- [x] 贡献指南
-- [x] 路线图
-- [ ] 用户指南
-- [ ] 教程
-- [ ] API 文档（rustdoc）
-- [ ] 迁移指南（从 chezmoi）
-
----
-
-### 发布计划
-
-| 版本 | 目标日期 | 关键功能 |
-|------|---------|---------|
-| v0.2.0 | 2025 年第一季度 | 脚本执行、doctor 命令 |
-| v0.3.0 | 2025 年第二季度 | 外部资源、修改文件、1Password |
-| v0.4.0 | 2025 年第三季度 | 剩余模板函数、更多命令 |
-| v0.5.0 | 2025 年第四季度 | 完善、测试、文档 |
-| v1.0.0 | 2025 年第四季度 | 稳定版本 |
-
----
-
-### 如何贡献
-
-详细指南请参见 [CONTRIBUTING.md](CONTRIBUTING.md)。
-
-**高影响领域**：
-1. 脚本执行系统（P0）
-2. 密码管理器集成（P1）
-3. 模板函数（P1）
-4. 测试和文档（P0）
-
-**适合新手的问题**：
-- 添加模板函数（从简单的开始）
-- 改进错误消息
-- 添加测试
-- 修复文档拼写错误
