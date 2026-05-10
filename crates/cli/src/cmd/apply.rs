@@ -312,6 +312,7 @@ fn handle_dry_run_entry(
 }
 
 /// Handle interactive conflict resolution
+#[allow(clippy::too_many_arguments)]
 fn handle_interactive_conflict(
     db: &guisu_engine::state::RedbPersistentState,
     entry: &TargetEntry,
@@ -320,7 +321,13 @@ fn handle_interactive_conflict(
     identities: &[guisu_crypto::Identity],
     handler: &mut ConflictHandler,
     fail_on_decrypt_error: bool,
+    force: bool,
 ) -> Result<bool> {
+    // Force mode: skip conflict detection and apply directly
+    if force {
+        return needs_update(entry, dest_path, identities, fail_on_decrypt_error);
+    }
+
     let last_written_hash = get_last_written_hash(db, entry);
     let change_type = ConflictHandler::detect_change_type(
         entry,
@@ -356,7 +363,13 @@ fn handle_non_interactive_conflict(
     dest_path: &AbsPath,
     identities: &[guisu_crypto::Identity],
     fail_on_decrypt_error: bool,
+    force: bool,
 ) -> Result<bool> {
+    // Force mode: skip all conflict detection and apply directly
+    if force {
+        return needs_update(entry, dest_path, identities, fail_on_decrypt_error);
+    }
+
     if !needs_update(entry, dest_path, identities, fail_on_decrypt_error)? {
         return Ok(false);
     }
@@ -491,7 +504,7 @@ fn apply_entry_with_error_handling(
 }
 
 /// Process entries sequentially (for interactive mode or dry run)
-#[allow(clippy::too_many_arguments)]
+#[allow(clippy::too_many_arguments, clippy::fn_params_excessive_bools)]
 fn process_entries_sequential(
     db: &guisu_engine::state::RedbPersistentState,
     entries: Vec<&TargetEntry>,
@@ -502,6 +515,7 @@ fn process_entries_sequential(
     show_icons: bool,
     dry_run: bool,
     fail_on_decrypt_error: bool,
+    force: bool,
 ) -> Result<()> {
     // Pre-allocate capacity for worst case (all entries applied successfully)
     let mut batch_entries = Vec::with_capacity(entries.len());
@@ -528,6 +542,7 @@ fn process_entries_sequential(
                     identities,
                     handler,
                     fail_on_decrypt_error,
+                    force,
                 )?
             } else {
                 handle_non_interactive_conflict(
@@ -537,6 +552,7 @@ fn process_entries_sequential(
                     &dest_path,
                     identities,
                     fail_on_decrypt_error,
+                    force,
                 )?
             };
 
@@ -677,6 +693,7 @@ fn process_single_entry(
 }
 
 /// Process entries in parallel (for non-interactive mode)
+#[allow(clippy::too_many_arguments, clippy::fn_params_excessive_bools)]
 fn process_entries_parallel(
     db: &guisu_engine::state::RedbPersistentState,
     entries: &[&TargetEntry],
@@ -685,10 +702,22 @@ fn process_entries_parallel(
     stats: &ApplyStats,
     show_icons: bool,
     fail_on_decrypt_error: bool,
+    force: bool,
 ) -> Result<()> {
-    // Get user confirmations for conflicting files
-    let confirmed_paths =
-        get_user_confirmations(db, entries, dest_abs, identities, fail_on_decrypt_error)?;
+    // Get user confirmations for conflicting files (skipped if force mode)
+    let confirmed_paths = if force {
+        // In force mode, confirm all entries that need updating
+        entries
+            .iter()
+            .filter(|entry| {
+                let dest_path = dest_abs.join(entry.path());
+                needs_update(entry, &dest_path, identities, fail_on_decrypt_error).unwrap_or(false)
+            })
+            .map(|entry| entry.path().to_string())
+            .collect()
+    } else {
+        get_user_confirmations(db, entries, dest_abs, identities, fail_on_decrypt_error)?
+    };
 
     // Process confirmed files in parallel
     let results: Vec<Result<Option<BatchEntryData>>> = entries
@@ -848,6 +877,7 @@ impl Command for ApplyCommand {
                 show_icons,
                 self.dry_run,
                 fail_on_decrypt_error,
+                self.force,
             )?;
         } else {
             process_entries_parallel(
@@ -858,6 +888,7 @@ impl Command for ApplyCommand {
                 &stats,
                 show_icons,
                 fail_on_decrypt_error,
+                self.force,
             )?;
         }
 
