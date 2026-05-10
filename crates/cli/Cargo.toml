@@ -47,7 +47,6 @@ rustix = { version = "1.0", features = ["process", "system"] }
 regex.workspace = true
 serde.workspace = true
 serde_json.workspace = true
-sha2.workspace = true
 similar.workspace = true
 subtle.workspace = true
 tempfile.workspace = true
