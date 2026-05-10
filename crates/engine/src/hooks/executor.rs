@@ -13,6 +13,14 @@ use std::path::{Path, PathBuf};
 /// Result tuple from hook execution: (`cached_hash`, `rendered_content`, `execution_result`)
 type HookExecutionResult = (Option<[u8; 32]>, Option<String>, Result<()>);
 
+/// Result from skip check to avoid redundant recomputation
+struct SkipCheckResult {
+    should_skip: bool,
+    reason: &'static str,
+    cached_hash: Option<[u8; 32]>,
+    rendered_content: Option<String>,
+}
+
 /// Template rendering trait for hook scripts
 pub trait TemplateRenderer {
     /// Render a template string
@@ -162,21 +170,22 @@ where
 
     /// Check if a hook should be skipped based on its mode
     ///
-    /// Returns (`should_skip`, reason, `cached_hash`, `rendered_content`) for logging and state update
-    /// The `cached_hash` and `rendered_content` are only computed for `OnChange` mode to avoid redundant work
+    /// Returns `SkipCheckResult` containing skip decision and cached data for state tracking.
+    /// The `cached_hash` and `rendered_content` are only computed for `OnChange` mode to avoid redundant work.
     #[tracing::instrument(skip(self), fields(hook_name = %hook.name, hook_mode = ?hook.mode))]
-    fn should_skip_hook(
-        &self,
-        hook: &Hook,
-    ) -> (bool, &'static str, Option<[u8; 32]>, Option<String>) {
+    fn should_skip_hook(&self, hook: &Hook) -> SkipCheckResult {
         match hook.mode {
             HookMode::Always => {
                 tracing::trace!("Hook will run (mode=always)");
-                (false, "", None, None)
+                SkipCheckResult {
+                    should_skip: false,
+                    reason: "",
+                    cached_hash: None,
+                    rendered_content: None,
+                }
             }
 
             HookMode::Once => {
-                // Check if executed in this session
                 if self
                     .once_executed
                     .lock()
@@ -184,31 +193,37 @@ where
                     .contains(hook.name.as_str())
                 {
                     tracing::debug!("Skipping hook: already executed in this session");
-                    return (
-                        true,
-                        "already executed in this session (mode=once)",
-                        None,
-                        None,
-                    );
+                    return SkipCheckResult {
+                        should_skip: true,
+                        reason: "already executed in this session (mode=once)",
+                        cached_hash: None,
+                        rendered_content: None,
+                    };
                 }
 
-                // Check if executed in previous sessions
                 if self.persistent_once.contains(hook.name.as_str()) {
                     tracing::debug!("Skipping hook: already executed previously");
-                    return (true, "already executed previously (mode=once)", None, None);
+                    return SkipCheckResult {
+                        should_skip: true,
+                        reason: "already executed previously (mode=once)",
+                        cached_hash: None,
+                        rendered_content: None,
+                    };
                 }
 
                 tracing::trace!("Hook will run (mode=once, first execution)");
-                (false, "", None, None)
+                SkipCheckResult {
+                    should_skip: false,
+                    reason: "",
+                    cached_hash: None,
+                    rendered_content: None,
+                }
             }
 
             HookMode::OnChange => {
-                // Compute content hash (cached for later use)
-                // For template scripts, use rendered content to detect changes in dependencies
                 let content = hook.get_content();
                 let content_to_hash = if let Some(script) = &hook.script {
                     if script.to_lowercase().ends_with(".j2") {
-                        // Script is a template, render it to detect dependency changes
                         match self.template_renderer.render(&content) {
                             Ok(rendered) => rendered,
                             Err(e) => {
@@ -216,7 +231,7 @@ where
                                     "Failed to render template for onchange detection: {}",
                                     e
                                 );
-                                content // Fallback to original content
+                                content
                             }
                         }
                     } else {
@@ -227,7 +242,6 @@ where
                 };
                 let current_hash = crate::hash::hash_content(content_to_hash.as_bytes());
 
-                // Check if content changed from this session
                 if let Some(session_hash) = self
                     .onchange_hashes
                     .lock()
@@ -236,30 +250,34 @@ where
                     && session_hash == &current_hash
                 {
                     tracing::debug!("Skipping hook: content unchanged in this session");
-                    return (
-                        true,
-                        "content unchanged in this session (mode=onchange)",
-                        Some(current_hash),
-                        Some(content_to_hash.clone()),
-                    );
+                    return SkipCheckResult {
+                        should_skip: true,
+                        reason: "content unchanged in this session (mode=onchange)",
+                        cached_hash: Some(current_hash),
+                        rendered_content: Some(content_to_hash.clone()),
+                    };
                 }
 
-                // Check if content changed from previous sessions
                 if let Some(stored_hash) = self.persistent_onchange.get(hook.name.as_str()) {
                     use subtle::ConstantTimeEq;
                     if bool::from(stored_hash.ct_eq(&current_hash)) {
                         tracing::debug!("Skipping hook: content unchanged from previous session");
-                        return (
-                            true,
-                            "content unchanged (mode=onchange)",
-                            Some(current_hash),
-                            Some(content_to_hash.clone()),
-                        );
+                        return SkipCheckResult {
+                            should_skip: true,
+                            reason: "content unchanged (mode=onchange)",
+                            cached_hash: Some(current_hash),
+                            rendered_content: Some(content_to_hash.clone()),
+                        };
                     }
                 }
 
                 tracing::trace!("Hook will run (mode=onchange, content changed)");
-                (false, "", Some(current_hash), Some(content_to_hash))
+                SkipCheckResult {
+                    should_skip: false,
+                    reason: "",
+                    cached_hash: Some(current_hash),
+                    rendered_content: Some(content_to_hash),
+                }
             }
         }
     }
@@ -335,7 +353,8 @@ where
         let platform = CURRENT_PLATFORM.os;
 
         // Filter and validate hooks, then group by order
-        let mut hooks_by_order: BTreeMap<i32, Vec<&Hook>> = BTreeMap::new();
+        // Store skip check results to avoid recomputation in parallel execution phase
+        let mut hooks_by_order: BTreeMap<i32, Vec<(&Hook, SkipCheckResult)>> = BTreeMap::new();
 
         for hook in hooks {
             // Skip if not for this platform
@@ -344,12 +363,16 @@ where
                 continue;
             }
 
-            // Skip based on execution mode
-            let (should_skip, reason, cached_hash, rendered_content) = self.should_skip_hook(hook);
-            if should_skip {
-                tracing::debug!("Skipping hook '{}' ({})", hook.name, reason);
+            // Check skip status and store result to avoid recomputation
+            let skip_result = self.should_skip_hook(hook);
+            if skip_result.should_skip {
+                tracing::debug!("Skipping hook '{}' ({})", hook.name, skip_result.reason);
                 // Save state even for skipped hooks (for diff display)
-                self.mark_hook_executed(hook, cached_hash, rendered_content);
+                self.mark_hook_executed(
+                    hook,
+                    skip_result.cached_hash,
+                    skip_result.rendered_content,
+                );
                 continue;
             }
 
@@ -362,7 +385,10 @@ where
                 continue;
             }
 
-            hooks_by_order.entry(hook.order).or_default().push(hook);
+            hooks_by_order
+                .entry(hook.order)
+                .or_default()
+                .push((hook, skip_result));
         }
 
         // Execute hooks in order, parallelizing within each order group
@@ -374,13 +400,13 @@ where
             );
 
             // Parallel execution within same order group
-            // All hooks with the same order number run concurrently
+            // Skip results are reused from filtering phase to avoid redundant hash/template work
             let results: Vec<HookExecutionResult> = order_hooks
                 .par_iter()
-                .map(|hook| {
-                    // Get cached hash and rendered content for state tracking (avoids redundant work)
-                    let (_should_skip, _reason, cached_hash, rendered_content) =
-                        self.should_skip_hook(hook);
+                .map(|(hook, skip_result)| {
+                    // Reuse cached hash and rendered content from skip check
+                    let cached_hash = skip_result.cached_hash;
+                    let rendered_content = skip_result.rendered_content.clone();
 
                     // Create a span for this hook execution with structured fields
                     let span = tracing::info_span!(
@@ -429,7 +455,7 @@ where
                 .collect();
 
             // Process results: mark hooks as executed and check for errors
-            for ((cached_hash, rendered_content, result), hook) in
+            for ((cached_hash, rendered_content, result), (hook, _skip_result)) in
                 results.into_iter().zip(order_hooks.iter())
             {
                 match result {
@@ -872,35 +898,28 @@ where
     fn expand_env_vars<'b>(&self, input: &'b str) -> std::borrow::Cow<'b, str> {
         use std::borrow::Cow;
 
-        // Quick check: does input contain any '${'?
         if !input.contains("${") {
             return Cow::Borrowed(input);
         }
 
+        let chars: Vec<char> = input.chars().collect();
         let mut result = String::with_capacity(input.len());
         let mut last_end = 0;
-        let chars: Vec<char> = input.chars().collect();
         let mut i = 0;
 
         while i < chars.len() {
-            // Look for ${
             if i + 1 < chars.len() && chars[i] == '$' && chars[i + 1] == '{' {
-                // Add everything before this variable
                 result.push_str(&input[last_end..i]);
 
-                // Find closing }
                 if let Some(close_idx) = chars[i + 2..].iter().position(|&c| c == '}') {
                     let var_start = i + 2;
                     let var_end = i + 2 + close_idx;
 
-                    // Extract variable name
                     let var_name: String = chars[var_start..var_end].iter().collect();
 
-                    // Replace with value or keep original
                     if let Some(value) = self.env_vars.get(&var_name) {
                         result.push_str(value);
                     } else {
-                        // Variable not found, keep original
                         result.push_str(&input[i..=var_end]);
                     }
 
@@ -914,7 +933,6 @@ where
         }
 
         if last_end == 0 {
-            // No replacements made
             Cow::Borrowed(input)
         } else {
             result.push_str(&input[last_end..]);
@@ -1298,10 +1316,10 @@ mod tests {
         let runner = HookRunner::new(&collections, temp.path());
 
         let hook = create_test_hook("test", HookMode::Always);
-        let (should_skip, _reason, hash, _rendered_content) = runner.should_skip_hook(&hook);
+        let result = runner.should_skip_hook(&hook);
 
-        assert!(!should_skip);
-        assert!(hash.is_none());
+        assert!(!result.should_skip);
+        assert!(result.cached_hash.is_none());
     }
 
     #[test]
@@ -1311,10 +1329,10 @@ mod tests {
         let runner = HookRunner::new(&collections, temp.path());
 
         let hook = create_test_hook("test", HookMode::Once);
-        let (should_skip, _reason, hash, _rendered_content) = runner.should_skip_hook(&hook);
+        let result = runner.should_skip_hook(&hook);
 
-        assert!(!should_skip);
-        assert!(hash.is_none());
+        assert!(!result.should_skip);
+        assert!(result.cached_hash.is_none());
     }
 
     #[test]
@@ -1325,17 +1343,16 @@ mod tests {
 
         let hook = create_test_hook("test", HookMode::Once);
 
-        // Mark as executed in this session
         runner
             .once_executed
             .lock()
             .unwrap()
             .insert("test".to_string());
 
-        let (should_skip, reason, _hash, _rendered_content) = runner.should_skip_hook(&hook);
+        let result = runner.should_skip_hook(&hook);
 
-        assert!(should_skip);
-        assert!(reason.contains("already executed in this session"));
+        assert!(result.should_skip);
+        assert!(result.reason.contains("already executed in this session"));
     }
 
     #[test]
@@ -1351,10 +1368,10 @@ mod tests {
             .build();
 
         let hook = create_test_hook("test", HookMode::Once);
-        let (should_skip, reason, _hash, _rendered_content) = runner.should_skip_hook(&hook);
+        let result = runner.should_skip_hook(&hook);
 
-        assert!(should_skip);
-        assert!(reason.contains("already executed previously"));
+        assert!(result.should_skip);
+        assert!(result.reason.contains("already executed previously"));
     }
 
     #[test]
@@ -1364,10 +1381,10 @@ mod tests {
         let runner = HookRunner::new(&collections, temp.path());
 
         let hook = create_test_hook("test", HookMode::OnChange);
-        let (should_skip, _reason, hash, _rendered_content) = runner.should_skip_hook(&hook);
+        let result = runner.should_skip_hook(&hook);
 
-        assert!(!should_skip);
-        assert!(hash.is_some()); // Hash should be computed
+        assert!(!result.should_skip);
+        assert!(result.cached_hash.is_some());
     }
 
     #[test]
@@ -1378,22 +1395,19 @@ mod tests {
 
         let hook = create_test_hook("test", HookMode::OnChange);
 
-        // Get initial hash
-        let (_skip, _reason, hash, _rendered_content) = runner.should_skip_hook(&hook);
-        let hash = hash.unwrap();
+        let result = runner.should_skip_hook(&hook);
+        let hash = result.cached_hash.unwrap();
 
-        // Store hash in session
         runner
             .onchange_hashes
             .lock()
             .unwrap()
             .insert("test".to_string(), hash);
 
-        // Check again - should skip now
-        let (should_skip, reason, _hash, _rendered_content) = runner.should_skip_hook(&hook);
+        let result = runner.should_skip_hook(&hook);
 
-        assert!(should_skip);
-        assert!(reason.contains("content unchanged in this session"));
+        assert!(result.should_skip);
+        assert!(result.reason.contains("content unchanged in this session"));
     }
 
     #[test]
@@ -1403,7 +1417,6 @@ mod tests {
 
         let hook = create_test_hook("test", HookMode::OnChange);
 
-        // Compute expected hash
         let expected_hash = crate::hash::hash_content(hook.get_content().as_bytes());
 
         let mut persistent_onchange = HashMap::new();
@@ -1413,10 +1426,10 @@ mod tests {
             .persistent_state(HashSet::new(), persistent_onchange)
             .build();
 
-        let (should_skip, reason, _hash, _rendered_content) = runner.should_skip_hook(&hook);
+        let result = runner.should_skip_hook(&hook);
 
-        assert!(should_skip);
-        assert!(reason.contains("content unchanged"));
+        assert!(result.should_skip);
+        assert!(result.reason.contains("content unchanged"));
     }
 
     #[test]
@@ -1424,7 +1437,6 @@ mod tests {
         let temp = TempDir::new().unwrap();
         let collections = HookCollections::default();
 
-        // Store hash for different content
         let mut persistent_onchange = HashMap::new();
         let mut different_hash = [0u8; 32];
         different_hash[0] = 0x00;
@@ -1437,10 +1449,10 @@ mod tests {
             .build();
 
         let hook = create_test_hook("test", HookMode::OnChange);
-        let (should_skip, _reason, hash, _rendered_content) = runner.should_skip_hook(&hook);
+        let result = runner.should_skip_hook(&hook);
 
-        assert!(!should_skip);
-        assert!(hash.is_some());
+        assert!(!result.should_skip);
+        assert!(result.cached_hash.is_some());
     }
 
     #[test]
