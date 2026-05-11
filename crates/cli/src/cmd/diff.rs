@@ -175,7 +175,7 @@ fn build_diff_target_state(
                         }
 
                         let mode = attributes.mode();
-                        let content_hash = guisu_engine::hash::hash_content(&content);
+                        let content_hash = guisu_engine::hash_content(&content);
                         target_state.add(TargetEntry::File {
                             path: target_path.clone(),
                             content,
@@ -1303,7 +1303,7 @@ pub fn compare_and_print_hooks(
                     content,
                     config,
                 );
-                let current_hash = guisu_engine::hash::hash_content(rendered.as_bytes());
+                let current_hash = guisu_engine::hash_content(rendered.as_bytes());
 
                 // Compare with saved hash
                 if let Some(saved_hash) = onchange_hashes.get(hook.name.as_str()) {

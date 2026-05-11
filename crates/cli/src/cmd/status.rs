@@ -5,12 +5,12 @@
 use anyhow::{Context, Result};
 use clap::Args;
 use guisu_core::path::{AbsPath, RelPath};
+use guisu_engine::RealSystem;
 use guisu_engine::adapters::crypto::CryptoDecryptorAdapter;
 use guisu_engine::adapters::template::TemplateRendererAdapter;
 use guisu_engine::entry::TargetEntry;
 use guisu_engine::processor::ContentProcessor;
 use guisu_engine::state::{DestinationState, RedbPersistentState, SourceState, TargetState};
-use guisu_engine::system::RealSystem;
 use owo_colors::OwoColorize;
 use rayon::prelude::*;
 use std::collections::BTreeMap;
@@ -190,7 +190,7 @@ fn build_status_target_state(
                         }
 
                         let mode = attributes.mode();
-                        let content_hash = guisu_engine::hash::hash_content(&content);
+                        let content_hash = guisu_engine::hash_content(&content);
                         target_state.add(TargetEntry::File {
                             path: target_path.clone(),
                             content,
@@ -428,7 +428,7 @@ fn determine_entry_status(
     use guisu_engine::entry::TargetEntry;
 
     // Get the base state from database (last applied state)
-    let base_state = guisu_engine::database::get_entry_state(database, path_str)
+    let base_state = guisu_engine::get_entry_state(database, path_str)
         .ok()
         .flatten();
 
@@ -1096,7 +1096,7 @@ fn print_hooks_status(
                         content,
                         config,
                     );
-                    let current_hash = guisu_engine::hash::hash_content(rendered.as_bytes());
+                    let current_hash = guisu_engine::hash_content(rendered.as_bytes());
 
                     // Compare with saved hash
                     if let Some(saved_hash) = state.onchange_hashes.get(hook.name.as_str()) {

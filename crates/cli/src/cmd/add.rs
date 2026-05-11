@@ -215,7 +215,7 @@ fn handle_secret_detection(
                 warn!("{}", warning_msg);
                 warn!("  Tip: Use --encrypt to protect sensitive data");
             }
-            SecretsMode::Ignore => unreachable!(),
+            SecretsMode::Ignore => {}
         }
     }
     Ok(())

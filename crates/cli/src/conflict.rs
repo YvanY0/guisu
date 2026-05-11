@@ -202,26 +202,12 @@ impl ConflictHandler {
         };
 
         // Compute hashes for three-way comparison
-        let target_hash = guisu_engine::hash::hash_content(&target_content_decrypted);
-        let actual_hash = guisu_engine::hash::hash_content(&actual_content);
+        let target_hash = guisu_engine::hash_content(&target_content_decrypted);
+        let actual_hash = guisu_engine::hash_content(&actual_content);
 
         // Use the unified three-way comparison function
         let result = compare_three_way(&target_hash, &actual_hash, last_written_hash);
         Ok(result.into())
-    }
-
-    /// Check if a conflict exists (for backward compatibility)
-    ///
-    /// # Errors
-    ///
-    /// Returns an error if detecting the change type fails
-    pub fn has_conflict(
-        entry: &TargetEntry,
-        dest_abs: &AbsPath,
-        last_written_hash: Option<&[u8]>,
-        identities: &[guisu_crypto::Identity],
-    ) -> Result<bool> {
-        Ok(Self::detect_change_type(entry, dest_abs, last_written_hash, identities)?.is_some())
     }
 
     /// Prompt user for action when a change is detected
@@ -350,8 +336,7 @@ impl ConflictHandler {
             1 => Ok(ConflictAction::Skip),
             2 => Ok(ConflictAction::AllOverride),
             3 => Ok(ConflictAction::AllSkip),
-            4 => Ok(ConflictAction::Quit),
-            _ => unreachable!(),
+            _ => Ok(ConflictAction::Quit),
         }
     }
 
@@ -463,7 +448,7 @@ mod tests {
 
     // Helper function to create hash from string using blake3
     fn hash(s: &str) -> Vec<u8> {
-        guisu_engine::hash::hash_content(s.as_bytes()).to_vec()
+        guisu_engine::hash_content(s.as_bytes()).to_vec()
     }
 
     // Tests for compare_three_way function

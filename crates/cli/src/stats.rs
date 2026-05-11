@@ -193,74 +193,6 @@ impl DiffStats {
     pub fn errors(&self) -> usize {
         self.errors.load(Ordering::Relaxed) as usize
     }
-
-    /// Get total count (excludes errors)
-    pub fn total(&self) -> usize {
-        self.added() + self.modified() + self.unchanged()
-    }
-}
-
-/// Thread-safe statistics for status operations
-///
-/// Uses `AtomicU32` instead of `AtomicUsize` to save memory (4 bytes vs 8 bytes on 64-bit systems).
-#[derive(Debug, Default)]
-pub struct StatusStats {
-    /// Total number of files checked
-    total: AtomicU32,
-    /// Number of modified files
-    modified: AtomicU32,
-    /// Number of added files
-    added: AtomicU32,
-    /// Number of removed files
-    removed: AtomicU32,
-}
-
-impl StatusStats {
-    /// Create new statistics tracker
-    #[must_use]
-    pub fn new() -> Self {
-        Self::default()
-    }
-
-    /// Increment total file count
-    pub fn inc_total(&self) {
-        self.total.fetch_add(1, Ordering::Relaxed);
-    }
-
-    /// Increment modified file count
-    pub fn inc_modified(&self) {
-        self.modified.fetch_add(1, Ordering::Relaxed);
-    }
-
-    /// Increment added file count
-    pub fn inc_added(&self) {
-        self.added.fetch_add(1, Ordering::Relaxed);
-    }
-
-    /// Increment removed file count
-    pub fn inc_removed(&self) {
-        self.removed.fetch_add(1, Ordering::Relaxed);
-    }
-
-    /// Get current total file count
-    pub fn total(&self) -> usize {
-        self.total.load(Ordering::Relaxed) as usize
-    }
-
-    /// Get current modified file count
-    pub fn modified(&self) -> usize {
-        self.modified.load(Ordering::Relaxed) as usize
-    }
-
-    /// Get current added file count
-    pub fn added(&self) -> usize {
-        self.added.load(Ordering::Relaxed) as usize
-    }
-
-    /// Get current removed file count
-    pub fn removed(&self) -> usize {
-        self.removed.load(Ordering::Relaxed) as usize
-    }
 }
 
 #[cfg(test)]
@@ -385,7 +317,6 @@ mod tests {
         assert_eq!(stats.modified(), 0);
         assert_eq!(stats.unchanged(), 0);
         assert_eq!(stats.errors(), 0);
-        assert_eq!(stats.total(), 0);
     }
 
     #[test]
@@ -421,29 +352,6 @@ mod tests {
     }
 
     #[test]
-    fn test_diff_stats_total() {
-        let stats = DiffStats::new();
-        stats.inc_added();
-        stats.inc_added();
-        stats.inc_modified();
-        stats.inc_unchanged();
-        stats.inc_unchanged();
-        stats.inc_unchanged();
-        assert_eq!(stats.total(), 6); // 2 added + 1 modified + 3 unchanged
-    }
-
-    #[test]
-    fn test_diff_stats_total_excludes_errors() {
-        let stats = DiffStats::new();
-        stats.inc_added();
-        stats.inc_errors();
-        stats.inc_errors();
-        stats.inc_errors();
-        assert_eq!(stats.total(), 1); // Only counts non-error items
-        assert_eq!(stats.errors(), 3);
-    }
-
-    #[test]
     fn test_diff_stats_mixed_operations() {
         let stats = DiffStats::new();
         stats.inc_added();
@@ -458,83 +366,5 @@ mod tests {
         assert_eq!(stats.modified(), 3);
         assert_eq!(stats.unchanged(), 1);
         assert_eq!(stats.errors(), 1);
-        assert_eq!(stats.total(), 6); // 2 + 3 + 1
-    }
-
-    // Tests for StatusStats
-
-    #[test]
-    fn test_status_stats_new() {
-        let stats = StatusStats::new();
-        assert_eq!(stats.total(), 0);
-        assert_eq!(stats.modified(), 0);
-        assert_eq!(stats.added(), 0);
-        assert_eq!(stats.removed(), 0);
-    }
-
-    #[test]
-    fn test_status_stats_inc_total() {
-        let stats = StatusStats::new();
-        stats.inc_total();
-        stats.inc_total();
-        stats.inc_total();
-        assert_eq!(stats.total(), 3);
-    }
-
-    #[test]
-    fn test_status_stats_inc_modified() {
-        let stats = StatusStats::new();
-        stats.inc_modified();
-        stats.inc_modified();
-        assert_eq!(stats.modified(), 2);
-    }
-
-    #[test]
-    fn test_status_stats_inc_added() {
-        let stats = StatusStats::new();
-        stats.inc_added();
-        assert_eq!(stats.added(), 1);
-    }
-
-    #[test]
-    fn test_status_stats_inc_removed() {
-        let stats = StatusStats::new();
-        stats.inc_removed();
-        stats.inc_removed();
-        stats.inc_removed();
-        assert_eq!(stats.removed(), 3);
-    }
-
-    #[test]
-    fn test_status_stats_mixed_operations() {
-        let stats = StatusStats::new();
-        stats.inc_total();
-        stats.inc_total();
-        stats.inc_total();
-        stats.inc_total();
-        stats.inc_modified();
-        stats.inc_modified();
-        stats.inc_added();
-        stats.inc_removed();
-
-        assert_eq!(stats.total(), 4);
-        assert_eq!(stats.modified(), 2);
-        assert_eq!(stats.added(), 1);
-        assert_eq!(stats.removed(), 1);
-    }
-
-    #[test]
-    fn test_status_stats_independent_counters() {
-        let stats = StatusStats::new();
-        // Verify that each counter is independent
-        stats.inc_total();
-        stats.inc_modified();
-        stats.inc_added();
-        stats.inc_removed();
-
-        assert_eq!(stats.total(), 1);
-        assert_eq!(stats.modified(), 1);
-        assert_eq!(stats.added(), 1);
-        assert_eq!(stats.removed(), 1);
     }
 }

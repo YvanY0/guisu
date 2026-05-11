@@ -27,18 +27,6 @@ pub trait SourceDirExt {
     /// # Returns
     /// Path to `.guisu/templates/` directory
     fn templates_dir(&self) -> PathBuf;
-
-    /// Get the pre-hooks directory path
-    ///
-    /// # Returns
-    /// Path to `.guisu/hooks/pre/` directory
-    fn pre_hooks_dir(&self) -> PathBuf;
-
-    /// Get the post-hooks directory path
-    ///
-    /// # Returns
-    /// Path to `.guisu/hooks/post/` directory
-    fn post_hooks_dir(&self) -> PathBuf;
 }
 
 impl SourceDirExt for Path {
@@ -52,14 +40,6 @@ impl SourceDirExt for Path {
 
     fn templates_dir(&self) -> PathBuf {
         self.guisu_dir().join("templates")
-    }
-
-    fn pre_hooks_dir(&self) -> PathBuf {
-        self.hooks_dir().join("pre")
-    }
-
-    fn post_hooks_dir(&self) -> PathBuf {
-        self.hooks_dir().join("post")
     }
 }
 
@@ -89,24 +69,6 @@ mod tests {
         assert_eq!(
             source.templates_dir(),
             Path::new("/home/user/dotfiles/.guisu/templates")
-        );
-    }
-
-    #[test]
-    fn test_pre_hooks_dir() {
-        let source = Path::new("/home/user/dotfiles");
-        assert_eq!(
-            source.pre_hooks_dir(),
-            Path::new("/home/user/dotfiles/.guisu/hooks/pre")
-        );
-    }
-
-    #[test]
-    fn test_post_hooks_dir() {
-        let source = Path::new("/home/user/dotfiles");
-        assert_eq!(
-            source.post_hooks_dir(),
-            Path::new("/home/user/dotfiles/.guisu/hooks/post")
         );
     }
 

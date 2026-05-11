@@ -30,7 +30,7 @@ use std::path::Path;
 /// # Examples
 ///
 /// ```
-/// use guisu_engine::hash::hash_content;
+/// use guisu_engine::hash_content;
 ///
 /// let content = b"Hello, world!";
 /// let hash = hash_content(content);
@@ -56,7 +56,7 @@ pub fn hash_content(content: &[u8]) -> [u8; 32] {
 /// # Examples
 ///
 /// ```no_run
-/// use guisu_engine::hash::hash_file;
+/// use guisu_engine::hash_file;
 /// use std::path::Path;
 ///
 /// # fn main() -> std::io::Result<()> {

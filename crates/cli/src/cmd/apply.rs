@@ -63,7 +63,7 @@ fn get_last_written_hash(
     match entry {
         TargetEntry::File { .. } => {
             let path_str = entry.path().to_string();
-            guisu_engine::database::get_entry_state(db, &path_str)
+            guisu_engine::get_entry_state(db, &path_str)
                 .ok()
                 .flatten()
                 .map(|state| state.content_hash)
@@ -83,7 +83,7 @@ fn get_last_script_hash(
     match entry {
         TargetEntry::Modify { .. } => {
             let path_str = format!("{}:modify", entry.path());
-            guisu_engine::database::get_entry_state(db, &path_str)
+            guisu_engine::get_entry_state(db, &path_str)
                 .ok()
                 .flatten()
                 .map(|state| state.content_hash)
@@ -574,7 +574,7 @@ fn process_entries_sequential(
 
     // Batch save all successful entries to database
     if !batch_entries.is_empty() {
-        guisu_engine::database::save_entry_states_batch(db, &batch_entries).map_err(|e| {
+        guisu_engine::save_entry_states_batch(db, &batch_entries).map_err(|e| {
             warn!(error = %e, "Failed to save batch state to database");
             e
         })?;
@@ -751,7 +751,7 @@ fn process_entries_parallel(
 
     // Batch save all successful entries to database
     if !batch_entries.is_empty() {
-        guisu_engine::database::save_entry_states_batch(db, &batch_entries).map_err(|e| {
+        guisu_engine::save_entry_states_batch(db, &batch_entries).map_err(|e| {
             warn!(error = %e, "Failed to save batch state to database");
             e
         })?;
@@ -1168,7 +1168,7 @@ fn apply_target_entry(
             ..
         } => {
             // Execute modify script to modify target file in-place
-            let executor = guisu_engine::modify::ModifyExecutor::new();
+            let executor = guisu_engine::ModifyExecutor::new();
             executor.execute(script, interpreter, dest_path, &[])?;
             Ok(())
         }
@@ -1349,7 +1349,7 @@ fn detect_config_drift(
             }
 
             let path_str = entry.path().as_path().to_str()?;
-            let last_written_state = match guisu_engine::database::get_entry_state(db, path_str) {
+            let last_written_state = match guisu_engine::get_entry_state(db, path_str) {
                 Ok(Some(state)) => state,
                 Ok(None) => return None,
                 Err(e) => {
@@ -1366,7 +1366,7 @@ fn detect_config_drift(
                 }
             };
 
-            let actual_hash = guisu_engine::hash::hash_content(&actual_content);
+            let actual_hash = guisu_engine::hash_content(&actual_content);
 
             // Check for drift:
             // 1. actual != last_written (user modified)

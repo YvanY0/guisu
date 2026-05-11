@@ -6,12 +6,12 @@
 pub mod cmd;
 pub mod command;
 pub mod common;
-pub mod conflict;
-pub mod error;
-pub mod logging;
-pub mod stats;
+pub(crate) mod conflict;
+pub(crate) mod error;
+pub(crate) mod logging;
+pub(crate) mod stats;
 pub mod ui;
-pub mod utils;
+pub(crate) mod utils;
 
 use anyhow::{Context, Result};
 use clap::{Parser, Subcommand};
@@ -587,7 +587,7 @@ pub fn run(cli: Cli) -> Result<()> {
     }
 
     // For all other commands, create database first to enable config caching
-    let db_path = guisu_engine::database::get_db_path().context("Failed to get database path")?;
+    let db_path = guisu_engine::get_db_path().context("Failed to get database path")?;
     let database = std::sync::Arc::new(
         guisu_engine::state::RedbPersistentState::new(&db_path)
             .context("Failed to create database instance")?,
@@ -747,7 +747,7 @@ pub(crate) fn load_config_with_template_support(
 
         // Try to use cached config if database is available
         let rendered_toml = if let Some(db) = database {
-            match guisu_engine::database::get_config_metadata(db) {
+            match guisu_engine::get_config_metadata(db) {
                 Ok(Some(metadata)) if metadata.template_matches(&template_content) => {
                     // Cache hit - use cached rendered config
                     metadata.rendered_config
@@ -756,11 +756,8 @@ pub(crate) fn load_config_with_template_support(
                     // Cache miss or invalid - render and cache
                     let rendered = render_config_template(source_dir, &template_content)?;
                     // Save to cache (ignore errors - caching is optional)
-                    let _ = guisu_engine::database::save_config_metadata(
-                        db,
-                        &template_content,
-                        rendered.clone(),
-                    );
+                    let _ =
+                        guisu_engine::save_config_metadata(db, &template_content, rendered.clone());
                     rendered
                 }
             }

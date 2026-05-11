@@ -86,8 +86,7 @@ impl RuntimeContext {
         let paths = ResolvedPaths::resolve(source_dir, dest_dir, &config)?;
 
         // Initialize database
-        let db_path =
-            guisu_engine::database::get_db_path().context("Failed to get database path")?;
+        let db_path = guisu_engine::get_db_path().context("Failed to get database path")?;
         let database =
             RedbPersistentState::new(&db_path).context("Failed to create database instance")?;
 
@@ -110,7 +109,7 @@ impl RuntimeContext {
     #[must_use]
     pub fn from_parts(config: Arc<Config>, paths: ResolvedPaths) -> Self {
         // Initialize database (panic on failure since this is a convenience constructor)
-        let db_path = guisu_engine::database::get_db_path().expect("Failed to get database path");
+        let db_path = guisu_engine::get_db_path().expect("Failed to get database path");
         let database =
             RedbPersistentState::new(&db_path).expect("Failed to create database instance");
 

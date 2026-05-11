@@ -7,8 +7,8 @@
 #![allow(missing_docs)]
 
 use criterion::{BenchmarkId, Criterion, Throughput, black_box, criterion_group, criterion_main};
-use guisu_engine::database::{get_entry_state, save_entry_state, save_entry_states_batch};
-use guisu_engine::state::RedbPersistentState;
+use guisu_engine::RedbPersistentState;
+use guisu_engine::{get_entry_state, save_entry_state, save_entry_states_batch};
 
 use tempfile::TempDir;
 
