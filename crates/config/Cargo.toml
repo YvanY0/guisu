@@ -20,7 +20,7 @@ serde = { workspace = true, features = ["derive"] }
 serde_json.workspace = true
 toml.workspace = true
 tracing.workspace = true
-xdg = "3.0"
+xdg.workspace = true
 
 [dev-dependencies]
 tempfile.workspace = true

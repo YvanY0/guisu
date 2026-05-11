@@ -26,9 +26,9 @@ guisu-template = { path = "../template" }
 anyhow.workspace = true
 chrono.workspace = true
 clap.workspace = true
-comfy-table = "7.2"
+comfy-table.workspace = true
 crossterm.workspace = true
-dialoguer = "0.12"
+dialoguer.workspace = true
 dirs.workspace = true
 git2.workspace = true
 git2_credentials.workspace = true
@@ -36,14 +36,14 @@ hex.workspace = true
 indexmap.workspace = true
 indicatif.workspace = true
 libc.workspace = true
-lscolors = "0.21"
+lscolors.workspace = true
 miette.workspace = true
 os_info.workspace = true
 rayon.workspace = true
-nu-ansi-term = "0.50"
-owo-colors = "4.2"
+nu-ansi-term.workspace = true
+owo-colors.workspace = true
 ratatui.workspace = true
-rustix = { version = "1.0", features = ["process", "system"] }
+rustix.workspace = true
 regex.workspace = true
 serde.workspace = true
 serde_json.workspace = true
@@ -56,7 +56,7 @@ toml.workspace = true
 tracing.workspace = true
 tracing-subscriber.workspace = true
 walkdir.workspace = true
-xdg = "3.0"
+xdg.workspace = true
 
 [build-dependencies]
 anyhow.workspace = true

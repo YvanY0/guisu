@@ -18,15 +18,13 @@ thiserror.workspace = true
 tracing.workspace = true
 
 [features]
-default = ["bw", "bws", "rbw"]
+default = ["bw", "bws"]
 # CLI-based providers (no additional dependencies)
 bw = []  # Bitwarden CLI (bw.rs)
 bws = [] # Bitwarden Secrets Manager (bws.rs)
 rbw = [] # Unofficial Bitwarden CLI (rbw.rs)
 # Future: Native SDK support (requires tokio runtime)
 # bw-sdk = ["tokio"]  # Disabled: not implemented yet
-# Future: 1Password support
-op = [] # 1Password CLI
 
 [lints]
 workspace = true

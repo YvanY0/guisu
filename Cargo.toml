@@ -96,6 +96,17 @@ temp-env = "0.3"
 
 criterion = { version = "0.5", features = ["html_reports"] }
 
+xdg = "3.0"
+hostname = "0.4"
+lru = "0.16.3"
+rustix = { version = "1.0", features = ["process", "system"] }
+uzers = "0.12"
+comfy-table = "7.2"
+dialoguer = "0.12"
+lscolors = "0.21"
+nu-ansi-term = "0.50"
+owo-colors = "4.2"
+
 [profile.release]
 codegen-units = 1
 lto = "fat"
