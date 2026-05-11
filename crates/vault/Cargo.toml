@@ -3,7 +3,7 @@ name = "guisu-vault"
 version.workspace = true
 edition.workspace = true
 authors.workspace = true
-license-file.workspace = true
+license.workspace = true
 
 [lib]
 name = "guisu_vault"

@@ -411,3 +411,43 @@ pub fn find_working_tree(start_path: &Path) -> Option<std::path::PathBuf> {
 
     None
 }
+
+#[cfg(test)]
+mod tests {
+    #![allow(clippy::unwrap_used, clippy::panic)]
+
+    use super::*;
+
+    #[test]
+    fn find_working_tree_current_dir() {
+        let cwd = std::env::current_dir().unwrap();
+        let result = find_working_tree(&cwd);
+        assert!(
+            result.is_some(),
+            "Should find a git repo from the working directory"
+        );
+        let workdir = result.unwrap();
+        assert!(workdir.exists());
+        assert!(workdir.join(".git").exists());
+    }
+
+    #[test]
+    fn find_working_tree_nonexistent_path() {
+        let result = find_working_tree(std::path::Path::new(
+            "/nonexistent/path/that/does/not/exist",
+        ));
+        assert!(result.is_none());
+    }
+
+    #[test]
+    fn git_err_contains_message() {
+        let git2_err = git2::Error::from_str("test error message");
+        let guisu_err = git_err(git2_err);
+
+        let msg = format!("{guisu_err}");
+        assert!(
+            msg.contains("Git error") && msg.contains("test error message"),
+            "Error should contain 'Git error' and original message, got: {msg}"
+        );
+    }
+}

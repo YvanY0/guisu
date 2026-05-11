@@ -16,10 +16,12 @@
 .env.local
 *.local
 
-# Claude Code
+# AI/Coding Assistant artifacts
 .claude
 CLAUDE.md
 .mcp.json
+openspec/
+.full-review/
 
 # Documentation build artifacts
 /docs/_build/

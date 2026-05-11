@@ -290,3 +290,143 @@ impl DestEntry {
         }
     }
 }
+
+#[cfg(test)]
+mod tests {
+    #![allow(clippy::unwrap_used, clippy::panic)]
+
+    use super::*;
+
+    fn make_rel_path(s: &str) -> RelPath {
+        RelPath::new(std::path::PathBuf::from(s)).unwrap()
+    }
+
+    #[test]
+    fn target_entry_file_serde_roundtrip() {
+        let entry = TargetEntry::File {
+            path: make_rel_path(".config/test"),
+            content: b"hello world".to_vec(),
+            content_hash: [1u8; 32],
+            mode: Some(0o644),
+        };
+
+        let json = serde_json::to_string(&entry).unwrap();
+        let restored: TargetEntry = serde_json::from_str(&json).unwrap();
+
+        assert_eq!(entry, restored);
+    }
+
+    #[test]
+    fn target_entry_directory_serde_roundtrip() {
+        let entry = TargetEntry::Directory {
+            path: make_rel_path(".config/mydir"),
+            mode: Some(0o755),
+        };
+
+        let json = serde_json::to_string(&entry).unwrap();
+        let restored: TargetEntry = serde_json::from_str(&json).unwrap();
+
+        assert_eq!(entry, restored);
+    }
+
+    #[test]
+    fn target_entry_symlink_serde_roundtrip() {
+        let entry = TargetEntry::Symlink {
+            path: make_rel_path("link"),
+            target: std::path::PathBuf::from("/actual/target"),
+        };
+
+        let json = serde_json::to_string(&entry).unwrap();
+        let restored: TargetEntry = serde_json::from_str(&json).unwrap();
+
+        assert_eq!(entry, restored);
+    }
+
+    #[test]
+    fn target_entry_remove_serde_roundtrip() {
+        let entry = TargetEntry::Remove {
+            path: make_rel_path("old_file"),
+        };
+
+        let json = serde_json::to_string(&entry).unwrap();
+        let restored: TargetEntry = serde_json::from_str(&json).unwrap();
+
+        assert_eq!(entry, restored);
+    }
+
+    #[test]
+    fn target_entry_modify_serde_roundtrip() {
+        let entry = TargetEntry::Modify {
+            path: make_rel_path(".bashrc"),
+            script: b"#!/bin/bash\necho hi".to_vec(),
+            content_hash: [2u8; 32],
+            interpreter: "/bin/bash".to_string(),
+        };
+
+        let json = serde_json::to_string(&entry).unwrap();
+        let restored: TargetEntry = serde_json::from_str(&json).unwrap();
+
+        assert_eq!(entry, restored);
+    }
+
+    #[test]
+    fn target_entry_path_accessor() {
+        let file = TargetEntry::File {
+            path: make_rel_path("a/b"),
+            content: vec![],
+            content_hash: [0u8; 32],
+            mode: None,
+        };
+        assert_eq!(file.path().as_path(), std::path::Path::new("a/b"));
+
+        let dir = TargetEntry::Directory {
+            path: make_rel_path("c/d"),
+            mode: None,
+        };
+        assert_eq!(dir.path().as_path(), std::path::Path::new("c/d"));
+
+        let remove = TargetEntry::Remove {
+            path: make_rel_path("e/f"),
+        };
+        assert_eq!(remove.path().as_path(), std::path::Path::new("e/f"));
+    }
+
+    #[test]
+    fn target_entry_is_removal() {
+        let remove = TargetEntry::Remove {
+            path: make_rel_path("x"),
+        };
+        assert!(remove.is_removal());
+
+        let file = TargetEntry::File {
+            path: make_rel_path("y"),
+            content: vec![],
+            content_hash: [0u8; 32],
+            mode: None,
+        };
+        assert!(!file.is_removal());
+    }
+
+    #[test]
+    fn target_entry_mode_accessor() {
+        let file = TargetEntry::File {
+            path: make_rel_path("f"),
+            content: vec![],
+            content_hash: [0u8; 32],
+            mode: Some(0o755),
+        };
+        assert_eq!(file.mode(), Some(0o755));
+
+        let dir = TargetEntry::Directory {
+            path: make_rel_path("d"),
+            mode: None,
+        };
+        assert_eq!(dir.mode(), None);
+
+        let symlink = TargetEntry::Symlink {
+            path: make_rel_path("s"),
+            target: std::path::PathBuf::from("/t"),
+        };
+        assert_eq!(symlink.mode(), None);
+    }
+}

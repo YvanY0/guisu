@@ -344,3 +344,137 @@ impl System for DryRunSystem {
         Ok(std::path::PathBuf::new())
     }
 }
+
+#[cfg(test)]
+mod tests {
+    #![allow(clippy::unwrap_used, clippy::panic)]
+
+    use super::*;
+
+    fn abs(s: &str) -> AbsPath {
+        AbsPath::new(std::path::PathBuf::from(s)).unwrap()
+    }
+
+    #[test]
+    fn dry_run_records_write_file() {
+        let sys = DryRunSystem::new();
+        let path = abs("/tmp/test.txt");
+        let content = b"hello";
+
+        sys.write_file(&path, content, Some(0o644)).unwrap();
+
+        let ops = sys.operations();
+        assert_eq!(ops.len(), 1);
+        assert_eq!(
+            ops[0],
+            Operation::WriteFile {
+                path: path.clone(),
+                size: 5,
+                mode: Some(0o644),
+            }
+        );
+    }
+
+    #[test]
+    fn dry_run_records_create_dir() {
+        let sys = DryRunSystem::new();
+        let path = abs("/tmp/mydir");
+
+        sys.create_dir(&path, Some(0o755)).unwrap();
+
+        let ops = sys.operations();
+        assert_eq!(ops.len(), 1);
+        assert_eq!(
+            ops[0],
+            Operation::CreateDir {
+                path: path.clone(),
+                mode: Some(0o755),
+            }
+        );
+    }
+
+    #[test]
+    fn dry_run_records_remove() {
+        let sys = DryRunSystem::new();
+        let path = abs("/tmp/old");
+
+        sys.remove(&path).unwrap();
+
+        let ops = sys.operations();
+        assert_eq!(ops.len(), 1);
+        assert_eq!(ops[0], Operation::Remove { path: path.clone() });
+    }
+
+    #[test]
+    fn dry_run_records_symlink() {
+        let sys = DryRunSystem::new();
+        let link = abs("/tmp/link");
+        let target = std::path::Path::new("/actual/target");
+
+        sys.symlink(target, &link).unwrap();
+
+        let ops = sys.operations();
+        assert_eq!(ops.len(), 1);
+        assert_eq!(
+            ops[0],
+            Operation::Symlink {
+                link: link.clone(),
+                target: std::path::PathBuf::from("/actual/target"),
+            }
+        );
+    }
+
+    #[test]
+    fn dry_run_records_multiple_operations() {
+        let sys = DryRunSystem::new();
+
+        sys.write_file(&abs("/a"), b"x", None).unwrap();
+        sys.create_dir(&abs("/b"), None).unwrap();
+        sys.remove(&abs("/c")).unwrap();
+        sys.symlink(std::path::Path::new("/t"), &abs("/d")).unwrap();
+
+        let ops = sys.operations();
+        assert_eq!(ops.len(), 4);
+        assert!(matches!(&ops[0], Operation::WriteFile { .. }));
+        assert!(matches!(&ops[1], Operation::CreateDir { .. }));
+        assert!(matches!(&ops[2], Operation::Remove { .. }));
+        assert!(matches!(&ops[3], Operation::Symlink { .. }));
+    }
+
+    #[test]
+    fn dry_run_exists_returns_false() {
+        let sys = DryRunSystem::new();
+        assert!(!sys.exists(&abs("/anything")));
+    }
+
+    #[test]
+    fn dry_run_read_file_returns_empty() {
+        let sys = DryRunSystem::new();
+        let content = sys.read_file(&abs("/fake")).unwrap();
+        assert!(content.is_empty());
+
+        let ops = sys.operations();
+        assert_eq!(ops.len(), 1);
+        assert!(matches!(&ops[0], Operation::ReadFile { .. }));
+    }
+
+    #[test]
+    fn dry_run_create_dir_all_records_single_op() {
+        let sys = DryRunSystem::new();
+        sys.create_dir_all(&abs("/a/b/c"), None).unwrap();
+
+        let ops = sys.operations();
+        assert_eq!(ops.len(), 1);
+        assert!(matches!(&ops[0], Operation::CreateDir { .. }));
+    }
+
+    #[test]
+    fn dry_run_remove_all_records_single_op() {
+        let sys = DryRunSystem::new();
+        sys.remove_all(&abs("/dir")).unwrap();
+
+        let ops = sys.operations();
+        assert_eq!(ops.len(), 1);
+        assert!(matches!(&ops[0], Operation::Remove { .. }));
+    }
+}

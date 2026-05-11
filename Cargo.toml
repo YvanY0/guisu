@@ -14,7 +14,7 @@ resolver = "2"
 version = "0.2.0"
 edition = "2024"
 authors = ["Yihuang Yu <yuyihuang@live.com>"]
-license-file = "LICENSE"
+license = "MIT OR Apache-2.0"
 repository = "https://github.com/PaulYuuu/guisu"
 homepage = "https://github.com/PaulYuuu/guisu"
 keywords = ["dotfiles"]
@@ -33,7 +33,7 @@ missing_docs = "warn"
 [workspace.dependencies]
 clap = { version = "4.5", features = ["derive", "cargo", "env"] }
 crossterm = "0.29"
-ratatui = "0.29"
+ratatui = "0.30"
 terminal_size = "0.4"
 indicatif = "0.18"
 

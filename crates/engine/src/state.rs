@@ -918,6 +918,166 @@ impl ConfigMetadata {
     }
 }
 
+#[cfg(test)]
+mod tests {
+    #![allow(clippy::unwrap_used, clippy::panic)]
+
+    use super::*;
+    use std::time::{Duration, UNIX_EPOCH};
+
+    /// Wrapper to test the custom `systemtime_serde` module via `#[serde(with)]`
+    #[derive(Serialize, Deserialize)]
+    struct SystemTimeWrapper {
+        #[serde(with = "systemtime_serde")]
+        time: Option<SystemTime>,
+    }
+
+    #[test]
+    fn systemtime_serde_roundtrip_some() {
+        let time = UNIX_EPOCH + Duration::from_secs(1_700_000_000);
+        let wrapper = SystemTimeWrapper { time: Some(time) };
+
+        let json = serde_json::to_string(&wrapper).unwrap();
+        assert_eq!(json, r#"{"time":1700000000}"#);
+
+        let restored: SystemTimeWrapper = serde_json::from_str(&json).unwrap();
+        assert_eq!(restored.time, Some(time));
+    }
+
+    #[test]
+    fn systemtime_serde_roundtrip_none() {
+        let wrapper = SystemTimeWrapper { time: None };
+        let json = serde_json::to_string(&wrapper).unwrap();
+        assert_eq!(json, r#"{"time":null}"#);
+
+        let restored: SystemTimeWrapper = serde_json::from_str(&json).unwrap();
+        assert!(restored.time.is_none());
+    }
+
+    #[test]
+    fn systemtime_serde_epoch_zero() {
+        let wrapper = SystemTimeWrapper {
+            time: Some(UNIX_EPOCH),
+        };
+        let json = serde_json::to_string(&wrapper).unwrap();
+        assert_eq!(json, r#"{"time":0}"#);
+
+        let restored: SystemTimeWrapper = serde_json::from_str(&json).unwrap();
+        assert_eq!(restored.time, Some(UNIX_EPOCH));
+    }
+
+    #[test]
+    fn entry_state_serde_roundtrip() {
+        let content = b"test content";
+        let state = EntryState::new(content, Some(0o644));
+
+        let bytes = state.to_bytes().unwrap();
+        let restored = EntryState::from_bytes(&bytes).unwrap();
+
+        assert_eq!(state, restored);
+    }
+
+    #[test]
+    fn entry_state_serde_roundtrip_no_mode() {
+        let content = b"another test";
+        let state = EntryState::new(content, None);
+
+        let bytes = state.to_bytes().unwrap();
+        let restored = EntryState::from_bytes(&bytes).unwrap();
+
+        assert_eq!(state, restored);
+    }
+
+    #[test]
+    fn hook_state_construction() {
+        let state = HookState::new();
+
+        assert!(state.last_executed.is_none());
+        assert!(state.content_hash.is_none());
+        assert!(state.once_executed.is_empty());
+        assert!(state.onchange_hashes.is_empty());
+    }
+
+    #[test]
+    fn hook_state_default_is_new() {
+        let new = HookState::new();
+        let default = HookState::default();
+
+        assert_eq!(new.last_executed, default.last_executed);
+        assert_eq!(new.content_hash, default.content_hash);
+        assert!(default.once_executed.is_empty());
+    }
+
+    #[test]
+    fn hook_state_once_tracking() {
+        let mut state = HookState::new();
+
+        assert!(!state.has_executed_once("my-hook"));
+        state.mark_executed_once("my-hook".to_string());
+        assert!(state.has_executed_once("my-hook"));
+        assert!(!state.has_executed_once("other-hook"));
+    }
+
+    #[test]
+    fn hook_state_onchange_tracking() {
+        let mut state = HookState::new();
+
+        let hash = [42u8; 32];
+        assert!(state.hook_content_changed("hook-a", &hash));
+        state.update_onchange_hash("hook-a".to_string(), hash);
+        assert!(!state.hook_content_changed("hook-a", &hash));
+
+        let different_hash = [99u8; 32];
+        assert!(state.hook_content_changed("hook-a", &different_hash));
+    }
+
+    #[test]
+    fn hook_state_serde_roundtrip() {
+        let mut state = HookState::new();
+        state.last_executed = Some(UNIX_EPOCH + Duration::from_secs(100));
+        state.content_hash = Some([7u8; 32]);
+        state.once_executed.insert("hook-1".to_string());
+        state.once_executed.insert("hook-2".to_string());
+        state
+            .onchange_hashes
+            .insert("hook-3".to_string(), [3u8; 32]);
+
+        let bytes = state.to_bytes().unwrap();
+        let restored = HookState::from_bytes(&bytes).unwrap();
+
+        assert_eq!(state.last_executed, restored.last_executed);
+        assert_eq!(state.content_hash, restored.content_hash);
+        assert_eq!(state.once_executed, restored.once_executed);
+        assert_eq!(state.onchange_hashes, restored.onchange_hashes);
+    }
+
+    #[test]
+    fn config_metadata_serde_roundtrip() {
+        let metadata = ConfigMetadata::new("template source", "rendered output".to_string());
+
+        let bytes = metadata.to_bytes().unwrap();
+        let restored = ConfigMetadata::from_bytes(&bytes).unwrap();
+
+        assert_eq!(metadata, restored);
+    }
+
+    #[test]
+    fn config_metadata_template_matches() {
+        let metadata = ConfigMetadata::new("my template", "rendered".to_string());
+
+        assert!(metadata.template_matches("my template"));
+        assert!(!metadata.template_matches("different template"));
+    }
+
+    #[test]
+    fn config_metadata_different_content_different_hash() {
+        let m1 = ConfigMetadata::new("template A", "output A".to_string());
+        let m2 = ConfigMetadata::new("template B", "output B".to_string());
+
+        assert_ne!(m1.template_hash, m2.template_hash);
+    }
+}
+
 /// Type aliases for mock state data structure
 /// Inner map: key-value pairs within a bucket
 type BucketData = HashMap<Vec<u8>, Vec<u8>>;

@@ -3,7 +3,7 @@ name = "guisu-engine"
 version.workspace = true
 edition.workspace = true
 authors.workspace = true
-license-file.workspace = true
+license.workspace = true
 repository.workspace = true
 homepage.workspace = true
 documentation.workspace = true
@@ -52,6 +52,10 @@ harness = false
 
 [[bench]]
 name = "database_operations"
+harness = false
+
+[[bench]]
+name = "hash_operations"
 harness = false
 
 [lints]

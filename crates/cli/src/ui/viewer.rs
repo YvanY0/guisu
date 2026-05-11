@@ -255,7 +255,10 @@ impl InteractiveDiffViewer {
     }
 
     /// Main application loop
-    fn run_app<B: ratatui::backend::Backend>(&mut self, terminal: &mut Terminal<B>) -> Result<()> {
+    fn run_app<B: ratatui::backend::Backend>(&mut self, terminal: &mut Terminal<B>) -> Result<()>
+    where
+        <B as ratatui::backend::Backend>::Error: Send + Sync + 'static,
+    {
         loop {
             terminal.draw(|f| self.render(f))?;
 
@@ -373,7 +376,7 @@ impl InteractiveDiffViewer {
             )
             .highlight_symbol("❯ ");
 
-        let mut state = self.file_list_state.clone();
+        let mut state = self.file_list_state;
         frame.render_stateful_widget(list, area, &mut state);
     }
 
