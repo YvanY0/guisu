@@ -98,20 +98,19 @@ fn load_variable_file(path: &Path) -> Result<Option<VariableFile>> {
         None => return Ok(None),
     };
 
-    let content = fs::read_to_string(path).map_err(|e| {
-        guisu_core::Error::Message(format!("Failed to read {}: {}", path.display(), e))
+    let content = fs::read_to_string(path).map_err(|e| guisu_core::Error::FileRead {
+        path: path.to_path_buf(),
+        source: e,
     })?;
 
-    let value: toml::Value = toml::from_str(&content).map_err(|e| {
-        guisu_core::Error::Message(format!(
-            "Failed to parse TOML from {}: {}",
-            path.display(),
-            e
-        ))
-    })?;
+    let value: toml::Value =
+        toml::from_str(&content).map_err(|e| guisu_core::Error::InvalidConfig {
+            message: format!("failed to parse TOML from {}: {e}", path.display()),
+        })?;
 
-    let json_value = serde_json::to_value(value)
-        .map_err(|e| guisu_core::Error::Message(format!("Failed to convert TOML to JSON: {e}")))?;
+    let json_value = serde_json::to_value(value).map_err(|e| guisu_core::Error::InvalidConfig {
+        message: format!("failed to convert TOML to JSON: {e}"),
+    })?;
 
     if let JsonValue::Object(map) = json_value {
         Ok(Some(VariableFile {

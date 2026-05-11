@@ -52,13 +52,16 @@ impl IgnoresConfig {
             return Ok(Self::default());
         }
 
-        let content = fs::read_to_string(&ignores_path).map_err(|e| {
-            guisu_core::Error::Message(format!("Failed to read {}: {}", ignores_path.display(), e))
-        })?;
+        let content =
+            fs::read_to_string(&ignores_path).map_err(|e| guisu_core::Error::FileRead {
+                path: ignores_path.clone(),
+                source: e,
+            })?;
 
-        let config: Self = toml::from_str(&content).map_err(|e| {
-            guisu_core::Error::Message(format!("Failed to parse {}: {}", ignores_path.display(), e))
-        })?;
+        let config: Self =
+            toml::from_str(&content).map_err(|e| guisu_core::Error::InvalidConfig {
+                message: format!("failed to parse {}: {e}", ignores_path.display()),
+            })?;
 
         Ok(config)
     }

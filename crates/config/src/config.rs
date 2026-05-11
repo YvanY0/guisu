@@ -373,19 +373,16 @@ impl Config {
     ///
     /// Returns error if file cannot be read or TOML parsing fails
     pub fn load<P: AsRef<Path>>(path: P) -> Result<Self> {
-        let content = fs::read_to_string(path.as_ref()).map_err(|e| {
-            guisu_core::Error::Message(format!(
-                "Failed to read config file {}: {e}",
-                path.as_ref().display()
-            ))
-        })?;
+        let content =
+            fs::read_to_string(path.as_ref()).map_err(|e| guisu_core::Error::FileRead {
+                path: path.as_ref().to_path_buf(),
+                source: e,
+            })?;
 
-        let mut config: Self = toml::from_str(&content).map_err(|e| {
-            guisu_core::Error::Message(format!(
-                "Failed to parse config file {}: {e}",
-                path.as_ref().display()
-            ))
-        })?;
+        let mut config: Self =
+            toml::from_str(&content).map_err(|e| guisu_core::Error::InvalidConfig {
+                message: format!("failed to parse {}: {e}", path.as_ref().display()),
+            })?;
 
         // Resolve relative paths using the config file's directory as base
         if let Some(parent) = path.as_ref().parent() {
@@ -406,8 +403,10 @@ impl Config {
     ///
     /// Returns error if TOML parsing fails
     pub fn from_toml_str(toml_content: &str, source_dir: &Path) -> Result<Self> {
-        let mut config: Self = toml::from_str(toml_content)
-            .map_err(|e| guisu_core::Error::Message(format!("Failed to parse config TOML: {e}")))?;
+        let mut config: Self =
+            toml::from_str(toml_content).map_err(|e| guisu_core::Error::InvalidConfig {
+                message: format!("failed to parse config TOML: {e}"),
+            })?;
 
         // Store the source directory for relative path resolution
         config.resolve_relative_paths(source_dir);
@@ -435,39 +434,38 @@ impl Config {
         if !config_path.exists() {
             // If .guisu.toml.j2 exists, provide helpful error
             if template_path.exists() {
-                return Err(guisu_core::Error::Message(
-                    "Found .guisu.toml.j2 template but .guisu.toml is missing.\n\
-                     \n\
-                     Template rendering should be handled by CLI layer.\n\
-                     This is likely a bug - please use Config::load_with_variables() instead."
+                return Err(guisu_core::Error::InvalidConfig {
+                    message: "found .guisu.toml.j2 template but .guisu.toml is missing. \
+                             Template rendering should be handled by CLI layer. \
+                             This is likely a bug - please use Config::load_with_variables() instead."
                         .to_string(),
-                ));
+                });
             }
 
-            return Err(guisu_core::Error::Message(format!(
-                "Configuration file not found in source directory.\n\
-                 Expected: .guisu.toml in {}\n\
-                 \n\
-                 Create one with:\n\
-                 cat > .guisu.toml << 'EOF'\n\
-                 # Guisu configuration\n\
-                 \n\
-                 [age]\n\
-                 identity = \"~/.config/guisu/key.txt\"\n\
-                 # Or use a key in the repo:\n\
-                 # identity = \"./key.txt\"\n\
-                 EOF",
-                source_dir.display()
-            )));
+            return Err(guisu_core::Error::InvalidConfig {
+                message: format!(
+                    "configuration file not found in source directory. \
+                     Expected: .guisu.toml in {}. \
+                     Create one with: \
+                     cat > .guisu.toml << 'EOF' \
+                     # Guisu configuration \
+                     \
+                     [age] \
+                     identity = \"~/.config/guisu/key.txt\" \
+                     # Or use a key in the repo: \
+                     # identity = \"./key.txt\" \
+                     EOF",
+                    source_dir.display()
+                ),
+            });
         }
 
         // Read and parse TOML config
-        let content = fs::read_to_string(&config_path).map_err(|e| {
-            guisu_core::Error::Message(format!(
-                "Failed to read config file {}: {e}",
-                config_path.display()
-            ))
-        })?;
+        let content =
+            fs::read_to_string(&config_path).map_err(|e| guisu_core::Error::FileRead {
+                path: config_path.clone(),
+                source: e,
+            })?;
 
         Self::from_toml_str(&content, source_dir)
     }
@@ -642,23 +640,21 @@ impl Config {
     ///
     /// Returns error if serialization or file write fails
     pub fn save<P: AsRef<Path>>(&self, path: P) -> Result<()> {
-        let content = toml::to_string_pretty(self)
-            .map_err(|e| guisu_core::Error::Message(format!("Failed to serialize config: {e}")))?;
+        let content =
+            toml::to_string_pretty(self).map_err(|e| guisu_core::Error::InvalidConfig {
+                message: format!("failed to serialize config: {e}"),
+            })?;
 
         if let Some(parent) = path.as_ref().parent() {
-            fs::create_dir_all(parent).map_err(|e| {
-                guisu_core::Error::Message(format!(
-                    "Failed to create config directory {}: {e}",
-                    parent.display()
-                ))
+            fs::create_dir_all(parent).map_err(|e| guisu_core::Error::DirectoryCreate {
+                path: parent.to_path_buf(),
+                source: e,
             })?;
         }
 
-        fs::write(path.as_ref(), content).map_err(|e| {
-            guisu_core::Error::Message(format!(
-                "Failed to write config file {}: {e}",
-                path.as_ref().display()
-            ))
+        fs::write(path.as_ref(), &content).map_err(|e| guisu_core::Error::FileWrite {
+            path: path.as_ref().to_path_buf(),
+            source: e,
         })?;
 
         Ok(())
@@ -723,10 +719,9 @@ impl Config {
         for recipient_str in recipient_strings {
             let recipient = recipient_str
                 .parse::<guisu_crypto::Recipient>()
-                .map_err(|e| {
-                    guisu_core::Error::Message(format!(
-                        "Failed to parse recipient '{recipient_str}': {e}"
-                    ))
+                .map_err(|e| guisu_core::Error::InvalidRecipient {
+                    recipient: recipient_str.clone(),
+                    reason: e.to_string(),
                 })?;
             recipients.push(recipient);
         }
@@ -781,53 +776,46 @@ impl Config {
 
         // Check if any identities are configured
         if identity_paths.is_empty() {
-            return Err(guisu_core::Error::Message(
-                "No identity file configured. Add to your .guisu.toml:\n\n\
-                 [age]\n\
-                 identity = \"~/.config/guisu/key.txt\"\n\n\
-                 Or use SSH key:\n\
-                 identity = \"~/.ssh/id_ed25519\"\n\n\
-                 Generate age key with: guisu age generate"
+            return Err(guisu_core::Error::InvalidConfig {
+                message: "no identity file configured. Add to your .guisu.toml: \
+                         [age] identity = \"~/.config/guisu/key.txt\". \
+                         Or use SSH key: identity = \"~/.ssh/id_ed25519\". \
+                         Generate age key with: guisu age generate"
                     .to_string(),
-            ));
+            });
         }
 
         let mut all_identities = Vec::new();
 
         for identity_path in identity_paths {
             if !identity_path.exists() {
-                return Err(guisu_core::Error::Message(format!(
-                    "Identity file not found: {}\n\
-                     \n\
-                     For age key: guisu age generate\n\
-                     For SSH key: use existing SSH private key",
-                    identity_path.display()
-                )));
+                return Err(guisu_core::Error::IdentityNotFound {
+                    path: identity_path.display().to_string(),
+                });
             }
 
             let is_ssh = Self::is_ssh_identity(&identity_path);
             let identities = load_identities(&identity_path, is_ssh).map_err(|e| {
-                guisu_core::Error::Message(format!(
-                    "Failed to load identity from {}: {}",
-                    identity_path.display(),
-                    e
+                e.context(format!(
+                    "failed to load identity from {}",
+                    identity_path.display()
                 ))
             })?;
 
             if identities.is_empty() {
-                return Err(guisu_core::Error::Message(format!(
-                    "No identities found in {}",
-                    identity_path.display()
-                )));
+                return Err(guisu_core::Error::InvalidIdentity {
+                    reason: "no identities found in file".to_string(),
+                    path: identity_path.display().to_string(),
+                });
             }
 
             all_identities.extend(identities);
         }
 
         if all_identities.is_empty() {
-            return Err(guisu_core::Error::Message(
-                "No identities loaded from configured files".to_string(),
-            ));
+            return Err(guisu_core::Error::InvalidConfig {
+                message: "no identities loaded from configured files".to_string(),
+            });
         }
 
         Ok(all_identities)
@@ -1398,7 +1386,7 @@ identity = "./key.txt"
 
         assert!(result.is_err());
         let err_msg = result.unwrap_err().to_string();
-        assert!(err_msg.contains("Configuration file not found"));
+        assert!(err_msg.contains("configuration file not found"));
     }
 
     #[test]
@@ -1411,7 +1399,7 @@ identity = "./key.txt"
 
         assert!(result.is_err());
         let err_msg = result.unwrap_err().to_string();
-        assert!(err_msg.contains("Found .guisu.toml.j2 template"));
+        assert!(err_msg.contains("found .guisu.toml.j2 template"));
     }
 
     #[test]
@@ -1461,7 +1449,7 @@ identity = "./key.txt"
 
         assert!(result.is_err());
         let err_msg = result.unwrap_err().to_string();
-        assert!(err_msg.contains("Failed to parse config file"));
+        assert!(err_msg.contains("failed to parse"));
     }
 
     #[test]
@@ -1491,7 +1479,7 @@ identity = "./key.txt"
         assert!(result.is_err());
         if let Err(e) = result {
             let err_msg = e.to_string();
-            assert!(err_msg.contains("No identity file configured"));
+            assert!(err_msg.contains("no identity file configured"));
         }
     }
 
@@ -1505,7 +1493,10 @@ identity = "./key.txt"
         assert!(result.is_err());
         if let Err(e) = result {
             let err_msg = e.to_string();
-            assert!(err_msg.contains("Identity file not found"));
+            assert!(
+                err_msg.contains("Identity file not found")
+                    || err_msg.contains("/nonexistent/key.txt")
+            );
         }
     }
 
