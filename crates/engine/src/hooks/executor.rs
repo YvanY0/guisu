@@ -3,11 +3,12 @@
 //! Provides parallel hook execution with template rendering support.
 
 use super::config::{Hook, HookCollections, HookMode, HookStage};
+use super::env;
+use super::script;
 use guisu_core::platform::CURRENT_PLATFORM;
 use guisu_core::{Error, Result};
 use indexmap::IndexMap;
 use std::fs;
-use std::io::Write;
 use std::path::{Path, PathBuf};
 
 /// Result tuple from hook execution: (`cached_hash`, `rendered_content`, `execution_result`)
@@ -502,7 +503,7 @@ where
             // Clone-on-write: only allocate when hook has custom env vars
             let mut env = (*self.env_vars).clone();
             for (k, v) in &hook.env {
-                let expanded_value = self.expand_env_vars(v);
+                let expanded_value = env::expand_env_vars(v, &self.env_vars);
                 env.insert(k.clone(), expanded_value.into_owned());
             }
             std::sync::Arc::new(env)
@@ -524,7 +525,7 @@ where
                 } else {
                     self.source_dir.join(script_path)
                 };
-                Self::execute_script(&script_abs, &working_dir, &env, hook.timeout).map_err(|e| {
+                script::execute_script(&script_abs, &working_dir, &env, hook.timeout).map_err(|e| {
                     Error::HookExecution(format!(
                         "Hook '{}' script '{}' failed: {}",
                         hook.name, script_path, e
@@ -562,7 +563,7 @@ where
         use std::time::Duration;
 
         // Expand environment variables in command
-        let expanded_cmd = self.expand_env_vars(cmd);
+        let expanded_cmd = env::expand_env_vars(cmd, &self.env_vars);
 
         // Parse command using shell-words for proper quote handling
         // Handles: git commit -m "Initial commit" → ["git", "commit", "-m", "Initial commit"]
@@ -615,197 +616,6 @@ where
         }
     }
 
-    /// Execute a script using its shebang interpreter
-    ///
-    /// Reads the script's shebang line to determine the interpreter,
-    /// then executes the script with that interpreter.
-    #[tracing::instrument(skip(env), fields(script_path = %script_path.display(), working_dir = %working_dir.display(), timeout))]
-    fn execute_script(
-        script_path: &Path,
-        working_dir: &Path,
-        env: &IndexMap<String, String>,
-        timeout: u64,
-    ) -> Result<()> {
-        use std::time::Duration;
-
-        if !script_path.exists() {
-            return Err(Error::HookExecution(format!(
-                "Script not found: {}",
-                script_path.display()
-            )));
-        }
-
-        tracing::debug!("Executing script: {}", script_path.display());
-        tracing::debug!("Working directory: {}", working_dir.display());
-        if timeout > 0 {
-            tracing::debug!("Timeout: {} seconds", timeout);
-        }
-
-        // Parse shebang to get interpreter
-        let (interpreter, args) = Self::parse_shebang(script_path)?;
-
-        // Build command: interpreter + args + script_path
-        let mut cmd_args = args;
-        cmd_args.push(script_path.to_string_lossy().to_string());
-
-        tracing::debug!("Using interpreter: {} {:?}", interpreter, cmd_args);
-
-        // Build command - inherits parent env by default
-        let mut cmd_builder = duct::cmd(&interpreter, &cmd_args)
-            .dir(working_dir)
-            .stderr_to_stdout();
-
-        // Add custom environment variables (guisu-specific + hook-specific)
-        for (key, value) in env {
-            cmd_builder = cmd_builder.env(key, value);
-        }
-
-        let cmd_builder = cmd_builder;
-
-        // Execute with or without timeout
-        if timeout > 0 {
-            let handle = cmd_builder.start().map_err(|e| {
-                Error::HookExecution(format!(
-                    "Failed to start script '{}': {}",
-                    script_path.display(),
-                    e
-                ))
-            })?;
-
-            match handle.wait_timeout(Duration::from_secs(timeout)) {
-                Ok(Some(_output)) => Ok(()),
-                Ok(None) => Err(Error::HookExecution(format!(
-                    "Script '{}' timed out after {} seconds",
-                    script_path.display(),
-                    timeout
-                ))),
-                Err(e) => Err(Error::HookExecution(format!(
-                    "Script '{}' failed: {}",
-                    script_path.display(),
-                    e
-                ))),
-            }
-        } else {
-            cmd_builder.run().map(|_| ()).map_err(|e| {
-                Error::HookExecution(format!("Script '{}' failed: {}", script_path.display(), e))
-            })
-        }
-    }
-
-    /// Parse shebang line from a script file
-    ///
-    /// Returns (interpreter, args)
-    ///
-    /// # Examples
-    ///
-    /// - `#!/bin/bash` → ("bash", [])
-    /// - `#!/usr/bin/env python3` → ("python3", [])
-    /// - `#!/bin/bash -e` → ("bash", [`"-e"`])
-    fn parse_shebang(script_path: &Path) -> Result<(String, Vec<String>)> {
-        use std::io::{BufRead, BufReader};
-
-        let file = fs::File::open(script_path).map_err(|e| {
-            Error::HookExecution(format!(
-                "Failed to open script {}: {}",
-                script_path.display(),
-                e
-            ))
-        })?;
-
-        let mut reader = BufReader::new(file);
-        let mut first_line = String::new();
-        reader.read_line(&mut first_line).map_err(|e| {
-            Error::HookExecution(format!(
-                "Failed to read script {}: {}",
-                script_path.display(),
-                e
-            ))
-        })?;
-
-        // Check for shebang
-        if !first_line.starts_with("#!") {
-            // No shebang, try to infer from extension or use default
-            return Self::infer_interpreter(script_path);
-        }
-
-        // Parse shebang line
-        let shebang = first_line[2..].trim();
-
-        // Handle "#! /usr/bin/env interpreter"
-        if shebang.starts_with("/usr/bin/env") || shebang.starts_with("/bin/env") {
-            let parts: Vec<&str> = shebang.split_whitespace().collect();
-            if parts.len() < 2 {
-                return Err(Error::HookExecution(format!(
-                    "Invalid env shebang: {first_line}"
-                )));
-            }
-
-            let interpreter = parts[1].to_string();
-            let args = parts[2..].iter().map(|s| (*s).to_string()).collect();
-            return Ok((interpreter, args));
-        }
-
-        // Handle "#! /bin/bash" or "#! /bin/bash -e"
-        let parts: Vec<&str> = shebang.split_whitespace().collect();
-        if parts.is_empty() {
-            return Err(Error::HookExecution(format!("Empty shebang: {first_line}")));
-        }
-
-        // Extract interpreter name from path
-        let interpreter_path = PathBuf::from(parts[0]);
-        let interpreter = interpreter_path
-            .file_name()
-            .and_then(|n| n.to_str())
-            .ok_or_else(|| Error::HookExecution(format!("Invalid interpreter path: {}", parts[0])))?
-            .to_string();
-
-        let args = parts[1..].iter().map(|s| (*s).to_string()).collect();
-
-        Ok((interpreter, args))
-    }
-
-    /// Infer interpreter from script extension when no shebang is present
-    fn infer_interpreter(script_path: &Path) -> Result<(String, Vec<String>)> {
-        let extension = script_path
-            .extension()
-            .and_then(|e| e.to_str())
-            .unwrap_or("");
-
-        let interpreter = match extension {
-            "sh" => "sh",
-            "bash" => "bash",
-            "zsh" => "zsh",
-            "py" => "python3",
-            "rb" => "ruby",
-            "pl" => "perl",
-            "js" => "node",
-            "" => {
-                // No extension, check if executable
-                #[cfg(unix)]
-                {
-                    use std::os::unix::fs::PermissionsExt;
-                    let metadata = fs::metadata(script_path)?;
-                    if metadata.permissions().mode() & 0o111 != 0 {
-                        // Executable, try to execute directly
-                        return Ok((script_path.to_string_lossy().to_string(), vec![]));
-                    }
-                }
-
-                // Default to sh
-                "sh"
-            }
-            _ => {
-                return Err(Error::HookExecution(format!(
-                    "Cannot infer interpreter for script: {} (extension: {})",
-                    script_path.display(),
-                    extension
-                )));
-            }
-        };
-
-        Ok((interpreter.to_string(), vec![]))
-    }
-
     /// Execute a template script by rendering it first
     fn execute_template_script(&self, hook: &Hook) -> Result<()> {
         let script_path = hook
@@ -839,105 +649,21 @@ where
             .map_err(|e| Error::HookExecution(format!("Failed to render template: {e}")))?;
 
         // Execute the processed script
-        self.execute_processed_script(&processed_content, hook)
-    }
-
-    /// Execute a processed script via temporary file
-    fn execute_processed_script(&self, content: &str, hook: &Hook) -> Result<()> {
-        use tempfile::NamedTempFile;
-
-        // Create temporary file
-        let mut temp_file = NamedTempFile::new()
-            .map_err(|e| Error::HookExecution(format!("Failed to create temp file: {e}")))?;
-
-        // Write content
-        temp_file
-            .write_all(content.as_bytes())
-            .map_err(|e| Error::HookExecution(format!("Failed to write temp file: {e}")))?;
-
-        // Set executable permissions (Unix)
-        #[cfg(unix)]
-        {
-            use std::os::unix::fs::PermissionsExt;
-            let perms = fs::Permissions::from_mode(0o700);
-            temp_file
-                .as_file()
-                .set_permissions(perms)
-                .map_err(|e| Error::HookExecution(format!("Failed to set permissions: {e}")))?;
-        }
-
-        // Working directory is always source_dir
         let working_dir = self.source_dir.to_path_buf();
 
         // Build environment variables (only clone if hook has custom env)
         let env = if hook.env.is_empty() {
-            // No custom env vars, use shared Arc (just increment refcount)
             self.env_vars.clone()
         } else {
-            // Clone-on-write: only allocate when hook has custom env vars
             let mut env = (*self.env_vars).clone();
             for (k, v) in &hook.env {
-                let expanded_value = self.expand_env_vars(v);
+                let expanded_value = env::expand_env_vars(v, &self.env_vars);
                 env.insert(k.clone(), expanded_value.into_owned());
             }
             std::sync::Arc::new(env)
         };
 
-        let temp_path = temp_file.path();
-        tracing::debug!("Executing processed script: {}", temp_path.display());
-        tracing::debug!("Working directory: {}", working_dir.display());
-
-        // Execute script using shebang (same as regular scripts)
-        // temp_file is automatically deleted when dropped
-        Self::execute_script(temp_path, &working_dir, &env, hook.timeout)
-    }
-
-    /// Expand environment variables in a string (simple ${VAR} expansion)
-    ///
-    /// Uses Cow to avoid allocation when no substitution is needed.
-    fn expand_env_vars<'b>(&self, input: &'b str) -> std::borrow::Cow<'b, str> {
-        use std::borrow::Cow;
-
-        if !input.contains("${") {
-            return Cow::Borrowed(input);
-        }
-
-        let chars: Vec<char> = input.chars().collect();
-        let mut result = String::with_capacity(input.len());
-        let mut last_end = 0;
-        let mut i = 0;
-
-        while i < chars.len() {
-            if i + 1 < chars.len() && chars[i] == '$' && chars[i + 1] == '{' {
-                result.push_str(&input[last_end..i]);
-
-                if let Some(close_idx) = chars[i + 2..].iter().position(|&c| c == '}') {
-                    let var_start = i + 2;
-                    let var_end = i + 2 + close_idx;
-
-                    let var_name: String = chars[var_start..var_end].iter().collect();
-
-                    if let Some(value) = self.env_vars.get(&var_name) {
-                        result.push_str(value);
-                    } else {
-                        result.push_str(&input[i..=var_end]);
-                    }
-
-                    last_end = var_end + 1;
-                    i = var_end + 1;
-                    continue;
-                }
-            }
-
-            i += 1;
-        }
-
-        if last_end == 0 {
-            Cow::Borrowed(input)
-        } else {
-            result.push_str(&input[last_end..]);
-            Cow::Owned(result)
-        }
+        script::execute_processed_script(&processed_content, &working_dir, &env, hook.timeout)
     }
 }
 
@@ -1150,7 +876,6 @@ mod tests {
     use crate::hooks::types::HookName;
     use indexmap::IndexMap;
     use std::collections::{HashMap, HashSet};
-    use std::fs;
     use tempfile::TempDir;
 
     // ======================================================================
@@ -1565,328 +1290,6 @@ mod tests {
         assert_eq!(hashes.len(), 2);
         assert_eq!(hashes.get("hook1"), Some(&hash1));
         assert_eq!(hashes.get("hook2"), Some(&hash2));
-    }
-
-    // ======================================================================
-    // Environment Variable Expansion Tests
-    // ======================================================================
-
-    #[test]
-    fn test_expand_env_vars_no_variables() {
-        let temp = TempDir::new().unwrap();
-        let collections = HookCollections::default();
-        let runner = HookRunner::new(&collections, temp.path());
-
-        let input = "plain text without variables";
-        let result = runner.expand_env_vars(input);
-
-        assert_eq!(result, input);
-        // Should be borrowed (no allocation)
-        assert!(matches!(result, std::borrow::Cow::Borrowed(_)));
-    }
-
-    #[test]
-    fn test_expand_env_vars_single_variable() {
-        let temp = TempDir::new().unwrap();
-        let collections = HookCollections::default();
-        let runner = HookRunnerBuilder::new(&collections, temp.path())
-            .env("NAME", "Alice")
-            .build();
-
-        let input = "Hello, ${NAME}!";
-        let result = runner.expand_env_vars(input);
-
-        assert_eq!(result, "Hello, Alice!");
-        assert!(matches!(result, std::borrow::Cow::Owned(_)));
-    }
-
-    #[test]
-    fn test_expand_env_vars_multiple_variables() {
-        let temp = TempDir::new().unwrap();
-        let collections = HookCollections::default();
-        let runner = HookRunnerBuilder::new(&collections, temp.path())
-            .env("FIRST", "John")
-            .env("LAST", "Doe")
-            .build();
-
-        let input = "${FIRST} ${LAST}";
-        let result = runner.expand_env_vars(input);
-
-        assert_eq!(result, "John Doe");
-    }
-
-    #[test]
-    fn test_expand_env_vars_undefined_variable() {
-        let temp = TempDir::new().unwrap();
-        let collections = HookCollections::default();
-        let runner = HookRunner::new(&collections, temp.path());
-
-        let input = "Value: ${UNDEFINED}";
-        let result = runner.expand_env_vars(input);
-
-        // Undefined variables are kept as-is
-        assert_eq!(result, "Value: ${UNDEFINED}");
-    }
-
-    #[test]
-    fn test_expand_env_vars_unclosed_brace() {
-        let temp = TempDir::new().unwrap();
-        let collections = HookCollections::default();
-        let runner = HookRunnerBuilder::new(&collections, temp.path())
-            .env("VAR", "value")
-            .build();
-
-        let input = "Unclosed: ${VAR";
-        let result = runner.expand_env_vars(input);
-
-        // Unclosed braces are left as-is
-        assert_eq!(result, "Unclosed: ${VAR");
-    }
-
-    #[test]
-    fn test_expand_env_vars_empty_variable_name() {
-        let temp = TempDir::new().unwrap();
-        let collections = HookCollections::default();
-        let runner = HookRunner::new(&collections, temp.path());
-
-        let input = "Empty: ${}";
-        let result = runner.expand_env_vars(input);
-
-        // Empty variable name is kept as-is
-        assert_eq!(result, "Empty: ${}");
-    }
-
-    #[test]
-    fn test_expand_env_vars_nested_braces() {
-        let temp = TempDir::new().unwrap();
-        let collections = HookCollections::default();
-        let runner = HookRunnerBuilder::new(&collections, temp.path())
-            .env("OUTER", "outer")
-            .build();
-
-        let input = "${OUTER} and ${INNER}";
-        let result = runner.expand_env_vars(input);
-
-        assert_eq!(result, "outer and ${INNER}");
-    }
-
-    #[test]
-    fn test_expand_env_vars_at_start() {
-        let temp = TempDir::new().unwrap();
-        let collections = HookCollections::default();
-        let runner = HookRunnerBuilder::new(&collections, temp.path())
-            .env("VAR", "start")
-            .build();
-
-        let input = "${VAR} text";
-        let result = runner.expand_env_vars(input);
-
-        assert_eq!(result, "start text");
-    }
-
-    #[test]
-    fn test_expand_env_vars_at_end() {
-        let temp = TempDir::new().unwrap();
-        let collections = HookCollections::default();
-        let runner = HookRunnerBuilder::new(&collections, temp.path())
-            .env("VAR", "end")
-            .build();
-
-        let input = "text ${VAR}";
-        let result = runner.expand_env_vars(input);
-
-        assert_eq!(result, "text end");
-    }
-
-    #[test]
-    fn test_expand_env_vars_only_variable() {
-        let temp = TempDir::new().unwrap();
-        let collections = HookCollections::default();
-        let runner = HookRunnerBuilder::new(&collections, temp.path())
-            .env("VAR", "value")
-            .build();
-
-        let input = "${VAR}";
-        let result = runner.expand_env_vars(input);
-
-        assert_eq!(result, "value");
-    }
-
-    // ======================================================================
-    // Shebang Parsing Tests
-    // ======================================================================
-
-    #[test]
-    fn test_parse_shebang_bash() {
-        let temp = TempDir::new().unwrap();
-        let script_path = temp.path().join("test.sh");
-        fs::write(&script_path, "#!/bin/bash\necho hello").unwrap();
-
-        let (interpreter, args) = HookRunner::<NoOpRenderer>::parse_shebang(&script_path).unwrap();
-        assert_eq!(interpreter, "bash");
-        assert!(args.is_empty());
-    }
-
-    #[test]
-    fn test_parse_shebang_bash_with_args() {
-        let temp = TempDir::new().unwrap();
-        let script_path = temp.path().join("test.sh");
-        fs::write(&script_path, "#!/bin/bash -e\necho hello").unwrap();
-
-        let (interpreter, args) = HookRunner::<NoOpRenderer>::parse_shebang(&script_path).unwrap();
-        assert_eq!(interpreter, "bash");
-        assert_eq!(args, vec!["-e"]);
-    }
-
-    #[test]
-    fn test_parse_shebang_env_python() {
-        let temp = TempDir::new().unwrap();
-        let script_path = temp.path().join("test.py");
-        fs::write(&script_path, "#!/usr/bin/env python3\nprint('hello')").unwrap();
-
-        let (interpreter, args) = HookRunner::<NoOpRenderer>::parse_shebang(&script_path).unwrap();
-        assert_eq!(interpreter, "python3");
-        assert!(args.is_empty());
-    }
-
-    #[test]
-    fn test_parse_shebang_env_with_args() {
-        let temp = TempDir::new().unwrap();
-        let script_path = temp.path().join("test.sh");
-        fs::write(&script_path, "#!/usr/bin/env bash -x\necho hello").unwrap();
-
-        let (interpreter, args) = HookRunner::<NoOpRenderer>::parse_shebang(&script_path).unwrap();
-        assert_eq!(interpreter, "bash");
-        assert_eq!(args, vec!["-x"]);
-    }
-
-    #[test]
-    fn test_parse_shebang_bin_env() {
-        let temp = TempDir::new().unwrap();
-        let script_path = temp.path().join("test.sh");
-        fs::write(&script_path, "#!/bin/env bash\necho hello").unwrap();
-
-        let (interpreter, args) = HookRunner::<NoOpRenderer>::parse_shebang(&script_path).unwrap();
-        assert_eq!(interpreter, "bash");
-        assert!(args.is_empty());
-    }
-
-    #[test]
-    fn test_parse_shebang_with_spaces() {
-        let temp = TempDir::new().unwrap();
-        let script_path = temp.path().join("test.sh");
-        fs::write(&script_path, "#! /bin/bash\necho hello").unwrap();
-
-        let (interpreter, args) = HookRunner::<NoOpRenderer>::parse_shebang(&script_path).unwrap();
-        assert_eq!(interpreter, "bash");
-        assert!(args.is_empty());
-    }
-
-    #[test]
-    fn test_infer_interpreter_sh() {
-        let temp = TempDir::new().unwrap();
-        let script_path = temp.path().join("test.sh");
-        fs::write(&script_path, "echo hello").unwrap();
-
-        let (interpreter, args) =
-            HookRunner::<NoOpRenderer>::infer_interpreter(&script_path).unwrap();
-        assert_eq!(interpreter, "sh");
-        assert!(args.is_empty());
-    }
-
-    #[test]
-    fn test_infer_interpreter_bash() {
-        let temp = TempDir::new().unwrap();
-        let script_path = temp.path().join("test.bash");
-        fs::write(&script_path, "echo hello").unwrap();
-
-        let (interpreter, args) =
-            HookRunner::<NoOpRenderer>::infer_interpreter(&script_path).unwrap();
-        assert_eq!(interpreter, "bash");
-        assert!(args.is_empty());
-    }
-
-    #[test]
-    fn test_infer_interpreter_python() {
-        let temp = TempDir::new().unwrap();
-        let script_path = temp.path().join("test.py");
-        fs::write(&script_path, "print('hello')").unwrap();
-
-        let (interpreter, args) =
-            HookRunner::<NoOpRenderer>::infer_interpreter(&script_path).unwrap();
-        assert_eq!(interpreter, "python3");
-        assert!(args.is_empty());
-    }
-
-    #[test]
-    fn test_infer_interpreter_ruby() {
-        let temp = TempDir::new().unwrap();
-        let script_path = temp.path().join("test.rb");
-        fs::write(&script_path, "puts 'hello'").unwrap();
-
-        let (interpreter, args) =
-            HookRunner::<NoOpRenderer>::infer_interpreter(&script_path).unwrap();
-        assert_eq!(interpreter, "ruby");
-        assert!(args.is_empty());
-    }
-
-    #[test]
-    fn test_infer_interpreter_perl() {
-        let temp = TempDir::new().unwrap();
-        let script_path = temp.path().join("test.pl");
-        fs::write(&script_path, "print 'hello'").unwrap();
-
-        let (interpreter, args) =
-            HookRunner::<NoOpRenderer>::infer_interpreter(&script_path).unwrap();
-        assert_eq!(interpreter, "perl");
-        assert!(args.is_empty());
-    }
-
-    #[test]
-    fn test_infer_interpreter_javascript() {
-        let temp = TempDir::new().unwrap();
-        let script_path = temp.path().join("test.js");
-        fs::write(&script_path, "console.log('hello')").unwrap();
-
-        let (interpreter, args) =
-            HookRunner::<NoOpRenderer>::infer_interpreter(&script_path).unwrap();
-        assert_eq!(interpreter, "node");
-        assert!(args.is_empty());
-    }
-
-    #[test]
-    fn test_infer_interpreter_zsh() {
-        let temp = TempDir::new().unwrap();
-        let script_path = temp.path().join("test.zsh");
-        fs::write(&script_path, "echo hello").unwrap();
-
-        let (interpreter, args) =
-            HookRunner::<NoOpRenderer>::infer_interpreter(&script_path).unwrap();
-        assert_eq!(interpreter, "zsh");
-        assert!(args.is_empty());
-    }
-
-    #[test]
-    fn test_infer_interpreter_unknown_extension() {
-        let temp = TempDir::new().unwrap();
-        let script_path = temp.path().join("test.unknown");
-        fs::write(&script_path, "content").unwrap();
-
-        let result = HookRunner::<NoOpRenderer>::infer_interpreter(&script_path);
-        assert!(result.is_err());
-        assert!(result.unwrap_err().to_string().contains("Cannot infer"));
-    }
-
-    #[test]
-    fn test_infer_interpreter_no_extension_defaults_to_sh() {
-        let temp = TempDir::new().unwrap();
-        let script_path = temp.path().join("test");
-        fs::write(&script_path, "echo hello").unwrap();
-
-        let (interpreter, args) =
-            HookRunner::<NoOpRenderer>::infer_interpreter(&script_path).unwrap();
-        assert_eq!(interpreter, "sh");
-        assert!(args.is_empty());
     }
 
     // ======================================================================

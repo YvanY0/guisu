@@ -18,8 +18,10 @@
 //! - `state`: Hook configuration state tracking (separate from execution state)
 
 pub mod config;
+pub(crate) mod env;
 pub mod executor;
 pub mod loader;
+pub mod script;
 pub mod state;
 pub mod types;
 
