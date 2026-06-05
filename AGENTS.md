@@ -2,103 +2,62 @@
 
 Rust dotfile manager. Three-state model: Source → Target → Destination.
 
-## Build
+## Build & Verify
 
 ```bash
-cargo check --workspace                               # type check
-cargo test --workspace                                # run all tests
-cargo clippy --workspace --all-targets -- -D warnings # lint
-cargo fmt -- --check                                  # format check
-cargo test -p <crate>                                 # single crate
+cargo check --workspace && cargo test --workspace && cargo clippy --workspace -- -D warnings && cargo fmt -- --check
 ```
 
-Also via `just`: `just clippy`, `just test`, `just build`, `just fmt`, `just bloat`, `just udeps`.
-
-## Verify
-
-Before reporting done: `cargo clippy --workspace -- -D warnings && cargo test --workspace`
+Also via `just`: `just clippy`, `just test`, `just build`, `just fmt`.
 
 - Complex logic → write `#[test]` first
-- Bug fix → write a test that reproduces the bug before fixing
-- Simple change (typo, doc, rename) → tests not required
+- Bug fix → write test first, then fix
+- Simple change → tests not required
 
 ## Architecture
 
 ```
-crates/cli       → CLI entry point (clap, Command trait)
-crates/config    → Configuration parsing
-crates/core      → Core types (AbsPath, RelPath, Attributes, TargetEntry)
-crates/crypto    → age encryption/decryption
-crates/engine    → apply/diff/status pipeline, hooks, persistent state (redb)
-crates/template  → minijinja template engine (Jinja2 syntax, .j2 files)
-crates/vault     → Secret provider integrations (Bitwarden)
-```
-
-Dependency direction (CI enforces):
-
-```
-core ← crypto ← vault
-  ↑       ↑
-config ← template
-  ↑       ↑
-     engine
-       ↑
-      cli
+cli → engine → config/template/core
 ```
 
 Subsystem rules: `crates/engine/AGENTS.md`, `crates/cli/AGENTS.md`.
-Skills: `.claude/skills/` — domain-knowledge, implement-cli-command, add-template-function, add-vault-provider, debug-state-issues.
-Commands: `.agents/commands/review-branch`.
 
 ## Rules
 
-Each rule exists because of a past failure.
+- No bare `unwrap()` — use `?` with anyhow
+- Use newtype paths: `AbsPath`/`RelPath`, never raw `PathBuf`
+- Add context to errors with `anyhow::Context`
+- Look for existing utilities first
+- Don't narrate code — well-named identifiers self-document
+- Three similar lines > premature abstraction
 
-- **No bare `unwrap()`.** Use `?` with anyhow, or `expect("reason")` for infallible cases.
-- **Use newtype paths.** API boundaries use `AbsPath`/`RelPath`, never raw `PathBuf`.
-- **Add context to errors.** All fallible I/O must use `anyhow::Context`.
-- **Look for existing utilities first.** Check neighboring files before adding abstractions.
-- **Follow existing code style.** `pedantic` + `correctness` clippy is denied workspace-wide.
-- **Don't narrate code.** No comments unless the WHY is non-obvious.
-- **Don't over-engineer.** Three similar lines > premature abstraction.
+## Commit rules
+
+- `git commit` MUST include both `-s` (DCO `Signed-off-by:`) and `-S` (GPG or SSH signature). Do not commit without them.
+- The repo's pre-commit framework (`.pre-commit-config.yaml`) runs `cargo fmt`, `cargo clippy`, and `cargo test` automatically; if any fail, fix the underlying code rather than skipping hooks.
+- Tip: in `~/.gitconfig`, set `[commit] gpgsign = true` and `signoff = true` to make git inject `-s` and `-S` automatically on every commit. This harness does not configure that for you; manage your global git config yourself.
 
 ## Error Recovery
 
 | Failure | Action |
 |---------|--------|
-| `cargo test` fails | Fix the root cause. Don't skip or suppress. |
-| `cargo clippy` warns | Fix it. Don't add `#[allow(...)]` without documented reason. |
-| Build fails after dep change | `cargo update` or check `Cargo.toml`. Don't revert blindly. |
-| Agent is stuck / looping | Stop. Summarize what was tried. Ask the user. |
+| `cargo test` fails | Fix the root cause |
+| `cargo clippy` warns | Fix it |
+| Agent stuck/looping | Stop. Summarize. Ask. |
 
 ## Scope
 
-**Out of scope by default** (ask first):
-- Deleting files or directories
-- Modifying CI/CD workflows (`.github/`)
-- Changing `.claude/settings.json`
-- Force-pushing or rewriting git history
+**Ask first**: delete files, modify CI/CD, change settings, force-push
 
-## Orchestration
+## Claude Code Setup
 
-| Task | Agent | When |
-|------|-------|------|
-| Multi-file impl | `Plan` | Architecture decisions, cross-crate |
-| Code review | `code-reviewer` | After completing a feature |
-| Security | `security-auditor` | Crypto, vault, external input |
-| Rust deep-dive | `rust-pro` | Complex lifetimes, async, traits |
-| Search | `Explore` | Finding patterns (3+ queries) |
+Claude Code automations on this repo:
 
-## Hooks
+- **AGENTS.md / CLAUDE.md** — project rules, build commands, code style. Loaded every session.
+- **Skills** — `.claude/skills/<name>/SKILL.md`. Domain knowledge (engine/template/vault) and reusable workflows (add-vault-provider, implement-cli-command, etc.). Claude auto-invokes by description match; you can also `/skill-name`.
+- **Plugins** — installed via `/plugin`. `rust-analyzer-lsp` for live diagnostics and symbol navigation, `feature-dev` / `pr-review-toolkit` / `security-guidance` for subagent-based review, `commit-commands` for git workflows.
+- **Subagents** — defined in plugins; not custom-defined in `.claude/agents/`. Use `Explore` for read-only codebase questions, `Plan` for design work, plugin-provided agents for review.
+- **Hooks** — `.claude/settings.json` `hooks` block. PostToolUse runs `rustfmt` on `.rs` files. Stop hook runs `cargo fmt --check && cargo clippy --workspace -- -D warnings` and blocks completion on failure. PreToolUse blocks destructive Bash commands.
+- **Pre-commit** — `pre-commit` framework via `.pre-commit-config.yaml` (independent of Claude Code). Runs on `git commit` from a terminal.
 
-- **Formatting**: PostToolUse auto-runs `rustfmt` on `.rs` files
-- **Destructive guard**: PreToolUse blocks `push --force`, `reset --hard`, `rm -rf /`
-- **Pre-commit**: `prek` — `cargo fmt`, `cargo clippy`, `cargo test`, commitlint
-- **CI**: GitHub Actions runs pre-commit on PR and push to main
-
-## Commit
-
-```
-<type>: <description>
-# type: feat | fix | refactor | chore | docs | test
-```
+Memory (`.claude/memory/`) is **manually maintained**, not auto-synced. Edit it when you learn something the next session should know.

@@ -1,0 +1,42 @@
+{
+  "hooks": {
+    "PreToolUse": [
+      {
+        "matcher": "Bash",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "echo 'BLOCKED: destructive operation' >&2; exit 2",
+            "if": "Bash(rm -rf /*) | Bash(rm -rf ~*) | Bash(git push --force*) | Bash(git push -f*) | Bash(git reset --hard*) | Bash(cargo publish*) | Bash(cargo yank*)"
+          }
+        ]
+      }
+    ],
+    "PostToolUse": [
+      {
+        "matcher": "Edit|Write",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "rustfmt $CLAUDE_FILE_PATH",
+            "if": "Edit(*.rs) | Write(*.rs)",
+            "async": true
+          }
+        ]
+      }
+    ],
+    "Stop": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "bash ${CLAUDE_PROJECT_DIR}/.claude/hooks/stop-gate.sh"
+          }
+        ]
+      }
+    ]
+  },
+  "enabledPlugins": {
+    "rust-analyzer-lsp@claude-plugins-official": true
+  }
+}

@@ -17,11 +17,14 @@
 *.local
 
 # AI/Coding Assistant artifacts
-.claude
-CLAUDE.md
+# Note: .claude/ is intentionally tracked (harness configuration is
+# shared with collaborators). The other entries below remain ignored.
 .mcp.json
 openspec/
 .full-review/
+# Brainstorming/planning artifacts from superpowers skills. Specs
+# and plans are session-local working documents; we do not ship them.
+docs/superpowers/
 
 # Documentation build artifacts
 /docs/_build/
