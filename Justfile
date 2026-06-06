@@ -41,3 +41,19 @@ fmt-check:
 # Run cargo check
 check:
     cargo check --workspace --all-targets --all-features
+
+# Release a patch version (0.2.1 -> 0.2.2).
+# Bumps workspace.version, commits, pushes main, tags and pushes tag.
+# The tag push triggers .github/workflows/release.yml (cargo-dist) which
+# builds artifacts, publishes the GitHub Release, and updates the
+# homebrew tap formula. See Cargo.toml [workspace.metadata.release].
+release-patch:
+    cargo release patch --execute --no-confirm
+
+# Release a minor version (0.2.1 -> 0.3.0).
+release-minor:
+    cargo release minor --execute --no-confirm
+
+# Release a major version (0.2.1 -> 1.0.0).
+release-major:
+    cargo release major --execute --no-confirm

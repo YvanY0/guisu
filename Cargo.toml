@@ -118,3 +118,13 @@ strip = true
 [profile.dist]
 inherits = "release"
 lto = "thin"
+
+# cargo-release configuration (https://github.com/crate-ci/cargo-release)
+# Tag-driven; cargo-dist workflow picks up the pushed tag and runs the
+# full release pipeline (build matrix, GitHub Release, homebrew tap).
+# `consolidate-commits` and `shared-version` are auto-forced because all
+# member crates use `version.workspace = true`.
+[workspace.metadata.release]
+tag-name = "v{{version}}"
+tag-message = "Release {{crate_name}} {{version}}"
+publish = false
