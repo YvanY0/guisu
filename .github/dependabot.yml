@@ -16,6 +16,7 @@ updates:
     labels:
       - "dependencies"
       - "github-actions"
+      - "auto-merge"
     rebase-strategy: "auto"
 
   - package-ecosystem: "cargo"
@@ -33,4 +34,5 @@ updates:
     labels:
       - "dependencies"
       - "rust"
+      - "auto-merge"
     rebase-strategy: "auto"
