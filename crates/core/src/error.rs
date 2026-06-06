@@ -270,6 +270,23 @@ pub enum Error {
         reason: String,
     },
 
+    /// SSH key type not supported as an age recipient
+    #[error(
+        "SSH {key_type} keys cannot be used as age recipients (age 0.11 protocol limitation).\n\
+         \n\
+         age encryption only supports ssh-rsa as an SSH-based recipient.\n\
+         \n\
+         Expected format:\n\
+         - ssh-rsa  (begins with \"ssh-rsa \")\n\
+         - age1...  (bech32 age x25519 public key)\n\
+         \n\
+         To generate a new age recipient:  guisu age generate --show-recipient"
+    )]
+    UnsupportedSshKey {
+        /// The unsupported SSH key type (e.g. "ssh-ed25519")
+        key_type: String,
+    },
+
     /// Decryption failed due to wrong key
     #[error("Decryption failed - wrong key or corrupted data")]
     WrongKey,
