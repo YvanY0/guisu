@@ -114,11 +114,9 @@ mod tests {
     }
 
     #[test]
-    #[ignore = "SSH support not available in current age build"]
     fn test_from_ssh_recipient() {
-        // Valid SSH Ed25519 public key
-        let ssh_key =
-            "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIGjWGmoqxq6JAN0F7+CkHgbQBXV/7/RNGsZpYH1MPvYb";
+        // Valid SSH RSA public key (age 0.11 only supports ssh-rsa as a recipient)
+        let ssh_key = "ssh-rsa AAAAB3NzaC1yc2EAAAADAQABAAABAQDE7nIXTGNuaRBN9toI/wNALuQec8mvlt0iJ7o3OaD2UvoKHJ7S8rmIn4FiQDUed/Vac3OhUibei1k+TBmm16u2Rj3klgWZOIDgi8d4vXKI5N3YBhxr3jsQ+kz1c+iZ4z/tTtz306+4K46XViVMWwyyg9j82Jn41mOAy9vdeDIfQ5fLeaGqn5KwlT61GNkZ+ozWK/ZNlQIlNCcoXxhJULIs9XrtczWyVBAea1nlDo0WHODePxoJjmsNHrpQXn5mf9O83xs10qfTUjnRUt48jRmedFy4tcra3QGmSTQ3KZne+wXXSb0cIpXLGvZjQSPHgG1hc4r3uBpiSzvesGLv79XL";
         let ssh_recipient = ssh_key
             .parse::<ssh::Recipient>()
             .expect("Failed to parse SSH key");
@@ -141,10 +139,8 @@ mod tests {
     }
 
     #[test]
-    #[ignore = "SSH support not available in current age build"]
     fn test_from_trait_ssh() {
-        let ssh_key =
-            "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIGjWGmoqxq6JAN0F7+CkHgbQBXV/7/RNGsZpYH1MPvYb";
+        let ssh_key = "ssh-rsa AAAAB3NzaC1yc2EAAAADAQABAAABAQDE7nIXTGNuaRBN9toI/wNALuQec8mvlt0iJ7o3OaD2UvoKHJ7S8rmIn4FiQDUed/Vac3OhUibei1k+TBmm16u2Rj3klgWZOIDgi8d4vXKI5N3YBhxr3jsQ+kz1c+iZ4z/tTtz306+4K46XViVMWwyyg9j82Jn41mOAy9vdeDIfQ5fLeaGqn5KwlT61GNkZ+ozWK/ZNlQIlNCcoXxhJULIs9XrtczWyVBAea1nlDo0WHODePxoJjmsNHrpQXn5mf9O83xs10qfTUjnRUt48jRmedFy4tcra3QGmSTQ3KZne+wXXSb0cIpXLGvZjQSPHgG1hc4r3uBpiSzvesGLv79XL";
         let ssh_recipient = ssh_key
             .parse::<ssh::Recipient>()
             .expect("Failed to parse SSH key");
@@ -168,10 +164,8 @@ mod tests {
     }
 
     #[test]
-    #[ignore = "SSH support not available in current age build"]
     fn test_to_boxed_ssh() {
-        let ssh_key =
-            "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIGjWGmoqxq6JAN0F7+CkHgbQBXV/7/RNGsZpYH1MPvYb";
+        let ssh_key = "ssh-rsa AAAAB3NzaC1yc2EAAAADAQABAAABAQDE7nIXTGNuaRBN9toI/wNALuQec8mvlt0iJ7o3OaD2UvoKHJ7S8rmIn4FiQDUed/Vac3OhUibei1k+TBmm16u2Rj3klgWZOIDgi8d4vXKI5N3YBhxr3jsQ+kz1c+iZ4z/tTtz306+4K46XViVMWwyyg9j82Jn41mOAy9vdeDIfQ5fLeaGqn5KwlT61GNkZ+ozWK/ZNlQIlNCcoXxhJULIs9XrtczWyVBAea1nlDo0WHODePxoJjmsNHrpQXn5mf9O83xs10qfTUjnRUt48jRmedFy4tcra3QGmSTQ3KZne+wXXSb0cIpXLGvZjQSPHgG1hc4r3uBpiSzvesGLv79XL";
         let ssh_recipient = ssh_key
             .parse::<ssh::Recipient>()
             .expect("Failed to parse SSH key");
@@ -196,10 +190,8 @@ mod tests {
     }
 
     #[test]
-    #[ignore = "SSH support not available in current age build"]
     fn test_clone_ssh() {
-        let ssh_key =
-            "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIGjWGmoqxq6JAN0F7+CkHgbQBXV/7/RNGsZpYH1MPvYb";
+        let ssh_key = "ssh-rsa AAAAB3NzaC1yc2EAAAADAQABAAABAQDE7nIXTGNuaRBN9toI/wNALuQec8mvlt0iJ7o3OaD2UvoKHJ7S8rmIn4FiQDUed/Vac3OhUibei1k+TBmm16u2Rj3klgWZOIDgi8d4vXKI5N3YBhxr3jsQ+kz1c+iZ4z/tTtz306+4K46XViVMWwyyg9j82Jn41mOAy9vdeDIfQ5fLeaGqn5KwlT61GNkZ+ozWK/ZNlQIlNCcoXxhJULIs9XrtczWyVBAea1nlDo0WHODePxoJjmsNHrpQXn5mf9O83xs10qfTUjnRUt48jRmedFy4tcra3QGmSTQ3KZne+wXXSb0cIpXLGvZjQSPHgG1hc4r3uBpiSzvesGLv79XL";
         let ssh_recipient = ssh_key
             .parse::<ssh::Recipient>()
             .expect("Failed to parse SSH key");
@@ -225,10 +217,8 @@ mod tests {
     }
 
     #[test]
-    #[ignore = "SSH support not available in current age build"]
     fn test_display_ssh() {
-        let ssh_key =
-            "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIGjWGmoqxq6JAN0F7+CkHgbQBXV/7/RNGsZpYH1MPvYb";
+        let ssh_key = "ssh-rsa AAAAB3NzaC1yc2EAAAADAQABAAABAQDE7nIXTGNuaRBN9toI/wNALuQec8mvlt0iJ7o3OaD2UvoKHJ7S8rmIn4FiQDUed/Vac3OhUibei1k+TBmm16u2Rj3klgWZOIDgi8d4vXKI5N3YBhxr3jsQ+kz1c+iZ4z/tTtz306+4K46XViVMWwyyg9j82Jn41mOAy9vdeDIfQ5fLeaGqn5KwlT61GNkZ+ozWK/ZNlQIlNCcoXxhJULIs9XrtczWyVBAea1nlDo0WHODePxoJjmsNHrpQXn5mf9O83xs10qfTUjnRUt48jRmedFy4tcra3QGmSTQ3KZne+wXXSb0cIpXLGvZjQSPHgG1hc4r3uBpiSzvesGLv79XL";
         let ssh_recipient = ssh_key
             .parse::<ssh::Recipient>()
             .expect("Failed to parse SSH key");
@@ -257,10 +247,8 @@ mod tests {
     }
 
     #[test]
-    #[ignore = "SSH support not available in current age build"]
     fn test_from_str_ssh_format() {
-        let ssh_key =
-            "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIGjWGmoqxq6JAN0F7+CkHgbQBXV/7/RNGsZpYH1MPvYb";
+        let ssh_key = "ssh-rsa AAAAB3NzaC1yc2EAAAADAQABAAABAQDE7nIXTGNuaRBN9toI/wNALuQec8mvlt0iJ7o3OaD2UvoKHJ7S8rmIn4FiQDUed/Vac3OhUibei1k+TBmm16u2Rj3klgWZOIDgi8d4vXKI5N3YBhxr3jsQ+kz1c+iZ4z/tTtz306+4K46XViVMWwyyg9j82Jn41mOAy9vdeDIfQ5fLeaGqn5KwlT61GNkZ+ozWK/ZNlQIlNCcoXxhJULIs9XrtczWyVBAea1nlDo0WHODePxoJjmsNHrpQXn5mf9O83xs10qfTUjnRUt48jRmedFy4tcra3QGmSTQ3KZne+wXXSb0cIpXLGvZjQSPHgG1hc4r3uBpiSzvesGLv79XL";
 
         let parsed: Recipient = ssh_key.parse().expect("Failed to parse SSH recipient");
 
@@ -331,10 +319,8 @@ mod tests {
     }
 
     #[test]
-    #[ignore = "SSH support not available in current age build"]
     fn test_roundtrip_ssh() {
-        let ssh_key =
-            "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIGjWGmoqxq6JAN0F7+CkHgbQBXV/7/RNGsZpYH1MPvYb";
+        let ssh_key = "ssh-rsa AAAAB3NzaC1yc2EAAAADAQABAAABAQDE7nIXTGNuaRBN9toI/wNALuQec8mvlt0iJ7o3OaD2UvoKHJ7S8rmIn4FiQDUed/Vac3OhUibei1k+TBmm16u2Rj3klgWZOIDgi8d4vXKI5N3YBhxr3jsQ+kz1c+iZ4z/tTtz306+4K46XViVMWwyyg9j82Jn41mOAy9vdeDIfQ5fLeaGqn5KwlT61GNkZ+ozWK/ZNlQIlNCcoXxhJULIs9XrtczWyVBAea1nlDo0WHODePxoJjmsNHrpQXn5mf9O83xs10qfTUjnRUt48jRmedFy4tcra3QGmSTQ3KZne+wXXSb0cIpXLGvZjQSPHgG1hc4r3uBpiSzvesGLv79XL";
         let recipient: Recipient = ssh_key.parse().expect("Failed to parse");
 
         // Convert to string and back
