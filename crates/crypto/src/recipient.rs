@@ -291,6 +291,26 @@ mod tests {
     }
 
     #[test]
+    fn test_from_str_ssh_ed25519_returns_typed_error() {
+        // SSH ed25519 is not supported by age 0.11 as a recipient; we should
+        // get a clear UnsupportedSshKey error, not a raw age parse error.
+        let ssh_ed25519 =
+            "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIGjWGmoqxq6JAN0F7+CkHgbQBXV/7/RNGsZpYH1MPvYb";
+
+        let result = ssh_ed25519.parse::<Recipient>();
+
+        assert!(result.is_err());
+        if let Err(crate::Error::UnsupportedSshKey { key_type }) = result {
+            assert_eq!(key_type, "ssh-ed25519");
+        } else {
+            panic!(
+                "Expected UnsupportedSshKey error for ed25519, got: {:?}",
+                result.err()
+            );
+        }
+    }
+
+    #[test]
     fn test_roundtrip_age() {
         let identity = Identity::generate();
         let recipient = identity.to_public();
