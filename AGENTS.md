@@ -58,7 +58,7 @@ Claude Code automations on this repo:
 - **Skills** — `.claude/skills/<name>/SKILL.md`. Domain knowledge (engine/template/vault) and reusable workflows (add-vault-provider, implement-cli-command, etc.). Claude auto-invokes by description match; you can also `/skill-name`.
 - **Plugins** — installed via `/plugin`. `rust-analyzer-lsp` for live diagnostics and symbol navigation, `feature-dev` / `pr-review-toolkit` / `security-guidance` for subagent-based review, `commit-commands` for git workflows.
 - **Subagents** — defined in plugins; not custom-defined in `.claude/agents/`. Use `Explore` for read-only codebase questions, `Plan` for design work, plugin-provided agents for review.
-- **Hooks** — `.claude/settings.json` `hooks` block. PostToolUse runs `rustfmt` on `.rs` files. Stop hook runs `cargo fmt --check && cargo clippy --workspace -- -D warnings` and blocks completion on failure. PreToolUse blocks destructive Bash commands.
+- **Hooks** — `.claude/settings.json` `hooks` block. PostToolUse runs `rustfmt` on `.rs` files. Stop hook runs `cargo fmt --check && cargo clippy --workspace -- -D warnings` and blocks completion on failure. Destructive Bash commands are not blocked; rely on the project's `AGENTS.md` "Ask first" rule below.
 - **Pre-commit** — `pre-commit` framework via `.pre-commit-config.yaml` (independent of Claude Code). Runs lint hooks on `git commit` from a terminal.
 - **Rust CI** — `.github/workflows/rust.yml`. Runs cargo fmt/check/clippy/test/deny/outdated in GitHub Actions. Auto-skipped on PRs that don't touch Rust files.
 
