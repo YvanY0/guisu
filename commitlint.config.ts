@@ -5,7 +5,7 @@ const config: UserConfig = {
   rules: {
     "body-empty": [2, "never"],
     "scope-empty": [1, "never"],
-    "trailer-exists": [2, "always", "Signed-off-by:"],
+    "trailer-exists": [1, "always", "Signed-off-by:"],
   },
 };
 

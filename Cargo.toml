@@ -127,4 +127,7 @@ lto = "thin"
 [workspace.metadata.release]
 tag-name = "v{{version}}"
 tag-message = "Release {{crate_name}} {{version}}"
+pre-release-commit-message = "chore(release): v{{version}}\n\nBump workspace version, tag, and push."
+sign-commit = true
+sign-tag = true
 publish = false
