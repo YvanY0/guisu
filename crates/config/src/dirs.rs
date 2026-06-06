@@ -7,6 +7,10 @@
 //! - `XDG_STATE_HOME` defaults to ~/.local/state
 
 use std::path::PathBuf;
+
+#[cfg(windows)]
+use dirs as dirs_crate;
+#[cfg(unix)]
 use xdg::BaseDirectories;
 
 /// Get the guisu data directory
@@ -14,8 +18,14 @@ use xdg::BaseDirectories;
 /// Returns `$XDG_DATA_HOME/guisu` or `~/.local/share/guisu`
 #[must_use]
 pub fn data_dir() -> Option<PathBuf> {
-    // xdg 3.0: with_prefix returns BaseDirectories, get_*_home returns Option<PathBuf>
-    BaseDirectories::with_prefix("guisu").get_data_home()
+    #[cfg(unix)]
+    {
+        BaseDirectories::with_prefix("guisu").get_data_home()
+    }
+    #[cfg(windows)]
+    {
+        dirs_crate::data_dir().map(|p| p.join("guisu"))
+    }
 }
 
 /// Get the guisu state directory
@@ -23,8 +33,14 @@ pub fn data_dir() -> Option<PathBuf> {
 /// Returns `$XDG_STATE_HOME/guisu` or `~/.local/state/guisu`
 #[must_use]
 pub fn state_dir() -> Option<PathBuf> {
-    // xdg 3.0: with_prefix returns BaseDirectories, get_*_home returns Option<PathBuf>
-    BaseDirectories::with_prefix("guisu").get_state_home()
+    #[cfg(unix)]
+    {
+        BaseDirectories::with_prefix("guisu").get_state_home()
+    }
+    #[cfg(windows)]
+    {
+        dirs_crate::state_dir().map(|p| p.join("guisu"))
+    }
 }
 
 /// Get the default source directory for dotfiles
