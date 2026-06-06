@@ -68,22 +68,29 @@ impl FromStr for Recipient {
 
     /// Parse a recipient from a string
     ///
-    /// This will try to parse as an age recipient first, then as an SSH recipient.
+    /// Tries to parse as an age x25519 recipient first (`age1...`), then as
+    /// an SSH recipient. SSH keys must be `ssh-rsa`; ed25519 SSH keys return
+    /// `Error::UnsupportedSshKey` because the `age` 0.11 encryption protocol
+    /// only supports RSA-OAEP recipients.
     fn from_str(s: &str) -> crate::Result<Self> {
         // Try parsing as age recipient first (starts with "age1")
         if let Ok(recipient) = s.parse::<x25519::Recipient>() {
             return Ok(Self::Age(recipient));
         }
 
-        // Try parsing as SSH recipient
-        if let Ok(recipient) = s.parse::<ssh::Recipient>() {
-            return Ok(Self::Ssh(recipient));
+        // Try parsing as SSH recipient. Distinguish "unsupported key type"
+        // (e.g. ssh-ed25519) from "not an SSH key at all" so the caller gets
+        // a meaningful error.
+        match s.parse::<ssh::Recipient>() {
+            Ok(recipient) => Ok(Self::Ssh(recipient)),
+            Err(ssh::ParseRecipientKeyError::Unsupported(key_type)) => {
+                Err(crate::Error::UnsupportedSshKey { key_type })
+            }
+            Err(_) => Err(crate::Error::InvalidRecipient {
+                recipient: s.to_string(),
+                reason: "Expected age1... or ssh-rsa... format".to_string(),
+            }),
         }
-
-        Err(crate::Error::InvalidRecipient {
-            recipient: s.to_string(),
-            reason: "Expected age1... or ssh-... format".to_string(),
-        })
     }
 }
 
