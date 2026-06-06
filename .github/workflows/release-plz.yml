@@ -5,6 +5,12 @@ on:
     branches: [main]
   workflow_dispatch:
 
+concurrency:
+  # serialize runs of release-plz on main; cancel any in-flight run if
+  # a newer push lands (avoids races with auto-merged dependabot PRs)
+  group: release-plz-${{ github.ref }}
+  cancel-in-progress: true
+
 permissions:
   contents: write
   pull-requests: write
