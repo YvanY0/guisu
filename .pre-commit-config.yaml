@@ -1,4 +1,4 @@
-default_install_hook_types: [pre-commit, commit-msg]
+default_install_hook_types: [pre-commit, commit-msg, pre-push]
 default_stages: [pre-commit]
 
 ci:
@@ -6,6 +6,43 @@ ci:
   autoupdate_schedule: monthly
 
 repos:
+  - repo: local
+    hooks:
+      - id: cargo-fmt-pre-push
+        name: cargo fmt
+        entry: cargo fmt --all -- --check
+        language: system
+        types: [rust]
+        pass_filenames: false
+        stages: [pre-push]
+      - id: cargo-clippy-pre-push
+        name: cargo clippy
+        entry: cargo clippy --workspace --all-targets -- -D warnings
+        language: system
+        types: [rust]
+        pass_filenames: false
+        stages: [pre-push]
+      - id: cargo-check-pre-push
+        name: cargo check
+        entry: cargo check --workspace --all-targets
+        language: system
+        types: [rust]
+        pass_filenames: false
+        stages: [pre-push]
+      - id: cargo-test-pre-push
+        name: cargo test
+        entry: cargo test --workspace --all-features
+        language: system
+        types: [rust]
+        pass_filenames: false
+        stages: [pre-push]
+      - id: cargo-deny-pre-push
+        name: cargo deny
+        entry: cargo deny check advisories licenses bans sources
+        language: system
+        types: [rust]
+        pass_filenames: false
+        stages: [pre-push]
   - repo: https://github.com/ComPWA/mirrors-taplo
     rev: v0.9.3
     hooks:
