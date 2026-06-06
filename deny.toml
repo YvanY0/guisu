@@ -73,9 +73,6 @@ ignore = [
   # RSA vulnerability - no fix available upstream
   # https://rustsec.org/advisories/RUSTSEC-2023-0071
   { id = "RUSTSEC-2023-0071", reason = "age crate depends on rsa 0.9.x with no fix available. Medium severity, low risk for dotfiles use case." },
-  # Yanked indirect dependencies from benchmark deps (chrono, criterion)
-  { crate = "js-sys@0.3.88", reason = "Indirect dep from chrono/criterion benchmarks. Can be removed when upstream fixes yanked status." },
-  { crate = "wasm-bindgen@0.2.111", reason = "Indirect dep from chrono/criterion benchmarks. Can be removed when upstream fixes yanked status." },
 ]
 # If this is true, then cargo deny will use the git executable to fetch advisory database.
 # If this is false, then it uses a built-in git library.
