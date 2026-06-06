@@ -2,6 +2,9 @@
 /target/
 **/*.rs.bk
 *.pdb
+# guisu is an application; commit Cargo.lock for reproducible builds
+# (overrides global ~/.config/git/ignore which excludes it by default)
+!Cargo.lock
 
 # IDE and editor files
 .vscode/
