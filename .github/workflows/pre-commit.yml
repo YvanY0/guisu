@@ -17,5 +17,10 @@ jobs:
         with:
           components: rustfmt, clippy
 
+      - name: Install cargo-outdated
+        uses: taiki-e/install-action@v2
+        with:
+          tool: cargo-outdated
+
       - name: Run pre-commit
         uses: pre-commit/action@v3.0.1
