@@ -1,15 +1,19 @@
 [workspace]
-# draft PR accumulates commits until you mark it ready
 pr_draft = true
-# do not auto-publish to crates.io (project does not publish crates)
 publish = false
-# let release-plz push the tag, which triggers .github/workflows/release.yml
-git_tag_enable = true
-# semver-compatible by default; conventional commits drive bump
+# Default: disable git tags and releases for every crate in the workspace.
+# The [[package]] block below re-enables them for the CLI crate only.
+git_tag_enable = false
+git_release_enable = false
 semver_check = true
-# conventional commit scope: feat -> minor, fix -> patch, ! -> major
-# (release-plz default, declared for clarity)
+
+[[package]]
+name = "guisu"
+git_tag_enable = true
+git_release_enable = true
+git_tag_name = "v{{ version }}"
+# guisu is primarily a binary; semver-check is only meaningful for libraries
+semver_check = false
 
 [changelog]
-# commit body lines are too noisy; show only first line
 commit_preprocessors = []

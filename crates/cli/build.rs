@@ -1,4 +1,4 @@
-//! Build script for guisu-cli.
+//! Build script for guisu.
 //!
 //! Generates build-time metadata using vergen:
 //! - Build information (timestamp, target, etc.)
