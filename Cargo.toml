@@ -67,7 +67,7 @@ bitflags = "2.13"
 rayon = "1.12"
 
 redb = "4.1"
-git2 = "0.20"
+git2 = "0.21"
 git2_credentials = "0.15"
 similar = "3.1"
 os_info = "3.15"
