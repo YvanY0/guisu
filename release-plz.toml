@@ -1,0 +1,15 @@
+[workspace]
+# draft PR accumulates commits until you mark it ready
+pr_draft = true
+# do not auto-publish to crates.io (project does not publish crates)
+publish = false
+# let release-plz push the tag, which triggers .github/workflows/release.yml
+git_tag_enable = true
+# semver-compatible by default; conventional commits drive bump
+semver_check = true
+# conventional commit scope: feat -> minor, fix -> patch, ! -> major
+# (release-plz default, declared for clarity)
+
+[changelog]
+# commit body lines are too noisy; show only first line
+commit_preprocessors = []
