@@ -23,6 +23,12 @@ updates:
     directory: "/"
     schedule:
       interval: "weekly"
+    ignore:
+      - dependency-name: "git2"
+        # 0.20 -> 0.21 requires libgit2-sys rebuild; revisit when
+        # 0.21 lands in stable libgit2 release matrix.
+      - dependency-name: "git2_credentials"
+        # Tracks git2; ignore together.
     groups:
       rust-direct:
         dependency-type: "production"
