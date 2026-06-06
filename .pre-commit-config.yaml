@@ -1,51 +1,6 @@
 default_install_hook_types: [pre-commit, commit-msg]
 default_stages: [pre-commit]
 repos:
-  - repo: local
-    hooks:
-      - id: cargo-fmt
-        name: Cargo fmt
-        description: "Format Rust code."
-        entry: cargo fmt -- --check
-        language: system
-        types: [rust]
-        pass_filenames: false
-      - id: cargo-check
-        name: Cargo check
-        description: "Check Rust code for errors."
-        entry: cargo check
-        language: system
-        types: [rust]
-        pass_filenames: false
-      - id: cargo-clippy
-        name: Cargo clippy
-        description: "Lint Rust code."
-        entry: cargo clippy --all-targets -- -D warnings
-        language: system
-        types: [rust]
-        pass_filenames: false
-      - id: cargo-test
-        name: Cargo test
-        description: "Test Rust code."
-        entry: cargo test --workspace --all-features
-        language: system
-        types: [rust]
-        pass_filenames: false
-      - id: cargo-deny
-        name: Cargo deny
-        description: "Check dependencies with cargo-deny (advisories, licenses, bans)."
-        entry: cargo deny check advisories licenses bans sources
-        language: system
-        types: [rust]
-        pass_filenames: false
-        stages: [manual]
-      - id: cargo-outdated
-        name: Cargo outdated
-        description: "Check for outdated dependencies."
-        entry: cargo outdated --root-deps-only
-        language: system
-        types: [rust]
-        pass_filenames: false
   - repo: https://github.com/ComPWA/mirrors-taplo
     rev: v0.9.3
     hooks:

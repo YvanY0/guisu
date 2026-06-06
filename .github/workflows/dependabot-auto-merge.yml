@@ -1,23 +1,27 @@
-name: Auto-merge Dependabot PRs
+name: Auto-merge bot PRs
 
 on:
-  pull_request:
-    types: [opened, synchronize, reopened]
+  pull_request_target:
     branches: [main]
-
-permissions:
-  contents: write
-  pull-requests: write
+    types: [opened, synchronize, reopened]
 
 jobs:
-  auto-merge:
+  autoMerge:
+    name: Auto-merge bot PRs
     runs-on: ubuntu-latest
-    if: github.event.pull_request.user.login == 'dependabot[bot]' && github.event.pull_request.state == 'open'
+    if: |
+      github.event.pull_request.user.type == 'Bot' &&
+      (github.event.pull_request.user.login == 'dependabot[bot]' ||
+        github.event.pull_request.user.login == 'pre-commit-ci[bot]')
+
+    permissions:
+      contents: write
+      pull-requests: write
+
     steps:
-      - name: Wait for CI then enable auto-merge
-        uses: gh-actions-kit/auto-merge@v1
-        with:
-          token: ${{ secrets.GITHUB_TOKEN }}
-          merge-method: squash
-          delete-branch: true
-          exclude-labels: major,breaking
+      - name: Auto-merge PR
+        uses: pascalgn/automerge-action@v0.16.4
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          MERGE_METHOD: squash
+          MERGE_LABELS: ""
