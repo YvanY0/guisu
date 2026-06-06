@@ -41,7 +41,7 @@ Guisu is a **Rust-based dotfile manager** inspired by [chezmoi](https://www.chez
 **From source** (requires Rust toolchain):
 
 ```bash
-git clone https://github.com/PaulYuuu/guisu.git
+git clone https://github.com/YvanY0/guisu.git
 cd guisu
 cargo install --path crates/cli
 ```

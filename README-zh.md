@@ -40,7 +40,7 @@ Guisu 是一个基于 **Rust** 的 dotfile 管理工具，灵感来源于 [chezm
 **从源码安装**（需要 Rust 工具链）：
 
 ```bash
-git clone https://github.com/PaulYuuu/guisu.git
+git clone https://github.com/YvanY0/guisu.git
 cd guisu
 cargo install --path crates/cli
 ```

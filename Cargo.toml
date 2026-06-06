@@ -15,10 +15,10 @@ version = "0.2.0"
 edition = "2024"
 authors = ["Yihuang Yu <yuyihuang@live.com>"]
 license = "MIT OR Apache-2.0"
-repository = "https://github.com/PaulYuuu/guisu"
-homepage = "https://github.com/PaulYuuu/guisu"
+repository = "https://github.com/YvanY0/guisu"
+homepage = "https://github.com/YvanY0/guisu"
 keywords = ["dotfiles"]
-documentation = "https://github.com/PaulYuuu/guisu"
+documentation = "https://github.com/YvanY0/guisu"
 
 [workspace.lints.clippy]
 pedantic = { level = "deny", priority = -1 }
