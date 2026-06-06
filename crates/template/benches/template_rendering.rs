@@ -6,7 +6,7 @@
 //! - String allocation patterns
 #![allow(missing_docs)]
 
-use criterion::{BenchmarkId, Criterion, Throughput, black_box, criterion_group, criterion_main};
+use criterion::{BenchmarkId, Criterion, Throughput, criterion_group, criterion_main};
 use guisu_template::{TemplateContext, TemplateEngine};
 use indexmap::IndexMap;
 use serde_json::json;
@@ -34,7 +34,7 @@ fn bench_trim_functions(c: &mut Criterion) {
             let ctx = TemplateContext::new();
             let template = format!("{{{{ '{input}' | trim }}}}");
             b.iter(|| {
-                black_box(
+                std::hint::black_box(
                     engine
                         .render_str(&template, &ctx)
                         .expect("template rendering failed"),
@@ -58,7 +58,7 @@ fn bench_regex_cache(c: &mut Criterion) {
         let template = r#"{{ regexMatch("test@example.com", "^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\\.[a-zA-Z]{2,}$") }}"#;
         b.iter(|| {
             engine.render_str(template, &ctx).expect("template rendering failed");
-            black_box(());
+            std::hint::black_box(());
         });
     });
 
@@ -77,7 +77,7 @@ fn bench_regex_cache(c: &mut Criterion) {
             engine
                 .render_str(template, &ctx)
                 .expect("template rendering failed");
-            black_box(());
+            std::hint::black_box(());
         });
     });
 
@@ -94,7 +94,7 @@ fn bench_regex_cache(c: &mut Criterion) {
             engine
                 .render_str(template, &ctx)
                 .expect("template rendering failed");
-            black_box(());
+            std::hint::black_box(());
         });
     });
 
@@ -118,7 +118,7 @@ fn bench_template_rendering(c: &mut Criterion) {
             engine
                 .render_str(template, &ctx)
                 .expect("template rendering failed");
-            black_box(());
+            std::hint::black_box(());
         });
     });
 
@@ -130,7 +130,7 @@ fn bench_template_rendering(c: &mut Criterion) {
         vars.insert("email".to_string(), json!("alice@example.com  "));
         let ctx = TemplateContext::new().with_variables(vars);
         b.iter(|| {
-            black_box(
+            std::hint::black_box(
                 engine
                     .render_str(template, &ctx)
                     .expect("template rendering failed"),
@@ -152,7 +152,7 @@ fn bench_template_rendering(c: &mut Criterion) {
         vars.insert("name".to_string(), json!("Alice"));
         let ctx = TemplateContext::new().with_variables(vars);
         b.iter(|| {
-            black_box(
+            std::hint::black_box(
                 engine
                     .render_str(template, &ctx)
                     .expect("template rendering failed"),
@@ -174,7 +174,7 @@ fn bench_template_rendering(c: &mut Criterion) {
         );
         let ctx = TemplateContext::new().with_variables(vars);
         b.iter(|| {
-            black_box(
+            std::hint::black_box(
                 engine
                     .render_str(template, &ctx)
                     .expect("template rendering failed"),

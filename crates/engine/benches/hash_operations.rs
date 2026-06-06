@@ -4,7 +4,7 @@
 //! covering the hot paths in status/apply pipelines.
 #![allow(missing_docs)]
 
-use criterion::{BenchmarkId, Criterion, Throughput, black_box, criterion_group, criterion_main};
+use criterion::{BenchmarkId, Criterion, Throughput, criterion_group, criterion_main};
 use guisu_engine::{hash_content, hash_file};
 use std::io::Write;
 use tempfile::NamedTempFile;
@@ -23,7 +23,7 @@ fn bench_hash_content(c: &mut Criterion) {
         let content = vec![0xAB; *size];
         group.throughput(Throughput::Bytes(*size as u64));
         group.bench_with_input(BenchmarkId::from_parameter(label), &content, |b, data| {
-            b.iter(|| hash_content(black_box(data)));
+            b.iter(|| hash_content(std::hint::black_box(data)));
         });
     }
 
@@ -51,7 +51,7 @@ fn bench_hash_file(c: &mut Criterion) {
             BenchmarkId::from_parameter(label),
             temp_file.path(),
             |b, path| {
-                b.iter(|| hash_file(black_box(path)).expect("failed to hash file"));
+                b.iter(|| hash_file(std::hint::black_box(path)).expect("failed to hash file"));
             },
         );
     }

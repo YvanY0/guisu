@@ -6,7 +6,7 @@
 //! - Database reads
 #![allow(missing_docs)]
 
-use criterion::{BenchmarkId, Criterion, Throughput, black_box, criterion_group, criterion_main};
+use criterion::{BenchmarkId, Criterion, Throughput, criterion_group, criterion_main};
 use guisu_engine::RedbPersistentState;
 use guisu_engine::{get_entry_state, save_entry_state, save_entry_states_batch};
 
@@ -34,7 +34,7 @@ fn bench_save_operations(c: &mut Criterion) {
             let path = format!("file_{counter}.txt");
             counter += 1;
             save_entry_state(&db, &path, content, Some(0o644)).expect("failed to save entry");
-            black_box(());
+            std::hint::black_box(());
         });
     });
 
@@ -52,7 +52,7 @@ fn bench_save_operations(c: &mut Criterion) {
                         .map(|i| (format!("file_{i}.txt"), content.to_vec(), Some(0o644)))
                         .collect();
                     save_entry_states_batch(&db, &entries).expect("failed to save batch");
-                    black_box(());
+                    std::hint::black_box(());
                 });
             },
         );
@@ -80,7 +80,7 @@ fn bench_read_operations(c: &mut Criterion) {
             let path = format!("file_{}.txt", counter % 1000);
             counter += 1;
             get_entry_state(&db, &path).expect("failed to get entry");
-            black_box(());
+            std::hint::black_box(());
         });
     });
 
@@ -88,7 +88,7 @@ fn bench_read_operations(c: &mut Criterion) {
     group.bench_function("missing_entry_read", |b| {
         b.iter(|| {
             get_entry_state(&db, "nonexistent.txt").expect("failed to get entry");
-            black_box(());
+            std::hint::black_box(());
         });
     });
 
@@ -119,7 +119,7 @@ fn bench_mixed_workload(c: &mut Criterion) {
                 let idx = counter + i;
                 let path = format!("file_{idx}.txt");
                 get_entry_state(&db, &path).expect("failed to get entry");
-                black_box(());
+                std::hint::black_box(());
             }
 
             counter += 10;

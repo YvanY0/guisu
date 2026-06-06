@@ -31,7 +31,7 @@ unsafe_code = "deny"
 missing_docs = "warn"
 
 [workspace.dependencies]
-clap = { version = "4.5", features = ["derive", "cargo", "env"] }
+clap = { version = "4.6", features = ["derive", "cargo", "env"] }
 crossterm = "0.29"
 ratatui = "0.30"
 terminal_size = "0.4"
@@ -43,39 +43,39 @@ miette = { version = "7.6", features = ["fancy"] }
 
 serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"
-toml = "0.9"
+toml = "1.1"
 postcard = { version = "1.1", default-features = false, features = ["alloc"] }
 
 age = { version = "0.11.3", features = ["ssh", "armor"] }
 secrecy = "0.10"
-sha2 = "0.10"
+sha2 = "0.11"
 subtle = "2.6"
 base64 = "0.22"
 
 dirs = "6.0"
 ignore = "0.4"
 walkdir = "2.5"
-tempfile = "3.23"
+tempfile = "3.27"
 which = "8.0"
 
-minijinja = { version = "2.12", features = ["builtins", "loader"] }
-regex = "1.11"
+minijinja = { version = "2.20", features = ["builtins", "loader"] }
+regex = "1.12"
 
-indexmap = { version = "2.0", features = ["serde"] }
-bitflags = "2.6"
+indexmap = { version = "2.14", features = ["serde"] }
+bitflags = "2.13"
 
-rayon = "1.10"
+rayon = "1.12"
 
-redb = "3.1"
+redb = "4.1"
 git2 = "0.20"
 git2_credentials = "0.15"
-similar = "2.7"
-os_info = "3.9"
+similar = "3.1"
+os_info = "3.15"
 libc = "0.2"
 chrono = "0.4"
 duct = "1.1"
 shell-words = "1.1"
-blake3 = "1.5"
+blake3 = "1.8"
 hex = "0.4"
 
 tracing = "0.1"
@@ -85,27 +85,27 @@ tracing-subscriber = { version = "0.3", features = [
   "ansi",
 ] }
 
-vergen = { version = "9.0", features = ["build", "rustc"] }
-vergen-git2 = { version = "1.0", features = ["build"] }
+vergen = { version = "9.1", features = ["build", "rustc"] }
+vergen-git2 = { version = "9.1", features = ["build"] }
 
-assert_cmd = "2.0"
+assert_cmd = "2.2"
 assert_fs = "1.1"
 predicates = "3.1"
-serial_test = "3.2"
+serial_test = "3.5"
 temp-env = "0.3"
 
-criterion = { version = "0.5", features = ["html_reports"] }
+criterion = { version = "0.8", features = ["html_reports"] }
 
 xdg = "3.0"
 hostname = "0.4"
-lru = "0.16.3"
-rustix = { version = "1.0", features = ["process", "system"] }
+lru = "0.18.0"
+rustix = { version = "1.1", features = ["process", "system"] }
 uzers = "0.12"
 comfy-table = "7.2"
 dialoguer = "0.12"
 lscolors = "0.21"
 nu-ansi-term = "0.50"
-owo-colors = "4.2"
+owo-colors = "4.3"
 
 [profile.release]
 codegen-units = 1

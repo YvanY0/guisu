@@ -16,7 +16,7 @@ pub struct ChangeSummary {
 impl ChangeSummary {
     /// Calculate change summary from a text diff
     #[must_use]
-    pub fn from_diff<'a>(diff: &TextDiff<'a, '_, 'a, str>) -> Self {
+    pub fn from_diff<'a>(diff: &TextDiff<'a, 'a, str>) -> Self {
         let mut lines_added = 0;
         let mut lines_removed = 0;
 
@@ -84,7 +84,7 @@ pub enum PreviewTag {
 impl ChangePreview {
     /// Generate preview from text diff
     #[must_use]
-    pub fn from_diff<'a>(diff: &TextDiff<'a, '_, 'a, str>, max_lines: usize) -> Self {
+    pub fn from_diff<'a>(diff: &TextDiff<'a, 'a, str>, max_lines: usize) -> Self {
         let mut lines = Vec::new();
         let mut total_lines = 0;
 

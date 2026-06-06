@@ -5,7 +5,7 @@
 //! - Target state building (template rendering + processing)
 //! - Destination state reading (file metadata queries)
 
-use criterion::{BenchmarkId, Criterion, black_box, criterion_group, criterion_main};
+use criterion::{BenchmarkId, Criterion, criterion_group, criterion_main};
 use tempfile::TempDir;
 
 /// Create a test repository with N files
@@ -47,12 +47,12 @@ fn bench_source_state_read(c: &mut Criterion) {
                 b.iter(|| {
                     // This would call SourceState::read
                     // For now, just measure file walking
-                    let count = walkdir::WalkDir::new(black_box(source_path))
+                    let count = walkdir::WalkDir::new(std::hint::black_box(source_path))
                         .into_iter()
                         .filter_map(Result::ok)
                         .filter(|e| e.file_type().is_file())
                         .count();
-                    black_box(count)
+                    std::hint::black_box(count)
                 });
             },
         );
@@ -83,7 +83,7 @@ fn bench_attribute_parsing(c: &mut Criterion) {
         b.iter(|| {
             for (filename, mode) in &test_cases {
                 let _ = FileAttributes::parse_from_source(filename, *mode);
-                black_box(filename);
+                std::hint::black_box(filename);
             }
         });
     });
@@ -99,8 +99,8 @@ fn bench_path_operations(c: &mut Criterion) {
 
     c.bench_function("path_join", |b| {
         b.iter(|| {
-            let joined = black_box(&base).join(black_box(&rel));
-            black_box(joined)
+            let joined = std::hint::black_box(&base).join(std::hint::black_box(&rel));
+            std::hint::black_box(joined)
         });
     });
 }
