@@ -61,6 +61,7 @@ release-major:
 # Install mdbook and plugins (one-time)
 docs-install:
 	cargo install mdbook --locked
+	cargo install mdbook-mermaid --locked
 	cargo install mdbook-toc --locked
 	cargo install mdbook-linkcheck --locked
 

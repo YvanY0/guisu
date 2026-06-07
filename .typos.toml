@@ -13,4 +13,8 @@ non-existant = "non-existant"
 extend-ignore-re = ['\\u\{[0-9a-fA-F]+\}']
 
 [files]
-extend-exclude = ["*.lock", "target/"]
+# mdbook-mermaid's minified bundle ships with ~140 single- and
+# double-character identifier names that look like typos but are
+# real mermaid-internal symbols. The file is third-party and we
+# do not edit it; exclude it from the typo check.
+extend-exclude = ["*.lock", "target/", "docs/mermaid.min.js"]
