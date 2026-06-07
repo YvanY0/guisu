@@ -2,31 +2,25 @@
 
 The engine keeps three views of every file under management, plus a persistent record of what was last applied. Comparing the four is what makes conflict detection and safe interactive resolution possible.
 
-```mermaid
-flowchart LR
-    subgraph src["Source state (filesystem)"]
-        s1[".bashrc.j2"]
-        s2["key.txt.age"]
-    end
-    subgraph target["Target state (in memory)"]
-        t1[".bashrc (rendered)"]
-        t2["key.txt (decrypted)"]
-    end
-    subgraph dest["Destination state (filesystem)"]
-        d1["~/.bashrc"]
-        d2["~/key.txt"]
-    end
-    subgraph db["Persistent state (redb)"]
-        p1["blake3(.bashrc)"]
-        p2["blake3(key.txt)"]
-    end
+## The four stores
 
-    src -->|decrypt + render| target
-    target -->|three-way compare| dest
-    target -->|hash| db
+The engine keeps four views of every file under management. The arrows below describe how data flows from one store to the next during an `apply`.
+
+```
+SOURCE                 TARGET                  DESTINATION            PERSISTENT
+(filesystem)           (in memory)             (filesystem)           (redb)
+
+.bashrc.j2     ───►    .bashrc (rendered) ──►  ~/.bashrc       ◄──►  blake3(.bashrc)
+key.txt.age    ───►    key.txt (decrypted)──►  ~/key.txt      ◄──►  blake3(key.txt)
+                     decrypt + render        write + chmod          record
+
+Source     →  Target     : decrypt .age, then render .j2
+Target     →  Destination: write to disk, apply mode
+Target     ↔  Persistent : hash target, store in db
+Target     ↔  Destination: three-way compare to detect Synced/Modified/Conflict
 ```
 
-## The four stores
+The bold arrows show the **writes** the apply loop performs. The plain arrows are **reads** that drive the comparison.
 
 | Store | Where it lives | Mutable? | Notes |
 | --- | --- | --- | --- |

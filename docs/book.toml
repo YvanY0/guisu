@@ -13,7 +13,3 @@ preferred-dark-theme = "dark"
 git-repository-url = "https://github.com/YvanY0/guisu"
 edit-url-template = "https://github.com/YvanY0/guisu/edit/main/docs/{path}"
 additional-css = ["theme/nord.css"]
-additional-js = ["mermaid.min.js", "mermaid-init.js"]
-
-[preprocessor.mermaid]
-command = "mdbook-mermaid"

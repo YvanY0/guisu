@@ -22,7 +22,6 @@ jobs:
       - name: Install mdbook
         run: |
           cargo install mdbook --locked
-          cargo install mdbook-mermaid --locked
           cargo install mdbook-toc --locked
       - name: Build
         run: cd docs && mdbook build

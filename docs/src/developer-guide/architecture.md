@@ -2,35 +2,28 @@
 
 Guisu is a Cargo workspace with 7 crates organised in strict layers. Higher layers depend on lower layers, never the reverse. There are no circular dependencies; `cargo tree --workspace --no-dedupe` confirms it.
 
-```mermaid
-flowchart TD
-    cli["guisu-cli<br/>(Layer 4)"]
-    engine["guisu-engine<br/>(Layer 3)"]
-    config["guisu-config<br/>(Layer 2)"]
-    template["guisu-template<br/>(Layer 2)"]
-    crypto["guisu-crypto<br/>(Layer 1)"]
-    vault["guisu-vault<br/>(Layer 1)"]
-    core["guisu-core<br/>(Layer 0)"]
+## Dependency table
 
-    cli --> engine
-    cli --> config
-    cli --> template
-    cli --> crypto
-    cli --> core
-    engine --> config
-    engine --> template
-    engine --> crypto
-    engine --> vault
-    engine --> core
-    config --> crypto
-    config --> template
-    config --> core
-    template --> crypto
-    template --> vault
-    template --> core
-    crypto --> core
-    vault --> core
-```
+The arrows below are read as "depends on". The table lists every cross-crate dependency; an absent row means the crate is fully self-contained.
+
+| ↓ depends on → | `core` | `crypto` | `vault` | `template` | `config` | `engine` | `cli` |
+| --- | :---: | :---: | :---: | :---: | :---: | :---: | :---: |
+| **`core`** (Layer 0) | — | | | | | | |
+| **`crypto`** (Layer 1) | ✓ | — | | | | | |
+| **`vault`** (Layer 1) | ✓ | | — | | | | |
+| **`template`** (Layer 2) | ✓ | ✓ | ✓ | — | | | |
+| **`config`** (Layer 2) | ✓ | ✓ | | ✓ | — | | |
+| **`engine`** (Layer 3) | ✓ | ✓ | ✓ | ✓ | ✓ | — | |
+| **`cli`** (Layer 4) | ✓ | ✓ | | ✓ | ✓ | ✓ | — |
+
+Read row-by-row:
+
+- `core` has no dependencies (only `std`).
+- `crypto` and `vault` depend only on `core`.
+- `template` depends on `core`, `crypto`, `vault` (so it can call encryption and vault lookups during rendering).
+- `config` depends on `core`, `crypto`, `template` (so `.guisu.toml.j2` can render with the same context as regular templates).
+- `engine` depends on all of `core`, `crypto`, `vault`, `template`, `config` (it orchestrates the apply pipeline).
+- `cli` depends on every other crate (it is the user-facing binary).
 
 ## Layer responsibilities (one-line summary)
 

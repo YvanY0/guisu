@@ -4,104 +4,64 @@ This page traces the major commands through the layers. Each flow is the same sh
 
 ## `guisu apply`
 
-The core command. Materialises source into destination.
+The core command. Materialises source into destination. The flow is:
 
-```mermaid
-flowchart TD
-    A["Parse CLI args<br/>(--interactive, --dry-run,<br/>--include, --exclude)"] --> B
-    B["Load .guisu.toml +<br/>platform-specific variables"] --> C
-    C["Load age identities<br/>(files or SSH keys)"] --> D
-    D["Build template engine<br/>+ context (system, guisu,<br/>user variables)"] --> E
-    E["Read SourceState<br/>(parallel via rayon)"] --> F
-    F["Build TargetState<br/>(parallel: decrypt + render)"] --> G
-    G["Open redb"] --> H
-    H["For each entry"] --> I
-    I["Read DestinationState<br/>(the actual file on disk)"] --> J
-    J["Load DB state<br/>(last hash + mode)"] --> K
-    K["Three-way compare"] --> L
-    L{"Status?"}
-    L -->|Synced| M["Skip"]
-    L -->|Added / Modified| N["Write file"]
-    L -->|Conflict| O{"--interactive?"}
-    O -->|Yes| P["TUI prompt"]
-    O -->|No| N
-    P -->|User: Overwrite| N
-    P -->|User: Skip| M
-    P -->|User: Quit| R["Abort apply"]
-    N --> Q["Update DB"]
-    Q --> H
-    M --> H
-    R --> S
-    H --> S["Show stats"]
-```
+1. **Parse CLI args** — `--interactive`, `--dry-run`, `--include`, `--exclude`, source/destination overrides.
+2. **Load `.guisu.toml`** + any platform-specific variable files; merge them.
+3. **Load age identities** from the configured identity files (age keys or SSH keys).
+4. **Build the template engine** and a context populated with system info, guisu metadata, and user variables.
+5. **Read `SourceState`** — walk the source directory in parallel via rayon; parse file attributes from each filename; build `SourceEntry` objects.
+6. **Build `TargetState`** — for each source entry, decrypt `.age` files and render `.j2` templates, again in parallel.
+7. **Open the redb database** at `<source>/.guisu-state.db`.
+8. **For each entry in the target state** (sequential, so writes are deterministic):
+    1. Read the corresponding `DestinationState` entry (the actual file on disk).
+    2. Load the database entry (the last applied hash + mode).
+    3. Three-way compare the three to compute a `FileStatus`.
+    4. Resolve the status:
+        - `Synced` — skip.
+        - `Added` / `Modified` — write the target content with the target mode.
+        - `Conflict` — if `--interactive`, open the TUI; otherwise overwrite.
+        - User can also `Quit` from the TUI, which aborts the entire apply.
+    5. Update the database with the new hash and mode.
+9. **Show stats** — counts of added / modified / skipped / errored entries.
 
-Steps E and F use rayon for parallel processing (file I/O and template rendering are embarrassingly parallel). Steps H through Q are **sequential** so that writes happen in a deterministic order and a mid-apply crash leaves the destination in a recoverable state.
+Steps 5 and 6 use rayon for parallel processing. Steps 8 and 9 are sequential so writes happen in a deterministic order and a mid-apply crash leaves the destination in a recoverable state.
 
 ## `guisu init`
 
-```mermaid
-flowchart LR
-    A["Parse target<br/>(path, username,<br/>or owner/repo)"] --> B
-    B["Determine source dir<br/>(~/.local/share/guisu)"] --> C
-    C{Already exists?}
-    C -->|Yes| D["Error:<br/>source dir not empty"]
-    C -->|No| E["git clone<br/>(in-process git2)"]
-    E --> F["Apply (interactive)"]
-    F --> G["Done"]
-```
+1. Parse the target — a local path, a GitHub username, or `owner/repo`.
+2. Determine the source directory (default `~/.local/share/guisu`).
+3. If the source directory already exists, error out.
+4. Clone the repository (in-process via the `git2` crate).
+5. Run `guisu apply` in interactive mode so the user can review the changes before they land.
 
 ## `guisu add`
 
-```mermaid
-flowchart LR
-    A["Resolve path<br/>(expand ~, make absolute)"] --> B
-    B["Compute target path<br/>(strip $HOME)"] --> C
-    C{"--encrypt?"}
-    C -->|Yes| D["Encrypt content +<br/>append .age suffix"]
-    C -->|No| E["Use as-is"]
-    D --> F["Copy to source dir<br/>(preserve metadata)"]
-    E --> F
-    F --> G["git add"]
-```
+1. Resolve the path: expand `~`, make it absolute, verify it exists.
+2. Compute the target path: strip the `$HOME` prefix.
+3. If `--encrypt` was passed, encrypt the content and append `.age` as the suffix. `--template` instead appends `.j2`. Otherwise the file is used as-is.
+4. Copy the (possibly transformed) file to the source directory, preserving metadata.
+5. Run `git add` on the resulting source path.
 
-`--template` is handled the same way as `--encrypt` in this flow: the suffix becomes `.j2` instead of `.age`. `--private` and `--executable` do not change the file's location, only the attributes Guisa applies on the next apply.
+`--private` and `--executable` do not change the file's location, only the attributes Guisa applies on the next apply.
 
 ## `guisu update`
 
-```mermaid
-flowchart LR
-    A["Open repo<br/>(git2)"] --> B
-    B["git fetch origin"] --> C
-    C{"--rebase?"}
-    C -->|Yes| D["git rebase"]
-    C -->|No| E["git merge"]
-    D --> F{Conflicts?}
-    E --> F
-    F -->|Yes| G["Error:<br/>resolve manually"]
-    F -->|No| H["Run apply"]
-    H --> I["Done"]
-```
+1. Open the source repo via `git2`.
+2. `git fetch origin`.
+3. If `--rebase`, run `git rebase`; otherwise `git merge`.
+4. If there are conflicts, error out (the user must resolve them manually).
+5. Run `guisu apply`.
 
 ## `guisu edit`
 
-```mermaid
-flowchart LR
-    A["Map dest path →<br/>source path"] --> B
-    B{".age file?"}
-    B -->|Yes| C["Decrypt to temp<br/>(mode 0600)"]
-    B -->|No| D["Use source directly"]
-    C --> E["Open $EDITOR"]
-    D --> E
-    E --> F{Hash changed?}
-    F -->|No| G["Done"]
-    F -->|Yes| H{".age file?"}
-    H -->|Yes| I["Re-encrypt,<br/>replace source"]
-    H -->|No| J["Replace source"]
-    I --> K["Delete temp"]
-    J --> K
-```
+1. Map the destination path back to the source path (look for `.j2` / `.age` suffixes).
+2. If the source is an `.age` file, decrypt to a temp file (mode `0600`).
+3. Open the source (or temp) file in `$EDITOR` and wait for it to exit.
+4. If the content's hash changed, and the source is `.age`, re-encrypt and replace the source. Otherwise just replace the source.
+5. Delete the temp file.
 
-The temp file is on the same filesystem as the source, mode `0600`, and is `unlink()`-ed when the editor exits. Secure erasure (overwrite before unlink) is on the roadmap but not implemented.
+The temp file lives on the same filesystem as the source, with mode `0600`, and is `unlink()`-ed when the editor exits. Secure erasure (overwrite before unlink) is on the roadmap but not implemented.
 
 ## Parallel processing
 
