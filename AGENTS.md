@@ -30,6 +30,7 @@ Subsystem rules: `crates/engine/AGENTS.md`, `crates/cli/AGENTS.md`.
 - Look for existing utilities first
 - Don't narrate code — well-named identifiers self-document
 - Three similar lines > premature abstraction
+- User-facing feature work → update `developer-guide/contributing.md` "Documentation" checklist before merge
 
 ## Commit rules
 
