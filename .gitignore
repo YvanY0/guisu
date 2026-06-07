@@ -29,6 +29,8 @@ docs/superpowers/
 # Documentation build artifacts
 /docs/_build/
 /docs/.doctrees/
+# mdbook build output
+docs/book/
 
 # Coverage reports
 *.gcda

@@ -1,0 +1,89 @@
+/*
+ * Nord theme for mdBook
+ * Based on https://www.nordtheme.com (MIT License)
+ * Compatible with mdBook 0.4.x; load via `additional-css` from book.toml
+ */
+
+:root {
+    --nord0:  #2E3440;
+    --nord1:  #3B4252;
+    --nord2:  #434C5E;
+    --nord3:  #4C566A;
+    --nord4:  #D8DEE9;
+    --nord5:  #E5E9F0;
+    --nord6:  #ECEFF4;
+    --nord7:  #8FBCBB;
+    --nord8:  #88C0D0;
+    --nord9:  #81A1C1;
+    --nord10: #5E81AC;
+    --nord11: #BF616A;
+    --nord12: #D08770;
+    --nord13: #EBCB8B;
+    --nord14: #A3BE8C;
+    --nord15: #B48EAD;
+
+    --guisu-accent: var(--nord10);
+
+    --bg: var(--nord0);
+    --fg: var(--nord4);
+    --sidebar-bg: var(--nord1);
+    --sidebar-fg: var(--nord4);
+    --sidebar-non-existant: var(--nord3);
+    --sidebar-active: var(--nord8);
+    --sidebar-spacer: var(--nord3);
+    --scrollbar: var(--nord3);
+
+    --icons: var(--nord4);
+    --icons-hover: var(--nord8);
+
+    --links: var(--nord8);
+
+    --inline-code-color: var(--nord13);
+    --theme-popup-bg: var(--nord1);
+    --theme-popup-border: var(--nord3);
+    --theme-hover: var(--nord2);
+    --quote-bg: var(--nord1);
+    --quote-border: var(--nord10);
+
+    --table-border-color: var(--nord3);
+    --table-header-bg: var(--nord2);
+    --table-alternating-bg: var(--nord1);
+
+    --searchbar-border-color: var(--nord3);
+    --searchbar-bg: var(--nord1);
+    --searchbar-fg: var(--nord4);
+    --searchbar-shadow-color: var(--nord3);
+    --searchresults-header-fg: var(--nord6);
+    --searchresults-border-color: var(--nord3);
+    --searchresults-li-bg: var(--nord1);
+    --search-mark-bg: var(--nord13);
+}
+
+.rust { color: var(--nord13); }
+.coal  { background: var(--bg); color: var(--fg); }
+.ayu   { background: var(--nord0); color: var(--nord6); }
+
+/* Override mdBook's default light background to Nord dark */
+html, body {
+    background: var(--bg) !important;
+    color: var(--fg) !important;
+}
+
+.menu-title {
+    color: var(--guisu-accent);
+    font-weight: 600;
+}
+
+a:visited {
+    color: var(--links);
+}
+
+/* Code blocks — keep Nord-friendly tones */
+code, pre code {
+    color: var(--nord13);
+}
+
+/* Inline link with subtle hover */
+a:hover {
+    color: var(--nord7);
+}
