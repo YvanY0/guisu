@@ -111,8 +111,11 @@ impl Command for AddCommand {
         };
 
         for file_path in &self.files {
-            let (rel_path, _count) = add_file(&params, file_path)
-                .with_context(|| format!("Failed to add file: {}", file_path.display()))?;
+            // Don't wrap the result: bail!() inside add_file already produces
+            // an actionable message (e.g. "already managed by guisu"), and
+            // wrapping it in a generic "Failed to add file: <path>" context
+            // buries that hint one level down the error chain.
+            let (rel_path, _count) = add_file(&params, file_path)?;
 
             // Add to create-once list if requested
             if self.create {
@@ -1495,5 +1498,68 @@ mod tests {
         assert!(result.is_err());
         let err = result.unwrap_err();
         assert!(err.to_string().contains("No recipients configured"));
+    }
+
+    #[test]
+    fn test_add_existing_file_surfaces_already_managed_message() {
+        // Regression test: when a file is already managed in source, the user
+        // must see the actionable "already managed by guisu" guidance, not a
+        // generic "Failed to add file: <path>" wrapper that buries the cause.
+        let temp = TempDir::new().expect("Failed to create temp dir");
+        let temp_canon = std::fs::canonicalize(temp.path()).expect("Failed to canonicalize");
+
+        let source_dir = temp_canon.join("src");
+        let dest_dir = temp_canon.join("dst");
+        std::fs::create_dir_all(&source_dir).expect("Failed to create source dir");
+        std::fs::create_dir_all(&dest_dir).expect("Failed to create dest dir");
+
+        // Default root_entry is "home", so managed files live in source_dir/home/.
+        let dotfiles_dir = source_dir.join("home");
+        std::fs::create_dir_all(&dotfiles_dir).expect("Failed to create home dir");
+
+        // Pre-create the file in source, simulating it is already managed.
+        let already_managed = dotfiles_dir.join("git.ignore");
+        std::fs::write(&already_managed, b"already there").expect("Failed to seed source");
+
+        // Also pre-create the target file under dest for the add path.
+        let target = dest_dir.join("git.ignore");
+        std::fs::write(&target, b"target content").expect("Failed to write target");
+
+        let config = test_config();
+        let db_path = temp.path().join("test.db");
+        let context = crate::common::RuntimeContext::new_with_db_path(
+            config,
+            &source_dir,
+            &dest_dir,
+            &db_path,
+        )
+        .expect("Failed to create test RuntimeContext");
+
+        let cmd = AddCommand {
+            files: vec![target],
+            template: false,
+            autotemplate: false,
+            encrypt: false,
+            create: false,
+            force: false,
+            secrets: SecretsMode::Warning,
+        };
+
+        let err = cmd
+            .execute(&context)
+            .expect_err("adding an already-managed file must fail");
+        let msg = format!("{err:#}");
+
+        // The actionable hint must be visible to the user, not buried under a
+        // generic "Failed to add file:" wrapper.
+        assert!(
+            msg.contains("already managed by guisu"),
+            "expected actionable 'already managed' message, got: {msg}"
+        );
+        // And the guidance to use --force must be present so the user can act.
+        assert!(
+            msg.contains("guisu add --force"),
+            "expected --force guidance, got: {msg}"
+        );
     }
 }
