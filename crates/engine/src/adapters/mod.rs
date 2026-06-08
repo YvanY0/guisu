@@ -78,7 +78,8 @@ mod tests {
         let processor = create_processor(identity, engine);
 
         let content = b"Hello, {{ name }}!";
-        let attrs = FileAttributes::TEMPLATE; // Template flag
+        let mut attrs = FileAttributes::new();
+        attrs.set_template(true);
         let template_context = json!({
             "name": "World"
         });
@@ -100,7 +101,8 @@ mod tests {
         let recipient = identity.to_public();
         let encrypted = encrypt(plaintext, &[recipient]).expect("Encryption failed");
 
-        let attrs = FileAttributes::ENCRYPTED; // Encrypted flag
+        let mut attrs = FileAttributes::new();
+        attrs.set_encrypted(true);
         let template_context = json!({});
 
         let result = processor
@@ -121,7 +123,9 @@ mod tests {
         let recipient = identity.to_public();
         let encrypted = encrypt(template.as_bytes(), &[recipient]).expect("Encryption failed");
 
-        let attrs = FileAttributes::TEMPLATE | FileAttributes::ENCRYPTED; // Both flags
+        let mut attrs = FileAttributes::new();
+        attrs.set_template(true);
+        attrs.set_encrypted(true);
         let template_context = json!({
             "name": "Alice"
         });
@@ -165,7 +169,10 @@ mod tests {
         // Create template content
         let template = "User: {{ user }}\nRole: {{ role }}";
 
-        let attrs = FileAttributes::TEMPLATE | FileAttributes::PRIVATE; // Multiple flags
+        let mut attrs = FileAttributes::new();
+        attrs.set_template(true);
+        // PRIVATE flag was removed; private permissions are now tracked via
+        // source file mode bits, not via a flag.
         let template_context = json!({
             "user": "alice",
             "role": "admin"

@@ -547,8 +547,6 @@ mod tests {
         let mut attrs = FileAttributes::new();
         attrs.set_encrypted(true);
         attrs.set_template(true);
-        attrs.set_private(true); // This should be ignored by processor
-        attrs.set_executable(true); // This should be ignored by processor
 
         let template_context = serde_json::json!({"name": "Alice"});
 

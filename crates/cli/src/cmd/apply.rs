@@ -1062,7 +1062,7 @@ fn apply_target_entry(
             #[cfg(unix)]
             {
                 use std::io::Write;
-                use std::os::unix::fs::OpenOptionsExt;
+                use std::os::unix::fs::{OpenOptionsExt, PermissionsExt};
 
                 // Determine permissions to use
                 // - If source has mode, use it (source is authoritative)
@@ -1081,6 +1081,18 @@ fn apply_target_entry(
 
                 file.write_all(&final_content)
                     .with_context(|| format!("Failed to write file content: {dest_path:?}"))?;
+
+                // OpenOptions::mode() is only honored when the file is newly
+                // created. For files that already existed (the common case
+                // during `apply` after a small content edit), the kernel
+                // preserves the previous mode. Chmod explicitly so source's
+                // mode is always authoritative, as documented.
+                let current_mode = file.metadata().ok().map(|m| m.permissions().mode());
+                if current_mode != Some(mode_to_use) {
+                    let permissions = std::fs::Permissions::from_mode(mode_to_use);
+                    fs::set_permissions(dest_path.as_path(), permissions)
+                        .with_context(|| format!("Failed to set permissions: {dest_path:?}"))?;
+                }
             }
 
             #[cfg(not(unix))]
@@ -1457,6 +1469,10 @@ fn decrypt_inline_age_values(
 mod tests {
     #![allow(clippy::unwrap_used, clippy::panic)]
     use super::*;
+    use guisu_core::path::AbsPath;
+    use guisu_engine::entry::TargetEntry;
+    use guisu_engine::hash_content;
+    use tempfile::TempDir;
 
     // Tests for decrypt_inline_age_values
 
@@ -1589,5 +1605,55 @@ mod tests {
         assert_eq!(cloned.dry_run, cmd.dry_run);
         assert_eq!(cloned.force, cmd.force);
         assert_eq!(cloned.interactive, cmd.interactive);
+    }
+
+    #[test]
+    fn test_apply_target_entry_chmods_existing_dest_file() {
+        // Regression test: when source has a different mode than the
+        // existing destination file, `apply` must chmod the destination
+        // to match. Previously, `OpenOptions::mode()` was a no-op for
+        // already-existing files, so a `0o600` dest would silently stay
+        // `0o600` even when source was `0o644`.
+        let temp = TempDir::new().expect("Failed to create temp dir");
+        let temp_canon =
+            std::fs::canonicalize(temp.path()).expect("Failed to canonicalize temp dir");
+        let dest_dir = AbsPath::new(temp_canon).expect("Failed to create AbsPath");
+        let rel = guisu_core::path::RelPath::new("perm.txt".into()).expect("Invalid rel path");
+        let dest_path = dest_dir.join(&rel);
+
+        // Pre-create dest file with 0o600.
+        std::fs::write(dest_path.as_path(), b"old content").expect("Failed to write dest");
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            std::fs::set_permissions(dest_path.as_path(), std::fs::Permissions::from_mode(0o600))
+                .expect("Failed to chmod dest");
+        }
+
+        // Source entry declares 0o644.
+        let content = b"new content".to_vec();
+        let content_hash = hash_content(&content);
+        let entry = TargetEntry::File {
+            path: guisu_core::path::RelPath::new("perm.txt".into()).expect("Invalid rel path"),
+            content,
+            content_hash,
+            mode: Some(0o644),
+        };
+
+        apply_target_entry(&entry, &dest_path, &[], false).expect("apply failed");
+
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            let actual_mode = std::fs::metadata(dest_path.as_path())
+                .expect("dest missing after apply")
+                .permissions()
+                .mode()
+                & 0o777;
+            assert_eq!(
+                actual_mode, 0o644,
+                "apply must chmod existing dest to source mode (was {actual_mode:o})"
+            );
+        }
     }
 }
