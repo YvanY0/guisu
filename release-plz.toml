@@ -1,8 +1,7 @@
 [workspace]
-pr_draft = true
+pr_draft = false
+release_always = false
 publish = false
-# Default: disable git tags and releases for every crate in the workspace.
-# The [[package]] block below re-enables them for the CLI crate only.
 git_tag_enable = false
 git_release_enable = false
 semver_check = true
@@ -10,10 +9,11 @@ semver_check = true
 [[package]]
 name = "guisu"
 git_tag_enable = true
-git_release_enable = true
+# GitHub Release is created by cargo-dist
+git_release_enable = false
 git_tag_name = "v{{ version }}"
-# guisu is primarily a binary; semver-check is only meaningful for libraries
 semver_check = false
 
 [changelog]
 commit_preprocessors = []
+protect_breaking_commits = true
