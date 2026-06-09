@@ -94,45 +94,6 @@ pub enum Error {
     #[error("Path error: {0}")]
     Path(String),
 
-    // ========== Attribute Parsing Errors ==========
-    /// Invalid attributes in filename
-    #[error("Invalid attributes in filename '{filename}': {reason}")]
-    InvalidAttributes {
-        /// The filename with invalid attributes
-        filename: String,
-        /// Reason for the error
-        reason: String,
-    },
-
-    /// Duplicate attribute
-    #[error("Duplicate attribute '{attribute}' in filename '{filename}'")]
-    DuplicateAttribute {
-        /// The filename with duplicate attributes
-        filename: String,
-        /// The duplicate attribute
-        attribute: String,
-    },
-
-    /// Invalid attribute order
-    #[error(
-        "Invalid attribute order in '{filename}'.\n\
-         Attributes must be in this order:\n\
-         1. private_ or readonly_\n\
-         2. executable_\n\
-         3. dot_\n\
-         \n\
-         Got: {found}\n\
-         Suggestion: {suggestion}"
-    )]
-    InvalidAttributeOrder {
-        /// The filename with invalid attribute order
-        filename: String,
-        /// What was found
-        found: String,
-        /// Suggested correction
-        suggestion: String,
-    },
-
     // ========== Entry Errors ==========
     /// Source entry not found
     #[error("Source entry not found: {0}")]

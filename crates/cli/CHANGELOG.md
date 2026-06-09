@@ -7,6 +7,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Removed
+
+- **BREAKING**: Filename-prefix attribute mechanism is no longer
+  supported in the CLI. The `private_`, `readonly_`, `executable_`,
+  `dot_`, `exact_`, `modify_`, `remove_`, `symlink_` filename prefixes
+  are no longer recognized. See `engine` CHANGELOG for the migration
+  notes (permissions now come from the source file's
+  `metadata().mode()`; removals are declared in `.guisu/state.toml`
+  under `[remove] paths`).
+
+### Added
+
+- `apply` reads `[remove] paths` from `.guisu/state.toml` and removes
+  each listed dest path before processing source files. Paths must be
+  dest-relative (or start with `~` for the user's home); absolute
+  paths and `..` traversal are rejected as a safety check. `--dry-run`
+  reports the removal without touching the filesystem.
+
 ## [0.2.2](https://github.com/YvanY0/guisu/releases/tag/v0.2.2) - 2026-06-08
 
 ### Added

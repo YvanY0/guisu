@@ -107,7 +107,7 @@ where
         context: &serde_json::Value,
         path_for_errors: &str,
     ) -> Result<Vec<u8>> {
-        if attrs.is_encrypted() {
+        if attrs.is_encrypted {
             data = self
                 .decryptor
                 .decrypt(&data)
@@ -117,7 +117,7 @@ where
                 })?;
         }
 
-        if attrs.is_template() {
+        if attrs.is_template {
             let text = String::from_utf8(data).map_err(|e| Error::InvalidUtf8 {
                 path: path_for_errors.to_string(),
                 source: e,
@@ -289,8 +289,10 @@ mod tests {
         let mock_renderer = NoOpRenderer;
 
         let processor = ContentProcessor::new(decryptor, mock_renderer);
-        let mut attrs = FileAttributes::new();
-        attrs.set_encrypted(true);
+        let attrs = FileAttributes {
+            is_encrypted: true,
+            ..FileAttributes::new()
+        };
         let template_context = serde_json::json!({});
 
         let result = processor
@@ -307,8 +309,10 @@ mod tests {
         let mock_renderer = MockRenderer::success(rendered.clone());
 
         let processor = ContentProcessor::new(decryptor, mock_renderer);
-        let mut attrs = FileAttributes::new();
-        attrs.set_template(true);
+        let attrs = FileAttributes {
+            is_template: true,
+            ..FileAttributes::new()
+        };
         let template_context = serde_json::json!({});
 
         let result = processor
@@ -327,9 +331,11 @@ mod tests {
         let mock_renderer = MockRenderer::success(rendered.clone());
 
         let processor = ContentProcessor::new(decryptor, mock_renderer);
-        let mut attrs = FileAttributes::new();
-        attrs.set_encrypted(true);
-        attrs.set_template(true);
+        let attrs = FileAttributes {
+            is_encrypted: true,
+            is_template: true,
+            ..FileAttributes::new()
+        };
         let template_context = serde_json::json!({"variable": "value"});
 
         let result = processor
@@ -360,8 +366,10 @@ mod tests {
         assert!(!processor.decryptor.was_called());
 
         // Encrypted
-        let mut attrs = FileAttributes::new();
-        attrs.set_encrypted(true);
+        let attrs = FileAttributes {
+            is_encrypted: true,
+            ..FileAttributes::new()
+        };
         let _ =
             processor.process_content(b"encrypted".to_vec(), &attrs, &template_context, "test.age");
 
@@ -384,8 +392,10 @@ mod tests {
         assert!(!processor.renderer.was_called());
 
         // Is a template
-        let mut attrs = FileAttributes::new();
-        attrs.set_template(true);
+        let attrs = FileAttributes {
+            is_template: true,
+            ..FileAttributes::new()
+        };
         let _ =
             processor.process_content(b"template".to_vec(), &attrs, &template_context, "test.j2");
 
@@ -398,8 +408,10 @@ mod tests {
         let mock_renderer = NoOpRenderer;
 
         let processor = ContentProcessor::new(decryptor, mock_renderer);
-        let mut attrs = FileAttributes::new();
-        attrs.set_encrypted(true);
+        let attrs = FileAttributes {
+            is_encrypted: true,
+            ..FileAttributes::new()
+        };
         let template_context = serde_json::json!({});
 
         let result =
@@ -416,8 +428,10 @@ mod tests {
         let mock_renderer = MockRenderer::failure();
 
         let processor = ContentProcessor::new(decryptor, mock_renderer);
-        let mut attrs = FileAttributes::new();
-        attrs.set_template(true);
+        let attrs = FileAttributes {
+            is_template: true,
+            ..FileAttributes::new()
+        };
         let template_context = serde_json::json!({});
 
         let result =
@@ -434,8 +448,10 @@ mod tests {
         let mock_renderer = NoOpRenderer;
 
         let processor = ContentProcessor::new(decryptor, mock_renderer);
-        let mut attrs = FileAttributes::new();
-        attrs.set_template(true);
+        let attrs = FileAttributes {
+            is_template: true,
+            ..FileAttributes::new()
+        };
         let template_context = serde_json::json!({});
 
         // Invalid UTF-8 sequence
@@ -544,9 +560,11 @@ mod tests {
 
         let processor = ContentProcessor::new(decryptor, mock_renderer);
 
-        let mut attrs = FileAttributes::new();
-        attrs.set_encrypted(true);
-        attrs.set_template(true);
+        let attrs = FileAttributes {
+            is_encrypted: true,
+            is_template: true,
+            ..FileAttributes::new()
+        };
 
         let template_context = serde_json::json!({"name": "Alice"});
 

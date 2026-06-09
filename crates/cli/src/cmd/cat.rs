@@ -135,11 +135,7 @@ fn get_source_entry_info<'a>(
             source_path,
             attributes,
             ..
-        } => Ok((
-            source_path,
-            attributes.is_template(),
-            attributes.is_encrypted(),
-        )),
+        } => Ok((source_path, attributes.is_template, attributes.is_encrypted)),
         guisu_engine::entry::SourceEntry::Directory { .. } => {
             anyhow::bail!("{} is a directory", file_path.display());
         }

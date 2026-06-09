@@ -417,19 +417,50 @@ impl DestinationState {
 }
 
 /// Metadata configuration from .guisu/metadata.toml
-#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Metadata {
     /// Files that should only be created once and not tracked afterwards
     #[serde(default, rename = "create-once")]
     pub create_once: CreateOnceConfig,
+
+    /// Dest paths to remove on apply. Each entry is a dest-relative path
+    /// (e.g. `~/.cache/foo`) that `apply` will `rm` if it exists.
+    #[serde(default, rename = "remove")]
+    pub remove: RemoveConfig,
 }
 
 /// Configuration for create-once files
-#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
 pub struct CreateOnceConfig {
     /// List of file paths (relative to destination) that should only be created once
     #[serde(default)]
     pub files: HashSet<String>,
+}
+
+/// Configuration for paths to remove on apply
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub struct RemoveConfig {
+    /// Dest paths (relative to destination) that `apply` should remove
+    #[serde(default)]
+    pub paths: HashSet<String>,
+}
+
+impl RemoveConfig {
+    /// Add a path to the remove set
+    pub fn add(&mut self, path: String) {
+        self.paths.insert(path);
+    }
+
+    /// Iterate over the configured paths
+    pub fn iter(&self) -> impl Iterator<Item = &str> {
+        self.paths.iter().map(String::as_str)
+    }
+
+    /// Check whether the given dest path is scheduled for removal
+    #[must_use]
+    pub fn contains(&self, path: &str) -> bool {
+        self.paths.contains(path)
+    }
 }
 
 impl Metadata {
@@ -1307,7 +1338,7 @@ impl SourceState {
                 let permissions = None;
 
                 let (attrs, target_name) =
-                    FileAttributes::parse_from_source(&file_name, permissions)?;
+                    FileAttributes::parse_from_source(&file_name, permissions);
 
                 // Calculate target path
                 let target_rel = if let Some(parent) = rel_path.parent() {
@@ -1451,29 +1482,6 @@ impl TargetState {
         Ok(target_state)
     }
 
-    /// Parse shebang line from script content to determine interpreter
-    ///
-    /// Returns the interpreter path (e.g., "/bin/bash", "/usr/bin/env python3").
-    /// If no shebang is found, defaults to "/bin/sh".
-    fn parse_shebang(content: &[u8]) -> String {
-        // Convert to string for parsing (shebang is ASCII)
-        let content_str = String::from_utf8_lossy(content);
-        let trimmed = content_str.trim_start();
-
-        if trimmed.starts_with("#!") {
-            // Extract the shebang line (up to newline)
-            let shebang_line = trimmed.lines().next().unwrap_or("");
-            // Get everything after "#!"
-            let shebang_args = shebang_line[2..].trim();
-            // Take first token as interpreter (allow spaces for env with args)
-            // e.g., "/usr/bin/env python3" -> "/usr/bin/env python3"
-            shebang_args.to_string()
-        } else {
-            // Default shell interpreter
-            "/bin/sh".to_string()
-        }
-    }
-
     /// Process a single source entry into a target entry
     ///
     /// This applies the appropriate transformations based on the entry type:
@@ -1507,39 +1515,18 @@ impl TargetState {
 
                 let content_hash = crate::hash::hash_content(&processed_content);
 
-                // Handle special file types based on attributes
-                if attributes.is_modify() {
-                    let interpreter = Self::parse_shebang(&processed_content);
-                    Ok(TargetEntry::Modify {
-                        path: target_path.clone(),
-                        script: processed_content,
-                        content_hash,
-                        interpreter,
-                    })
-                } else if attributes.is_remove() {
-                    Ok(TargetEntry::Remove {
-                        path: target_path.clone(),
-                    })
-                } else if attributes.is_symlink() {
-                    // Symlink target is the content of the file (after processing)
-                    // Trim whitespace/newlines from the target path
-                    let target_str = String::from_utf8_lossy(&processed_content)
-                        .trim()
-                        .to_string();
-                    Ok(TargetEntry::Symlink {
-                        path: target_path.clone(),
-                        target: std::path::PathBuf::from(target_str),
-                    })
-                } else {
-                    // Regular file
-                    let mode = attributes.mode();
-                    Ok(TargetEntry::File {
-                        path: target_path.clone(),
-                        content: processed_content,
-                        content_hash,
-                        mode,
-                    })
-                }
+                // Regular file. The source file's mode bits (if any) are
+                // propagated to the destination by `apply` and compared
+                // against the destination's mode by `diff`. Removal is no
+                // longer expressed as an entry-type variant — see
+                // `Metadata::remove` (`.guisu/state.toml`).
+                let mode = attributes.mode();
+                Ok(TargetEntry::File {
+                    path: target_path.clone(),
+                    content: processed_content,
+                    content_hash,
+                    mode,
+                })
             }
 
             SourceEntry::Directory {
@@ -1606,5 +1593,56 @@ impl TargetState {
 impl Default for TargetState {
     fn default() -> Self {
         Self::new()
+    }
+}
+
+#[cfg(test)]
+mod metadata_tests {
+    #![allow(clippy::unwrap_used, clippy::panic)]
+
+    use super::*;
+
+    #[test]
+    fn metadata_remove_round_trip() {
+        // A `.guisu/state.toml` like:
+        //   [remove]
+        //   paths = ["~/.cache/foo", "~/.config/dead"]
+        // round-trips through Metadata::load and Metadata::save.
+        let toml = r#"
+[remove]
+paths = ["~/.cache/foo", "~/.config/dead"]
+
+[create-once]
+files = ["~/.config/once.txt"]
+"#;
+        let parsed: Metadata = toml::from_str(toml).expect("parse toml");
+        assert!(parsed.remove.contains("~/.cache/foo"));
+        assert!(parsed.remove.contains("~/.config/dead"));
+        assert!(!parsed.remove.contains("missing"));
+        assert!(parsed.create_once.files.contains("~/.config/once.txt"));
+
+        let rendered = toml::to_string(&parsed).expect("render toml");
+        let reparsed: Metadata = toml::from_str(&rendered).expect("parse rendered");
+        assert_eq!(reparsed, parsed);
+    }
+
+    #[test]
+    fn metadata_remove_default_is_empty() {
+        // A missing [remove] section should default to an empty path set,
+        // not error.
+        let parsed: Metadata = toml::from_str("").expect("parse empty toml");
+        assert!(parsed.remove.paths.is_empty());
+        assert!(parsed.remove.iter().next().is_none());
+    }
+
+    #[test]
+    fn metadata_remove_add_and_iterate() {
+        let mut m = Metadata::default();
+        m.remove.add("~/.cache/foo".to_string());
+        m.remove.add("~/.config/dead".to_string());
+
+        let collected: Vec<&str> = m.remove.iter().collect();
+        assert!(collected.contains(&"~/.cache/foo"));
+        assert!(collected.contains(&"~/.config/dead"));
     }
 }

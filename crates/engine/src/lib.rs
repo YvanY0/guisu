@@ -19,7 +19,6 @@ pub mod entry;
 pub mod git;
 pub(crate) mod hash;
 pub mod hooks;
-pub(crate) mod modify;
 pub mod processor;
 pub mod state;
 pub(crate) mod system;
@@ -46,9 +45,6 @@ pub use hash::{hash_content, hash_file};
 
 // Re-export system types (module is pub(crate))
 pub use system::{DryRunSystem, Operation, RealSystem, System};
-
-// Re-export modify types (module is pub(crate))
-pub use modify::ModifyExecutor;
 
 // Re-export state types used by CLI
 pub use state::{ConfigMetadata, RedbPersistentState};

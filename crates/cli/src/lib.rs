@@ -664,7 +664,7 @@ pub(crate) fn path_to_string(path: &std::path::Path) -> String {
 }
 
 /// Expand tilde (~) in a path to the home directory
-fn expand_tilde(path: &std::path::Path) -> std::path::PathBuf {
+pub(crate) fn expand_tilde(path: &std::path::Path) -> std::path::PathBuf {
     // Early return for common case (no tilde) - avoids string conversion
     if !path.as_os_str().as_encoded_bytes().starts_with(b"~") {
         return path.to_path_buf();

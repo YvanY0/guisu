@@ -72,26 +72,6 @@ fn get_last_written_hash(
     }
 }
 
-/// Get the last written script hash for a modify entry from the database
-///
-/// Returns the script hash if the modify entry has state in the database.
-/// Returns None if no state exists.
-fn get_last_script_hash(
-    db: &guisu_engine::state::RedbPersistentState,
-    entry: &TargetEntry,
-) -> Option<[u8; 32]> {
-    match entry {
-        TargetEntry::Modify { .. } => {
-            let path_str = format!("{}:modify", entry.path());
-            guisu_engine::get_entry_state(db, &path_str)
-                .ok()
-                .flatten()
-                .map(|state| state.content_hash)
-        }
-        _ => None,
-    }
-}
-
 /// Load and prepare all variables for template rendering
 fn load_all_variables(
     source_dir: &std::path::Path,
@@ -114,6 +94,79 @@ fn load_all_variables(
     all_variables.extend(config.variables.clone());
 
     Ok(all_variables)
+}
+
+/// Apply the user-declared remove directives from `Metadata::remove`.
+///
+/// Each entry in `Metadata::remove.paths` is a dest-relative path (which may
+/// start with `~` to mean the user's home). If the corresponding file or
+/// directory exists in the destination, it is removed. Missing paths are
+/// silently ignored — they are an idempotent directive, not an error.
+///
+/// Paths that escape the destination root (absolute paths, `..` segments
+/// that resolve outside of it) are rejected. This guards against a
+/// malicious or typo'd `state.toml` from deleting files outside the
+/// dest tree.
+fn apply_removed_paths(
+    metadata: &guisu_engine::state::Metadata,
+    dest_root: &AbsPath,
+    system: &dyn guisu_engine::System,
+    dry_run: bool,
+) -> Result<()> {
+    for path_str in metadata.remove.iter() {
+        let path = crate::expand_tilde(Path::new(path_str));
+
+        // Reject absolute paths and reject empty paths (which would
+        // resolve to the dest root itself and `rm -rf` it).
+        if path.is_absolute() {
+            anyhow::bail!(
+                "remove path '{}' is absolute; must be dest-relative (or start with '~')",
+                path.display()
+            );
+        }
+        if path.as_os_str().is_empty() {
+            anyhow::bail!("remove path is empty; refusing to remove the dest root");
+        }
+
+        let dest_path = dest_root.as_path().join(&path);
+
+        // Canonicalize (if the path exists) and ensure the result is
+        // still under `dest_root`. This catches `..` traversal that
+        // `Path::join` doesn't strip.
+        if let Ok(canonical) = dest_path.canonicalize()
+            && !canonical.starts_with(dest_root.as_path())
+        {
+            anyhow::bail!(
+                "remove path '{}' escapes the destination root",
+                path.display()
+            );
+        }
+
+        if !dest_path.exists() {
+            debug!(path = %path.display(), "remove directive: path absent, skipping");
+            continue;
+        }
+
+        // Use the System trait so DryRunSystem can record the operation
+        // and the per-file policy (`is_dir` => `remove_dir`, else
+        // `remove_file`) lives in one place.
+        let abs_path = AbsPath::new(dest_path.clone())
+            .with_context(|| format!("remove path is not absolute: {}", dest_path.display()))?;
+        if dry_run {
+            info!(
+                "{} would remove: {}",
+                "→".bright_cyan(),
+                dest_path.display()
+            );
+            continue;
+        }
+
+        system
+            .remove(&abs_path)
+            .with_context(|| format!("Failed to remove: {}", dest_path.display()))?;
+        info!("{} removed: {}", "✓".bright_green(), dest_path.display());
+    }
+    Ok(())
 }
 
 /// Setup content processor with decryptor and template renderer
@@ -426,79 +479,40 @@ fn apply_entry_with_error_handling(
     stats: &ApplyStats,
     show_icons: bool,
     fail_on_decrypt_error: bool,
-    db: &guisu_engine::state::RedbPersistentState,
 ) -> Option<BatchEntryData> {
-    // Check if this is a modify script with unchanged content
-    let should_execute = match entry {
-        TargetEntry::Modify { content_hash, .. } => {
-            let last_hash = get_last_script_hash(db, entry);
-            match last_hash {
-                Some(last) if last == *content_hash => {
-                    debug!(path = %entry.path(), "Modify script unchanged, skipping execution");
-                    false
+    match apply_target_entry(entry, dest_path, identities, fail_on_decrypt_error) {
+        Ok(()) => {
+            debug!(path = %entry.path(), "Applied entry successfully");
+            print_success_entry(entry, show_icons);
+            stats.record_success(entry);
+
+            // Return entry data for batch save (files only — Modify entries
+            // have been removed; removal is driven by Metadata).
+            match entry {
+                TargetEntry::File { content, mode, .. } => {
+                    // Save decrypted content to match what was written to disk
+                    let final_content = match decrypt_inline_age_values(
+                        content,
+                        identities,
+                        fail_on_decrypt_error,
+                    ) {
+                        Ok(decrypted) => decrypted,
+                        Err(e) => {
+                            warn!(path = %entry.path(), error = %e, "Failed to decrypt inline age values for state saving");
+                            // Fall back to original content to avoid data loss
+                            content.clone()
+                        }
+                    };
+                    Some((entry.path().to_string(), final_content, *mode))
                 }
-                _ => true,
+                _ => None,
             }
         }
-        _ => true,
-    };
-
-    if should_execute {
-        match apply_target_entry(entry, dest_path, identities, fail_on_decrypt_error) {
-            Ok(()) => {
-                debug!(path = %entry.path(), "Applied entry successfully");
-                print_success_entry(entry, show_icons);
-                stats.record_success(entry);
-
-                // Return entry data for batch save (for files and modify scripts)
-                match entry {
-                    TargetEntry::File { content, mode, .. } => {
-                        // Save decrypted content to match what was written to disk
-                        let final_content = match decrypt_inline_age_values(
-                            content,
-                            identities,
-                            fail_on_decrypt_error,
-                        ) {
-                            Ok(decrypted) => decrypted,
-                            Err(e) => {
-                                warn!(path = %entry.path(), error = %e, "Failed to decrypt inline age values for state saving");
-                                // Fall back to original content to avoid data loss
-                                content.clone()
-                            }
-                        };
-                        Some((entry.path().to_string(), final_content, *mode))
-                    }
-                    TargetEntry::Modify {
-                        script,
-                        content_hash: _content_hash,
-                        ..
-                    } => {
-                        // Save script hash for change detection
-                        let script_path = format!("{}:modify", entry.path());
-                        Some((script_path, script.clone(), None))
-                    }
-                    _ => None,
-                }
-            }
-            Err(e) => {
-                warn!(path = %entry.path(), error = %e, "Failed to apply entry");
-                print_error_entry(entry, &e, show_icons);
-                stats.record_failure();
-                None
-            }
-        }
-    } else {
-        // Script unchanged, but still return state data to ensure hash is saved
-        match entry {
-            TargetEntry::Modify {
-                script,
-                content_hash: _content_hash,
-                ..
-            } => {
-                let script_path = format!("{}:modify", entry.path());
-                Some((script_path, script.clone(), None))
-            }
-            _ => None,
+        Err(e) => {
+            warn!(path = %entry.path(), error = %e, "Failed to apply entry");
+            print_error_entry(entry, &e, show_icons);
+            stats.record_failure();
+            None
         }
     }
 }
@@ -564,7 +578,6 @@ fn process_entries_sequential(
                     stats,
                     show_icons,
                     fail_on_decrypt_error,
-                    db,
                 )
             {
                 batch_entries.push(state_data);
@@ -795,6 +808,9 @@ impl Command for ApplyCommand {
         let metadata =
             guisu_engine::state::Metadata::load(source_dir).context("Failed to load metadata")?;
 
+        // Apply remove directives from .guisu/state.toml.
+        apply_removed_paths(&metadata, dest_abs, &guisu_engine::RealSystem, self.dry_run)?;
+
         // Create ignore matcher from .guisu/ignores.toml
         let ignore_matcher = guisu_config::IgnoreMatcher::from_ignores_toml(source_dir)
             .context("Failed to load ignore patterns from .guisu/ignores.toml")?;
@@ -1011,16 +1027,6 @@ fn needs_update(
             // Symlink exists with correct target
             Ok(false)
         }
-        TargetEntry::Remove { .. } => {
-            // Always needs update if file exists
-            Ok(dest_path.as_path().exists())
-        }
-        TargetEntry::Modify { .. } => {
-            // Modify scripts don't write to destination, they modify existing files
-            // Execution is handled separately
-            // Always execute modify scripts (they should be idempotent)
-            Ok(true)
-        }
     }
 }
 
@@ -1160,30 +1166,6 @@ fn apply_target_entry(
 
             Ok(())
         }
-
-        TargetEntry::Remove { .. } => {
-            // Handle removal entries (not used in apply, but included for completeness)
-            if dest_path.as_path().exists() {
-                if dest_path.as_path().is_dir() {
-                    fs::remove_dir_all(dest_path.as_path())
-                        .with_context(|| format!("Failed to remove directory: {dest_path:?}"))?;
-                } else {
-                    fs::remove_file(dest_path.as_path())
-                        .with_context(|| format!("Failed to remove file: {dest_path:?}"))?;
-                }
-            }
-            Ok(())
-        }
-        TargetEntry::Modify {
-            script,
-            interpreter,
-            ..
-        } => {
-            // Execute modify script to modify target file in-place
-            let executor = guisu_engine::ModifyExecutor::new();
-            executor.execute(script, interpreter, dest_path, &[])?;
-            Ok(())
-        }
     }
 }
 impl ApplyStats {
@@ -1192,7 +1174,6 @@ impl ApplyStats {
             TargetEntry::File { .. } => self.inc_files(),
             TargetEntry::Directory { .. } => self.inc_directories(),
             TargetEntry::Symlink { .. } => self.inc_symlinks(),
-            TargetEntry::Remove { .. } | TargetEntry::Modify { .. } => {}
         }
     }
 
@@ -1223,9 +1204,7 @@ fn print_dry_run_entry(entry: &TargetEntry, use_nerd_fonts: bool) {
 
     // Get file icon
     let (is_directory, is_symlink) = match entry {
-        TargetEntry::File { .. } | TargetEntry::Remove { .. } | TargetEntry::Modify { .. } => {
-            (false, false)
-        }
+        TargetEntry::File { .. } => (false, false),
         TargetEntry::Directory { .. } => (true, false),
         TargetEntry::Symlink { .. } => (false, true),
     };
@@ -1259,9 +1238,7 @@ fn print_success_entry(entry: &TargetEntry, use_nerd_fonts: bool) {
 
     // Get file icon
     let (is_directory, is_symlink) = match entry {
-        TargetEntry::File { .. } | TargetEntry::Remove { .. } | TargetEntry::Modify { .. } => {
-            (false, false)
-        }
+        TargetEntry::File { .. } => (false, false),
         TargetEntry::Directory { .. } => (true, false),
         TargetEntry::Symlink { .. } => (false, true),
     };
@@ -1295,9 +1272,7 @@ fn print_error_entry(entry: &TargetEntry, error: &anyhow::Error, use_nerd_fonts:
 
     // Get file icon
     let (is_directory, is_symlink) = match entry {
-        TargetEntry::File { .. } | TargetEntry::Remove { .. } | TargetEntry::Modify { .. } => {
-            (false, false)
-        }
+        TargetEntry::File { .. } => (false, false),
         TargetEntry::Directory { .. } => (true, false),
         TargetEntry::Symlink { .. } => (false, true),
     };
@@ -1655,5 +1630,91 @@ mod tests {
                 "apply must chmod existing dest to source mode (was {actual_mode:o})"
             );
         }
+    }
+
+    #[test]
+    fn test_apply_removed_paths_removes_dest_relative_path() {
+        // Regression test: a dest-relative path declared in `Metadata::remove`
+        // is removed from the destination on apply. Missing paths are an
+        // idempotent no-op.
+        let temp = TempDir::new().expect("Failed to create temp dir");
+        let temp_canon =
+            std::fs::canonicalize(temp.path()).expect("Failed to canonicalize temp dir");
+        let dest_dir = AbsPath::new(temp_canon).expect("Failed to create AbsPath");
+
+        // Pre-create two files: one will be removed, one stays.
+        let victim = dest_dir.as_path().join("victim.txt");
+        let survivor = dest_dir.as_path().join("survivor.txt");
+        std::fs::write(&victim, b"remove me").expect("Failed to write victim");
+        std::fs::write(&survivor, b"keep me").expect("Failed to write survivor");
+
+        let mut metadata = guisu_engine::state::Metadata::default();
+        // Use dest-relative filenames, NOT the absolute paths — the
+        // security guard rejects absolute paths.
+        metadata.remove.add("victim.txt".to_string());
+        metadata.remove.add("not-there.txt".to_string());
+
+        apply_removed_paths(&metadata, &dest_dir, &guisu_engine::RealSystem, false)
+            .expect("apply_removed_paths failed");
+
+        assert!(!victim.exists(), "victim should have been removed");
+        assert!(survivor.exists(), "survivor must not be touched");
+    }
+
+    #[test]
+    fn test_apply_removed_paths_rejects_absolute_path() {
+        // Security: an absolute path in Metadata::remove would otherwise let
+        // a malicious state.toml delete files outside the destination root
+        // (since `Path::join` ignores the base when given an absolute
+        // argument). The function must bail.
+        let temp = TempDir::new().expect("Failed to create temp dir");
+        let temp_canon =
+            std::fs::canonicalize(temp.path()).expect("Failed to canonicalize temp dir");
+        let dest_dir = AbsPath::new(temp_canon).expect("Failed to create AbsPath");
+
+        // Pre-create a "victim" outside the dest tree.
+        let outside = temp.path().join("outside.txt");
+        std::fs::write(&outside, b"sensitive").expect("Failed to write outside victim");
+        let absolute_outside = outside.to_string_lossy().into_owned();
+
+        let mut metadata = guisu_engine::state::Metadata::default();
+        metadata.remove.add(absolute_outside.clone());
+
+        let result = apply_removed_paths(&metadata, &dest_dir, &guisu_engine::RealSystem, false);
+        assert!(
+            result.is_err(),
+            "apply_removed_paths must reject absolute path escape"
+        );
+        let err = result.unwrap_err().to_string();
+        assert!(
+            err.contains("is absolute"),
+            "error should mention absolute-path rejection, got: {err}"
+        );
+        assert!(
+            outside.exists(),
+            "victim outside dest must NOT be deleted by apply_removed_paths"
+        );
+    }
+
+    #[test]
+    fn test_apply_removed_paths_respects_dry_run() {
+        // Regression: --dry-run must not actually delete the file. The
+        // function emits a "would remove" line and returns Ok without
+        // touching the filesystem.
+        let temp = TempDir::new().expect("Failed to create temp dir");
+        let temp_canon =
+            std::fs::canonicalize(temp.path()).expect("Failed to canonicalize temp dir");
+        let dest_dir = AbsPath::new(temp_canon).expect("Failed to create AbsPath");
+
+        let victim = dest_dir.as_path().join("victim.txt");
+        std::fs::write(&victim, b"keep me in dry run").expect("Failed to write victim");
+
+        let mut metadata = guisu_engine::state::Metadata::default();
+        metadata.remove.add("victim.txt".to_string());
+
+        apply_removed_paths(&metadata, &dest_dir, &guisu_engine::RealSystem, true)
+            .expect("dry-run must not error");
+
+        assert!(victim.exists(), "dry-run must not actually remove the file");
     }
 }

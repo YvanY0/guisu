@@ -7,6 +7,40 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Removed
+
+- **BREAKING**: Filename-prefix attribute mechanism is no longer supported. The
+  `private_`, `readonly_`, `executable_`, `dot_`, `exact_` prefixes are no
+  longer recognized. Permissions are now derived from the source file's
+  actual Unix mode bits (`metadata().mode()`); the source file is the
+  source of truth. To make a file `0o600`, `chmod 600` the source file.
+- **BREAKING**: The `TargetEntry::Modify` variant and `ModifyExecutor`
+  script-execution path have been removed. The `modify_*` filename
+  prefix is no longer recognized. Modify scripts are no longer
+  supported.
+- **BREAKING**: The `TargetEntry::Remove` variant has been removed.
+  The `remove_*` filename prefix is no longer recognized. To remove a
+  destination path, list it under `[remove] paths` in
+  `.guisu/state.toml` (see `Metadata::remove`).
+- **BREAKING**: The `TargetEntry::Symlink` variant is no longer
+  produced by `SourceState::read` from a `symlink_*` filename prefix.
+  It is only produced when the source filesystem contains a real
+  symlink (e.g. `~/.local/share/guisu/home/x -> /target`). The
+  `symlink_*` filename prefix is no longer recognized.
+- `FileAttributes` is no longer a `bitflags!` struct. It is now a plain
+  struct with `is_template: bool`, `is_encrypted: bool`, and
+  `mode: Option<u32>` fields.
+- `Error::InvalidAttributes`, `Error::DuplicateAttribute`, and
+  `Error::InvalidAttributeOrder` variants have been removed from
+  `guisu_core::Error` (they were leftovers from the removed
+  prefix-parser).
+
+### Changed
+
+- **`FileAttributes::parse_from_source` returns `(FileAttributes, String)`
+  instead of `Result<(FileAttributes, String), _>`** — the parser
+  cannot fail. Callers update from `?` to bare `let`.
+
 ## [0.2.2](https://github.com/YvanY0/guisu/releases/tag/guisu-engine-v0.2.2) - 2026-06-08
 
 ### Added

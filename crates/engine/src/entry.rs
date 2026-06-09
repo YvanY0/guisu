@@ -54,6 +54,14 @@ pub enum SourceEntry {
     },
 }
 
+// Note: SourceEntry::Symlink is currently produced by SourceState::read when
+// the source filesystem contains a real symlink (i.e. someone ran `ln -s`
+// inside the source tree). It is independent of the now-removed
+// `TargetEntry::Symlink` variant, which was a "treat this source file as a
+// symlink declaration" instruction expressed via the `symlink_` filename
+// prefix. That entry-type mechanism has been dropped; high-level symlink
+// support is left for a future "symlink-only" mode design.
+
 impl SourceEntry {
     /// Get the source path for this entry
     #[must_use]
@@ -87,15 +95,15 @@ impl SourceEntry {
     }
 
     /// Check if this entry is a template
+    #[must_use]
     pub fn is_template(&self) -> bool {
-        self.attributes()
-            .is_some_and(super::attr::FileAttributes::is_template)
+        self.attributes().is_some_and(|a| a.is_template)
     }
 
     /// Check if this entry is encrypted
+    #[must_use]
     pub fn is_encrypted(&self) -> bool {
-        self.attributes()
-            .is_some_and(super::attr::FileAttributes::is_encrypted)
+        self.attributes().is_some_and(|a| a.is_encrypted)
     }
 }
 
@@ -129,31 +137,17 @@ pub enum TargetEntry {
         mode: Option<u32>,
     },
 
-    /// A symbolic link
+    /// A symbolic link in the destination. Currently produced when the
+    /// source itself contains a real symlink (i.e. propagated as-is). The
+    /// `symlink_` filename-prefix entry type has been removed; that
+    /// "treat this source file as a symlink declaration" mechanism is
+    /// left for a future "symlink-only" mode design.
     Symlink {
         /// Path in the destination
         path: RelPath,
 
         /// Where the symlink points to
         target: PathBuf,
-    },
-
-    /// A file or directory that should be removed
-    Remove {
-        /// Path to remove from the destination
-        path: RelPath,
-    },
-
-    /// A script that modifies an existing file in-place
-    Modify {
-        /// Path to the file to modify
-        path: RelPath,
-        /// Script content (after template rendering and decryption)
-        script: Vec<u8>,
-        /// Content hash (blake3) for change detection
-        content_hash: [u8; 32],
-        /// Interpreter to use (e.g., "/bin/bash", "/usr/bin/env python3")
-        interpreter: String,
     },
 }
 
@@ -165,9 +159,7 @@ impl TargetEntry {
         match self {
             TargetEntry::File { path, .. }
             | TargetEntry::Directory { path, .. }
-            | TargetEntry::Symlink { path, .. }
-            | TargetEntry::Remove { path }
-            | TargetEntry::Modify { path, .. } => path,
+            | TargetEntry::Symlink { path, .. } => path,
         }
     }
 
@@ -177,15 +169,8 @@ impl TargetEntry {
     pub fn mode(&self) -> Option<u32> {
         match self {
             TargetEntry::File { mode, .. } | TargetEntry::Directory { mode, .. } => *mode,
-            _ => None,
+            TargetEntry::Symlink { .. } => None,
         }
-    }
-
-    /// Check if this is a removal entry
-    #[inline]
-    #[must_use]
-    pub fn is_removal(&self) -> bool {
-        matches!(self, TargetEntry::Remove { .. })
     }
 }
 
@@ -284,8 +269,6 @@ impl DestEntry {
             (EntryKind::Symlink, TargetEntry::Symlink { target, .. }) => {
                 self.link_target.as_ref() == Some(target)
             }
-            (EntryKind::Missing, TargetEntry::Remove { .. }) => true,
-            // Modify entries don't have a direct destination counterpart
             _ => false,
         }
     }
@@ -343,33 +326,6 @@ mod tests {
     }
 
     #[test]
-    fn target_entry_remove_serde_roundtrip() {
-        let entry = TargetEntry::Remove {
-            path: make_rel_path("old_file"),
-        };
-
-        let json = serde_json::to_string(&entry).unwrap();
-        let restored: TargetEntry = serde_json::from_str(&json).unwrap();
-
-        assert_eq!(entry, restored);
-    }
-
-    #[test]
-    fn target_entry_modify_serde_roundtrip() {
-        let entry = TargetEntry::Modify {
-            path: make_rel_path(".bashrc"),
-            script: b"#!/bin/bash\necho hi".to_vec(),
-            content_hash: [2u8; 32],
-            interpreter: "/bin/bash".to_string(),
-        };
-
-        let json = serde_json::to_string(&entry).unwrap();
-        let restored: TargetEntry = serde_json::from_str(&json).unwrap();
-
-        assert_eq!(entry, restored);
-    }
-
-    #[test]
     fn target_entry_path_accessor() {
         let file = TargetEntry::File {
             path: make_rel_path("a/b"),
@@ -385,26 +341,11 @@ mod tests {
         };
         assert_eq!(dir.path().as_path(), std::path::Path::new("c/d"));
 
-        let remove = TargetEntry::Remove {
+        let symlink = TargetEntry::Symlink {
             path: make_rel_path("e/f"),
+            target: std::path::PathBuf::from("/target"),
         };
-        assert_eq!(remove.path().as_path(), std::path::Path::new("e/f"));
-    }
-
-    #[test]
-    fn target_entry_is_removal() {
-        let remove = TargetEntry::Remove {
-            path: make_rel_path("x"),
-        };
-        assert!(remove.is_removal());
-
-        let file = TargetEntry::File {
-            path: make_rel_path("y"),
-            content: vec![],
-            content_hash: [0u8; 32],
-            mode: None,
-        };
-        assert!(!file.is_removal());
+        assert_eq!(symlink.path().as_path(), std::path::Path::new("e/f"));
     }
 
     #[test]

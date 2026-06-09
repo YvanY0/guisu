@@ -94,12 +94,11 @@ The three-state model and the apply loop. The largest crate by line count.
 | --- | --- |
 | `state.rs` | `SourceState`, `TargetState`, `DestinationState`, `PersistentState` trait + `RedbPersistentState`, `EntryState`, `HookState`. |
 | `entry.rs` | `SourceEntry`, `TargetEntry`, `DestEntry`, `EntryKind`. |
-| `attr.rs` | `FileAttributes` bitflags. |
+| `attr.rs` | `FileAttributes` (plain struct: `is_template`, `is_encrypted`, `mode`). |
 | `content.rs` | The raw byte pipeline. |
 | `processor.rs` | `ContentProcessor<D, R>` — generic decrypt + render pipeline. |
 | `database.rs` | redb table definitions. |
 | `hash.rs` | BLAKE3 helpers. |
-| `modify.rs` | In-place modification of `modify_*` files. |
 | `system.rs` | Platform-specific destination state reads. |
 | `validator.rs` | Cross-state validation. |
 | `git.rs` | In-process git operations (init, fetch, merge) using `git2`. |

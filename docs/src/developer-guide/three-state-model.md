@@ -24,7 +24,7 @@ The bold arrows show the **writes** the apply loop performs. The plain arrows ar
 
 | Store | Where it lives | Mutable? | Notes |
 | --- | --- | --- | --- |
-| **Source** | Files in the source repository (filesystem) | Read-only during apply | Filenames encode attributes (`.j2`, `.age`, `dot_`, `private_`, etc.). |
+| **Source** | Files in the source repository (filesystem) | Read-only during apply | Filenames encode extensions (`.j2`, `.age`, `.j2.age`); file mode bits come from `metadata().mode()`. |
 | **Target** | Rendered, decrypted content (in memory) | Recomputed on demand | Always the desired post-`apply` state for a given source. |
 | **Destination** | The actual files on the user's machine (filesystem) | Read + Write | Where the user's dotfiles actually live. |
 | **Persistent** | `redb` database at `<source>/.guisu-state.db` | Written after a successful apply | Content hash + mode of the last applied target. |
@@ -77,26 +77,33 @@ pub enum EntryKind {
 }
 ```
 
-`SourceEntry` and `TargetEntry` differ slightly because the source carries an `attributes` bitmask (decoded from the filename) while the target carries concrete content. `TargetEntry::Remove` is a one-way marker: it tells the apply step "this path should not exist after apply, delete it if it does."
+`SourceEntry` and `TargetEntry` differ slightly because the source carries parsed `attributes` while the target carries concrete content.
+
+Destinations may also receive a **remove directive** from
+`Metadata::remove` (declared in `.guisu/state.toml`); see
+[User Guide — File Attributes](../user-guide/file-attributes.md#removing-a-file-from-the-destination).
+The apply step processes removes in a separate pre-pass before
+applying targets.
 
 ## File attributes
 
-`FileAttributes` in `crates/engine/src/attr.rs` is a bitflags struct:
+`FileAttributes` in `crates/engine/src/attr.rs` is a plain struct:
 
 ```rust
-bitflags::bitflags! {
-    pub struct FileAttributes: u8 {
-        const DOT        = 1 << 0;  // Hidden file
-        const PRIVATE    = 1 << 1;  // Mode 0600 / 0700
-        const READONLY   = 1 << 2;  // Mode 0444
-        const EXECUTABLE = 1 << 3;  // Mode 0755
-        const TEMPLATE   = 1 << 4;  // .j2 extension
-        const ENCRYPTED  = 1 << 5;  // .age extension
-    }
+pub struct FileAttributes {
+    pub is_template: bool,    // .j2 extension
+    pub is_encrypted: bool,   // .age extension
+    pub mode: Option<u32>,     // source file's metadata().mode()
 }
 ```
 
-These flags are decoded from the filename at read time and applied at write time. See [User Guide — File Attributes](../user-guide/file-attributes.md).
+`is_template` and `is_encrypted` are decoded from the filename
+extension at read time. `mode` is read from the source file's
+`metadata().mode()` and propagated to the destination by `apply`. The
+permission-related bitflags (`private_` / `readonly_` / `executable_`
+/ `dot_` / `exact_`) and the entry-type prefixes (`modify_` /
+`remove_` / `symlink_`) are no longer recognized. See
+[User Guide — File Attributes](../user-guide/file-attributes.md).
 
 ## See also
 

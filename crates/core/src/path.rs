@@ -330,9 +330,12 @@ impl RelPath {
 ///
 /// This type represents paths in the source directory. Attributes are encoded via:
 /// - File extensions (`.j2` for templates, `.age` for encryption)
-/// - Unix file permissions (for private/executable/readonly)
 ///
-/// Unlike chezmoi, guisu does NOT use filename prefixes (no `dot_`, `private_`, etc.).
+/// Unlike chezmoi, guisu does NOT use filename prefixes. The `dot_` /
+/// `private_` / `executable_` / `readonly_` / `modify_` / `remove_` /
+/// `symlink_` / `exact_` filename-prefix mechanisms are not supported.
+/// The source file's actual Unix mode bits are the source of truth for
+/// permissions — they are read from the file's `metadata().mode()`.
 ///
 /// # Examples
 ///
