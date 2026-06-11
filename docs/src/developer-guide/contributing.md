@@ -18,6 +18,7 @@ Checklist before opening a PR:
 - [ ] If the PR changes file-attribute behaviour, update [User Guide — File Attributes](../user-guide/file-attributes.md).
 - [ ] If the PR changes hook semantics, update [User Guide — Hooks](../user-guide/hooks.md).
 - [ ] If the PR changes the CLI global flags (`--source`, `--dest`, `--config`, `--log-file`, `--color`, `--progress`), update [Reference — Commands](../reference/commands.md).
+- [ ] If the PR adds a new shell or installer integration (e.g. extending `guisu completion`), update [README — Shell completion](../../README.md#shell-completion) with install instructions for the new shell.
 
 The site is English-only. A Chinese translation is not in scope; if one is added later, it is a separate effort and tracked elsewhere.
 
