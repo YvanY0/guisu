@@ -16,7 +16,7 @@ use crate::common::RuntimeContext;
 #[derive(Args)]
 pub struct UpdateCommand {
     /// Apply changes after pulling (default: true)
-    #[arg(short, long, default_value_t = true, hide_possible_values = true)]
+    #[arg(short, long, default_value_t = true)]
     pub apply: bool,
 
     /// Use rebase instead of merge when branches diverge
