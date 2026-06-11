@@ -6,6 +6,7 @@ pub mod add;
 pub mod age;
 pub mod apply;
 pub mod cat;
+pub mod completion;
 pub mod diff;
 pub mod edit;
 pub mod hooks;

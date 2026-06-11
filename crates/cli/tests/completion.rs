@@ -3,8 +3,10 @@
 #![allow(clippy::unwrap_used, clippy::panic)]
 
 use assert_cmd::Command;
+use serial_test::serial;
 
 #[test]
+#[serial]
 fn completion_bash_emits_register_line() {
     let output = Command::cargo_bin("guisu")
         .expect("guisu binary should build")
@@ -27,6 +29,7 @@ fn completion_bash_emits_register_line() {
 }
 
 #[test]
+#[serial]
 fn completion_zsh_emits_compdef() {
     let output = Command::cargo_bin("guisu")
         .expect("guisu binary should build")
@@ -45,6 +48,7 @@ fn completion_zsh_emits_compdef() {
 }
 
 #[test]
+#[serial]
 fn completion_fish_emits_complete_line() {
     let output = Command::cargo_bin("guisu")
         .expect("guisu binary should build")
@@ -63,6 +67,7 @@ fn completion_fish_emits_complete_line() {
 }
 
 #[test]
+#[serial]
 fn completion_rejects_unknown_shell() {
     Command::cargo_bin("guisu")
         .expect("guisu binary should build")

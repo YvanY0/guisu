@@ -166,6 +166,9 @@ Examples:
     /// Display all template variables
     Variables(cmd::variables::VariablesCommand),
 
+    /// Generate shell completion script
+    Completion(cmd::completion::CompletionCommand),
+
     /// Manage hooks (run, list, show)
     #[command(subcommand)]
     Hooks(HooksCommands),
@@ -443,6 +446,9 @@ fn execute_command(command: Commands, context: &RuntimeContext) -> Result<()> {
         Commands::Init { .. } => {
             unreachable!("Init command already handled above")
         }
+        Commands::Completion(_) => {
+            unreachable!("Completion command already handled above")
+        }
         Commands::Add(add_cmd) => {
             add_cmd.execute(context)?;
         }
@@ -584,6 +590,13 @@ pub fn run(cli: Cli) -> Result<()> {
             &dest_dir,
             cli.config.as_deref(),
         );
+    }
+
+    // Handle completion command separately (doesn't need config, source
+    // directory, database, or any RuntimeContext). It must work on a
+    // fresh machine with no .guisu.toml.
+    if let Commands::Completion(completion_cmd) = cli.command {
+        return completion_cmd.run();
     }
 
     // For all other commands, create database first to enable config caching
