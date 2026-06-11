@@ -32,6 +32,23 @@ cargo install --path crates/cli
 
 Binary releases will be linked from the docs once they ship.
 
+## Shell completion
+
+Load the completion script into your current shell with `eval`:
+
+```sh
+eval "$(guisu completion zsh)"   # zsh
+eval "$(guisu completion bash)"  # bash
+eval "$(guisu completion fish)"  # fish
+```
+
+This works immediately but does not persist across shells. To make
+the completion permanent, add the matching line to `~/.zshrc`,
+`~/.bashrc`, or `~/.config/fish/config.fish` respectively.
+
+The script is generated from the clap derive tree, so adding or
+removing subcommands does not require any manual maintenance.
+
 ## Documentation
 
 Full documentation is at <https://yvany0.github.io/guisu/> and lives in
