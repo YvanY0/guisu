@@ -26,6 +26,7 @@ guisu-template = { path = "../template" }
 anyhow.workspace = true
 chrono.workspace = true
 clap.workspace = true
+clap_complete.workspace = true
 comfy-table.workspace = true
 crossterm.workspace = true
 dialoguer.workspace = true
@@ -65,6 +66,11 @@ vergen-git2.workspace = true
 
 [lints]
 workspace = true
+
+[dev-dependencies]
+assert_cmd.workspace = true
+predicates.workspace = true
+tempfile.workspace = true
 
 [package.metadata.dist]
 formula = "guisu"
