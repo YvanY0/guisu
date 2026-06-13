@@ -86,8 +86,8 @@ tracing-subscriber = { version = "0.3", features = [
   "ansi",
 ] }
 
-vergen = { version = "9.1", features = ["build", "rustc"] }
-vergen-git2 = { version = "9.1", features = ["build"] }
+vergen = { version = "10.0", features = ["build", "rustc"] }
+vergen-git2 = { version = "10.0", features = ["build"] }
 
 assert_cmd = "2.2"
 assert_fs = "1.1"
