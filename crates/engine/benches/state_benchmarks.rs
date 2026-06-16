@@ -21,7 +21,7 @@ fn create_test_repo(num_files: usize) -> TempDir {
             1 => format!(".config_{i}"),   // Dotfile
             2 => format!("data_{i}.json"), // Regular file
             3 => format!("script_{i}.sh"), // Script file
-            _ => unreachable!(),
+            _ => unreachable!("i % 4 only yields 0..=3"),
         };
 
         let content = format!("Content for file {i}\n");
