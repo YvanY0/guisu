@@ -9,7 +9,7 @@ license.workspace = true
 name = "guisu_vault"
 
 [dependencies]
-guisu-core = { path = "../core" }
+guisu-core = { workspace = true }
 
 indexmap.workspace = true
 serde.workspace = true

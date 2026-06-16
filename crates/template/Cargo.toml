@@ -13,10 +13,10 @@ description = "Template engine integration for guisu"
 name = "guisu_template"
 
 [dependencies]
-guisu-config = { path = "../config" }
-guisu-core = { path = "../core" }
-guisu-crypto = { path = "../crypto" }
-guisu-vault = { path = "../vault" }
+guisu-config = { workspace = true }
+guisu-core = { workspace = true }
+guisu-crypto = { workspace = true }
+guisu-vault = { workspace = true }
 
 blake3.workspace = true
 chrono.workspace = true

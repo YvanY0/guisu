@@ -13,10 +13,10 @@ description = "Processing engine for guisu dotfile manager"
 name = "guisu_engine"
 
 [dependencies]
-guisu-config = { path = "../config" }
-guisu-core = { path = "../core" }
-guisu-crypto = { path = "../crypto" }
-guisu-template = { path = "../template" }
+guisu-config = { workspace = true }
+guisu-core = { workspace = true }
+guisu-crypto = { workspace = true }
+guisu-template = { workspace = true }
 
 postcard.workspace = true
 bitflags.workspace = true

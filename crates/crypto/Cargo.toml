@@ -13,7 +13,7 @@ description = "Encryption support for guisu using age"
 name = "guisu_crypto"
 
 [dependencies]
-guisu-core = { path = "../core" }
+guisu-core = { workspace = true }
 
 age.workspace = true
 base64.workspace = true

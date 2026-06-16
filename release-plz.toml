@@ -1,18 +1,45 @@
 [workspace]
+git_only = true
 pr_draft = false
-release_always = false
+release_always = true
 publish = false
 git_tag_enable = false
 git_release_enable = false
 semver_check = true
 
+# Tag every crate with the same workspace-wide tag, since we don't
+# publish to crates.io and rely on a single v{{ version }} for the
+# whole tree (mirrors how cargo-dist drives the GitHub Release).
 [[package]]
 name = "guisu"
 git_tag_enable = true
-# GitHub Release is created by cargo-dist
 git_release_enable = false
 git_tag_name = "v{{ version }}"
 semver_check = false
+
+[[package]]
+name = "guisu-core"
+git_tag_name = "v{{ version }}"
+
+[[package]]
+name = "guisu-crypto"
+git_tag_name = "v{{ version }}"
+
+[[package]]
+name = "guisu-config"
+git_tag_name = "v{{ version }}"
+
+[[package]]
+name = "guisu-vault"
+git_tag_name = "v{{ version }}"
+
+[[package]]
+name = "guisu-template"
+git_tag_name = "v{{ version }}"
+
+[[package]]
+name = "guisu-engine"
+git_tag_name = "v{{ version }}"
 
 [changelog]
 commit_preprocessors = []

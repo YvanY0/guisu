@@ -9,8 +9,8 @@ license.workspace = true
 name = "guisu_config"
 
 [dependencies]
-guisu-core = { path = "../core" }
-guisu-crypto = { path = "../crypto" }
+guisu-core = { workspace = true }
+guisu-crypto = { workspace = true }
 
 dirs.workspace = true
 ignore.workspace = true
