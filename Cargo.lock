@@ -1563,7 +1563,6 @@ dependencies = [
  "toml 1.1.2+spec-1.1.0",
  "tracing",
  "tracing-subscriber",
- "vergen",
  "vergen-git2",
  "walkdir",
  "xdg",
