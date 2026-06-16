@@ -61,8 +61,7 @@ xdg.workspace = true
 
 [build-dependencies]
 anyhow.workspace = true
-vergen.workspace = true
-vergen-git2.workspace = true
+vergen-git2 = { workspace = true, features = ["build", "rustc"] }
 
 [lints]
 workspace = true
