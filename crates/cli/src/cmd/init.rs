@@ -136,7 +136,7 @@ fn clone_from_github(
         if let Ok(existing_repo) = Repository::open(target_path) {
             // Directory is already a git repository, skip cloning
             if let Ok(remote) = existing_repo.find_remote("origin")
-                && let Some(existing_url) = remote.url()
+                && let Ok(existing_url) = remote.url()
             {
                 // Check if user is trying to init a different repository
                 if existing_url != repo_url {

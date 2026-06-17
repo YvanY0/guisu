@@ -51,7 +51,7 @@ fn validate_and_open_repository(source_dir: &Path) -> Result<Repository> {
 /// Get the default remote for the repository
 fn get_default_remote(repo: &Repository) -> Result<String> {
     if let Ok(head) = repo.head()
-        && let Some(branch_name) = head.shorthand()
+        && let Ok(branch_name) = head.shorthand()
         && let Ok(branch) = repo.find_branch(branch_name, git2::BranchType::Local)
         && let Ok(upstream) = branch.upstream()
         && let Some(upstream_name) = upstream.name()?
@@ -61,7 +61,7 @@ fn get_default_remote(repo: &Repository) -> Result<String> {
     }
 
     let remotes = repo.remotes()?;
-    if let Some(first_remote) = remotes.get(0) {
+    if let Ok(Some(first_remote)) = remotes.get(0) {
         Ok(first_remote.to_string())
     } else {
         Err(anyhow!(
@@ -73,7 +73,7 @@ fn get_default_remote(repo: &Repository) -> Result<String> {
 /// Get the upstream branch refspec for the current branch
 fn get_upstream_refspec(repo: &Repository) -> Result<Option<String>> {
     if let Ok(head) = repo.head()
-        && let Some(branch_name) = head.shorthand()
+        && let Ok(branch_name) = head.shorthand()
         && let Ok(branch) = repo.find_branch(branch_name, git2::BranchType::Local)
         && let Ok(upstream) = branch.upstream()
         && let Some(upstream_name) = upstream.name()?
@@ -259,7 +259,7 @@ fn run_impl(context: &RuntimeContext, apply: bool, rebase: bool) -> Result<()> {
     let remote_url = repo
         .find_remote(&remote_name)
         .ok()
-        .and_then(|r| r.url().map(str::to_string))
+        .and_then(|r| r.url().ok().map(str::to_string))
         .unwrap_or_else(|| source_dir.display().to_string());
 
     info!("Updating repository from {}", remote_url);
@@ -298,7 +298,7 @@ fn perform_fast_forward(repo: &Repository, fetch_commit: &AnnotatedCommit) -> Re
 
     let current_ref_name = reference
         .name()
-        .ok_or_else(|| anyhow!("Invalid reference name"))?;
+        .map_err(|e| anyhow!("Invalid reference name: {e}"))?;
 
     repo.reference(
         current_ref_name,
@@ -331,7 +331,7 @@ fn perform_rebase(repo: &Repository, fetch_commit: &AnnotatedCommit) -> Result<(
 
     let branch_name = head
         .shorthand()
-        .ok_or_else(|| anyhow!("Failed to get branch name"))?
+        .map_err(|e| anyhow!("Failed to get branch name: {e}"))?
         .to_string();
 
     debug!(branch = %branch_name, "Starting rebase");

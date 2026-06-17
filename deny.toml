@@ -101,8 +101,6 @@ allow = [
   "Zlib",
   "0BSD",                           # BSD Zero Clause License
   "Unlicense",
-  "CC-BY-3.0",
-  "CC-BY-4.0",
   "Unicode-3.0",                    # Unicode License Agreement
   "MPL-2.0",                        # Mozilla Public License 2.0
 ]
