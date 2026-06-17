@@ -223,9 +223,7 @@ impl GitProvider for Git2Provider {
 
         // Update HEAD reference
         let reference = repo.find_reference("HEAD").map_err(git_err)?;
-        let ref_name = reference
-            .name()
-            .ok_or_else(|| guisu_core::Error::Message("Invalid reference name".to_string()))?;
+        let ref_name = reference.name().map_err(git_err)?;
 
         repo.reference(
             ref_name,
@@ -312,10 +310,7 @@ impl GitProvider for Git2Provider {
         let has_untracked_files = statuses.iter().any(|s| s.status().is_wt_new());
 
         let head = repo.head().map_err(git_err)?;
-        let branch = head
-            .shorthand()
-            .ok_or_else(|| guisu_core::Error::Message("Failed to get branch name".to_string()))?
-            .to_string();
+        let branch = head.shorthand().map_err(git_err)?.to_string();
 
         Ok(GitStatus {
             has_uncommitted_changes,
@@ -329,12 +324,7 @@ impl GitProvider for Git2Provider {
 
         let repo = Repository::open(repo_path).map_err(git_err)?;
         let head = repo.head().map_err(git_err)?;
-        let branch = head
-            .shorthand()
-            .ok_or_else(|| {
-                guisu_core::Error::Message("Not on a branch (detached HEAD)".to_string())
-            })?
-            .to_string();
+        let branch = head.shorthand().map_err(git_err)?.to_string();
         Ok(branch)
     }
 }

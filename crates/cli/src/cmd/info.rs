@@ -209,12 +209,12 @@ fn get_git_info(source_dir: &Path, all: bool) -> GitInfo {
             let repository = repo
                 .find_remote("origin")
                 .ok()
-                .and_then(|remote| remote.url().map(str::to_string));
+                .and_then(|remote| remote.url().ok().map(str::to_string));
 
             let branch = repo
                 .head()
                 .ok()
-                .and_then(|head| head.shorthand().map(str::to_string))
+                .and_then(|head| head.shorthand().ok().map(str::to_string))
                 .or_else(|| {
                     let git_head = source_dir.join(".git").join("HEAD");
                     std::fs::read_to_string(git_head).ok().and_then(|content| {
