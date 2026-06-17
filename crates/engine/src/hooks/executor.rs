@@ -86,15 +86,14 @@ impl<'a> HookRunner<'a, NoOpRenderer> {
     ///
     /// # Examples
     ///
-    /// ```ignore
-    /// // Simple usage - no template rendering needed
-    /// let runner = HookRunner::new(&collections, source_dir);
-    /// runner.run_stage(HookStage::Pre)?;
+    /// ```
+    /// use guisu_engine::hooks::{HookCollections, HookRunner};
+    /// use tempfile::TempDir;
     ///
-    /// // For custom configuration, use builder:
-    /// let runner = HookRunner::builder(&collections, source_dir)
-    ///     .template_renderer(my_renderer)
-    ///     .build();
+    /// let collections = HookCollections::default();
+    /// let source_dir = TempDir::new().unwrap();
+    /// let runner = HookRunner::new(&collections, source_dir.path());
+    /// let _ = runner;
     /// ```
     #[must_use]
     pub fn new(collections: &'a HookCollections, source_dir: &'a Path) -> Self {
@@ -107,12 +106,20 @@ impl<'a> HookRunner<'a, NoOpRenderer> {
     ///
     /// # Examples
     ///
-    /// ```ignore
-    /// let runner = HookRunner::builder(&collections, source_dir)
-    ///     .template_renderer(my_renderer)
-    ///     .persistent_state(once_executed, onchange_hashes)
+    /// ```
+    /// use guisu_engine::hooks::{HookCollections, HookRunner};
+    /// use tempfile::TempDir;
+    ///
+    /// let collections = HookCollections::default();
+    /// let source_dir = TempDir::new().unwrap();
+    /// let runner = HookRunner::builder(&collections, source_dir.path())
+    ///     .persistent_state(
+    ///         std::collections::HashSet::new(),
+    ///         std::collections::HashMap::new(),
+    ///     )
     ///     .env("CUSTOM_VAR", "value")
     ///     .build();
+    /// let _ = runner;
     /// ```
     #[must_use]
     pub fn builder(
@@ -679,16 +686,20 @@ where
 ///
 /// # Examples
 ///
-/// ```ignore
-/// use guisu_engine::hooks::{HookRunner, HookStage};
+/// ```
+/// use guisu_engine::hooks::{HookCollections, HookRunner, HookStage};
+/// use tempfile::TempDir;
 ///
-/// let runner = HookRunner::builder(&collections, source_dir)
-///     .template_renderer(my_renderer)
-///     .persistent_state(once_executed, onchange_hashes)
+/// let collections = HookCollections::default();
+/// let source_dir = TempDir::new().unwrap();
+/// let runner = HookRunner::builder(&collections, source_dir.path())
+///     .persistent_state(
+///         std::collections::HashSet::new(),
+///         std::collections::HashMap::new(),
+///     )
 ///     .env("CUSTOM_VAR", "custom_value")
 ///     .build();
-///
-/// runner.run_stage(HookStage::Pre)?;
+/// let _ = runner.run_stage(HookStage::Pre);
 /// ```
 pub struct HookRunnerBuilder<'a, R = NoOpRenderer>
 where
@@ -738,12 +749,18 @@ impl<'a> HookRunnerBuilder<'a, NoOpRenderer> {
     ///
     /// # Examples
     ///
-    /// ```ignore
-    /// let builder = HookRunner::builder(&collections, source_dir)
-    ///     .template_renderer(|content| {
-    ///         // Custom template rendering logic
+    /// ```
+    /// use guisu_engine::hooks::{HookCollections, HookRunner};
+    /// use guisu_core::Result;
+    /// use tempfile::TempDir;
+    ///
+    /// let collections = HookCollections::default();
+    /// let source_dir = TempDir::new().unwrap();
+    /// let builder = HookRunner::builder(&collections, source_dir.path())
+    ///     .template_renderer(|content: &str| -> Result<String> {
     ///         Ok(content.to_string())
     ///     });
+    /// let _ = builder.build();
     /// ```
     pub fn template_renderer<F>(self, renderer: F) -> HookRunnerBuilder<'a, F>
     where
@@ -776,13 +793,22 @@ where
     ///
     /// # Examples
     ///
-    /// ```ignore
-    /// let runner = HookRunner::builder(&collections, source_dir)
+    /// ```
+    /// use guisu_engine::hooks::{HookCollections, HookRunner};
+    /// use tempfile::TempDir;
+    ///
+    /// let collections = HookCollections::default();
+    /// let source_dir = TempDir::new().unwrap();
+    /// let runner = HookRunner::builder(&collections, source_dir.path())
     ///     .persistent_state(
-    ///         HashSet::from(["setup-once".to_string()]),
-    ///         HashMap::from([("config-update".to_string(), vec![0x12, 0x34])])
+    ///         std::collections::HashSet::from(["setup-once".to_string()]),
+    ///         std::collections::HashMap::from([(
+    ///             "config-update".to_string(),
+    ///             [0u8; 32],
+    ///         )]),
     ///     )
     ///     .build();
+    /// let _ = runner;
     /// ```
     #[must_use]
     pub fn persistent_state(
@@ -802,11 +828,17 @@ where
     ///
     /// # Examples
     ///
-    /// ```ignore
-    /// let runner = HookRunner::builder(&collections, source_dir)
+    /// ```
+    /// use guisu_engine::hooks::{HookCollections, HookRunner};
+    /// use tempfile::TempDir;
+    ///
+    /// let collections = HookCollections::default();
+    /// let source_dir = TempDir::new().unwrap();
+    /// let runner = HookRunner::builder(&collections, source_dir.path())
     ///     .env("DEPLOY_ENV", "production")
     ///     .env("REGION", "us-west-2")
     ///     .build();
+    /// let _ = runner;
     /// ```
     #[must_use]
     pub fn env(mut self, key: impl Into<String>, value: impl Into<String>) -> Self {
@@ -818,16 +850,21 @@ where
     ///
     /// # Examples
     ///
-    /// ```ignore
+    /// ```
+    /// use guisu_engine::hooks::{HookCollections, HookRunner};
     /// use indexmap::IndexMap;
+    /// use tempfile::TempDir;
     ///
+    /// let collections = HookCollections::default();
+    /// let source_dir = TempDir::new().unwrap();
     /// let mut vars = IndexMap::new();
     /// vars.insert("VAR1".to_string(), "value1".to_string());
     /// vars.insert("VAR2".to_string(), "value2".to_string());
     ///
-    /// let runner = HookRunner::builder(&collections, source_dir)
+    /// let runner = HookRunner::builder(&collections, source_dir.path())
     ///     .env_vars(vars)
     ///     .build();
+    /// let _ = runner;
     /// ```
     #[must_use]
     pub fn env_vars(mut self, vars: IndexMap<String, String>) -> Self {
@@ -841,11 +878,19 @@ where
     ///
     /// # Examples
     ///
-    /// ```ignore
-    /// let runner = HookRunner::builder(&collections, source_dir)
-    ///     .template_renderer(my_renderer)
-    ///     .persistent_state(once_executed, onchange_hashes)
+    /// ```
+    /// use guisu_engine::hooks::{HookCollections, HookRunner};
+    /// use tempfile::TempDir;
+    ///
+    /// let collections = HookCollections::default();
+    /// let source_dir = TempDir::new().unwrap();
+    /// let runner = HookRunner::builder(&collections, source_dir.path())
+    ///     .persistent_state(
+    ///         std::collections::HashSet::new(),
+    ///         std::collections::HashMap::new(),
+    ///     )
     ///     .build();
+    /// let _ = runner;
     /// ```
     pub fn build(self) -> HookRunner<'a, R> {
         HookRunner {
