@@ -20,10 +20,8 @@ jobs:
       pull-requests: write
 
     steps:
-      - name: Auto-merge PR
-        uses: pascalgn/automerge-action@v0.16.4
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          MERGE_METHOD: merge
-          MERGE_LABELS: ""
-          MERGE_READY_STATE: clean,has_hooks,unknown
+      - name: Enable auto-merge
+        uses: peter-evans/enable-pull-request-automerge@v3
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+          merge-method: merge
