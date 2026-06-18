@@ -7,6 +7,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.2.4](https://github.com/YvanY0/guisu/compare/v0.2.2...v0.2.4) - 2026-06-18
+
+### Fixed
+
+- *(deps)* upgrade git2 to 0.21 to address RUSTSEC-2026-0183/0184
+- *(engine)* annotate unreachable and unignore runnable doctests
+
+### Other
+
+- update Cargo.toml dependencies
+
 ## [0.2.3](https://github.com/YvanY0/guisu/compare/v0.2.2...v0.2.3) - 2026-06-18
 
 ### Fixed
