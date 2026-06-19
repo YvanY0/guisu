@@ -4,6 +4,7 @@
 //! Hooks are executed before and after applying dotfiles.
 
 use anyhow::{Context, Result};
+use dialoguer::{Confirm, theme::ColorfulTheme};
 use guisu_config::Config;
 use guisu_core::platform::CURRENT_PLATFORM;
 use guisu_engine::hooks::{HookLoader, HookRunner, HookStage, TemplateRenderer};
@@ -34,106 +35,141 @@ pub fn run_hooks(
 ) -> Result<()> {
     let is_tty = std::io::stdout().is_terminal();
     let use_nerd_fonts = config.ui.icons.should_show_icons(is_tty);
-    // Load hooks using HookLoader
-    let loader = HookLoader::new(source_dir);
 
-    if !loader.exists() {
-        println!("{}", "No hooks directory found.".yellow());
-        println!("Create .guisu/hooks/pre/ and .guisu/hooks/post/ directories to get started.");
-        println!("\nExample structure:");
-        println!(
-            "{}",
-            r"
-.guisu/hooks/
-  pre/
-    01-setup.sh          # Script to run before applying
-    02-install.toml      # Hook configuration
-  post/
-    01-cleanup.sh        # Script to run after applying
-    99-notify.toml       # Notification hook
-"
-            .dimmed()
-        );
+    let Some(collections) = prepare_collections(source_dir, hook_filter)? else {
         return Ok(());
-    }
-
-    let mut collections = loader.load().context("Failed to load hooks")?;
-
-    // Filter hooks if a specific hook name is provided
-    if let Some(filter_name) = hook_filter {
-        collections.pre.retain(|h| h.name.as_str() == filter_name);
-        collections.post.retain(|h| h.name.as_str() == filter_name);
-
-        if collections.is_empty() {
-            println!("{}", format!("Hook '{filter_name}' not found.").yellow());
-            return Ok(());
-        }
-
-        println!(
-            "{} Running hook: {}",
-            StatusIcon::Hook.get(use_nerd_fonts),
-            filter_name.cyan()
-        );
-    }
+    };
 
     if collections.is_empty() {
         println!("{}", "No hooks configured.".yellow());
         return Ok(());
     }
 
-    let platform = CURRENT_PLATFORM.os;
-    let total_hooks = collections.total();
+    if hook_filter.is_none() {
+        print_overview(&collections, use_nerd_fonts);
+    }
+
+    if !confirm_run(skip_confirm)? {
+        println!("Cancelled.");
+        return Ok(());
+    }
+
+    execute_and_persist(source_dir, config, db, &collections)?;
 
     println!(
-        "{} Hooks directory: {}",
-        StatusIcon::Hook.get(use_nerd_fonts),
-        source_dir.hooks_dir().display().cyan()
+        "\n{} {}",
+        StatusIcon::Success.get(use_nerd_fonts),
+        "All hooks completed!".green().bold()
     );
-    println!("Platform: {}", platform.cyan());
-    println!("Total hooks: {total_hooks}");
-    println!("  Pre hooks: {}", collections.pre.len());
-    println!("  Post hooks: {}", collections.post.len());
 
-    // Confirm unless --yes is specified
-    if !skip_confirm {
-        use dialoguer::{Confirm, theme::ColorfulTheme};
+    Ok(())
+}
 
-        let confirmed = Confirm::with_theme(&ColorfulTheme::default())
-            .with_prompt("Run hooks?")
-            .default(true)
-            .interact()?;
+/// Load hooks, apply the optional name filter, and print the early-exit messages
+/// ("no hooks directory", "single hook not found"). Returns `Ok(None)` when the caller
+/// should stop after the early-exit message, `Ok(Some(collections))` to proceed.
+fn prepare_collections(
+    source_dir: &Path,
+    hook_filter: Option<&str>,
+) -> Result<Option<guisu_engine::hooks::HookCollections>> {
+    let loader = HookLoader::new(source_dir);
 
-        if !confirmed {
-            println!("Cancelled.");
-            return Ok(());
+    if !loader.exists() {
+        print_no_hooks_directory();
+        return Ok(None);
+    }
+
+    let mut collections = loader.load().context("Failed to load hooks")?;
+
+    if let Some(filter_name) = hook_filter {
+        collections.pre.retain(|h| h.name.as_str() == filter_name);
+        collections.post.retain(|h| h.name.as_str() == filter_name);
+
+        if collections.is_empty() {
+            println!("{}", format!("Hook '{filter_name}' not found.").yellow());
+            return Ok(None);
         }
     }
 
-    // Load persistent state for hook execution tracking (using provided database)
+    Ok(Some(collections))
+}
+
+/// Print the "platform / counts / names" overview used in unfiltered mode.
+fn print_overview(collections: &guisu_engine::hooks::HookCollections, use_nerd_fonts: bool) {
+    let platform = CURRENT_PLATFORM.os;
+    println!("{} {}", "Platform:".bold(), platform.cyan());
+    println!(
+        "{} {}",
+        StatusIcon::Hook.get(use_nerd_fonts),
+        format!("{} hook(s) will run", collections.total()).bold()
+    );
+
+    if !collections.pre.is_empty() {
+        println!("\n{} ({}):", "Pre hooks".bold(), collections.pre.len());
+        print_hook_names(&collections.pre, platform);
+    }
+    if !collections.post.is_empty() {
+        println!("\n{} ({}):", "Post hooks".bold(), collections.post.len());
+        print_hook_names(&collections.post, platform);
+    }
+}
+
+/// Print one `  • <name> (order: N)` line per hook, dimming platform-skipped entries.
+fn print_hook_names(hooks: &[guisu_engine::hooks::config::Hook], platform: &str) {
+    let icon = StatusIcon::Hook.get(false);
+    for hook in hooks {
+        let line = format!("{icon} {} (order: {})", hook.name, hook.order);
+        if hook.should_run_on(platform) {
+            println!("  {line}");
+        } else {
+            println!("  {} {}", line.dimmed(), "[skipped]".dimmed());
+        }
+    }
+}
+
+/// Prompt for confirmation unless `skip_confirm` is set. Returns whether to proceed.
+fn confirm_run(skip_confirm: bool) -> Result<bool> {
+    if skip_confirm {
+        return Ok(true);
+    }
+
+    let confirmed = Confirm::with_theme(&ColorfulTheme::default())
+        .with_prompt("Run hooks?")
+        .default(true)
+        .interact()?;
+
+    Ok(confirmed)
+}
+
+/// Build the runner, execute pre/post stages (skipping empty ones), and persist state.
+fn execute_and_persist(
+    source_dir: &Path,
+    config: &Config,
+    db: &RedbPersistentState,
+    collections: &guisu_engine::hooks::HookCollections,
+) -> Result<()> {
     let persistence = HookStatePersistence::new(db);
     let mut state = persistence.load()?;
 
-    // Create template renderer
     let renderer = create_template_engine(source_dir, config)?;
 
-    // Create hook runner with builder pattern
-    // For `hooks run`, always run hooks regardless of state (once/onchange)
-    let runner = HookRunner::builder(&collections, source_dir)
+    let runner = HookRunner::builder(collections, source_dir)
         .template_renderer(renderer)
         .build();
 
-    // Run hooks in stages
-    println!("\n{}", "Running pre hooks...".bold());
-    runner
-        .run_stage(HookStage::Pre)
-        .context("Pre hooks failed")?;
+    if !collections.pre.is_empty() {
+        println!("\n{}", "Running pre hooks...".bold());
+        runner
+            .run_stage(HookStage::Pre)
+            .context("Pre hooks failed")?;
+    }
+    if !collections.post.is_empty() {
+        println!("\n{}", "Running post hooks...".bold());
+        runner
+            .run_stage(HookStage::Post)
+            .context("Post hooks failed")?;
+    }
 
-    println!("\n{}", "Running post hooks...".bold());
-    runner
-        .run_stage(HookStage::Post)
-        .context("Post hooks failed")?;
-
-    // Get newly executed hooks and merge with state
     for hook_name in runner.get_once_executed() {
         state.mark_executed_once(hook_name);
     }
@@ -144,23 +180,35 @@ pub fn run_hooks(
         state.update_onchange_rendered(hook_name, rendered_content);
     }
 
-    // Update state in database
     let hooks_dir = source_dir.hooks_dir();
     state
         .update(&hooks_dir)
         .context("Failed to update hook state")?;
-
     persistence
         .save(&state)
         .context("Failed to save hook state")?;
 
-    println!(
-        "\n{} {}",
-        StatusIcon::Success.get(use_nerd_fonts),
-        "All hooks completed!".green().bold()
-    );
-
     Ok(())
+}
+
+/// Print the "no hooks directory" help block shown when `.guisu/hooks/` is missing.
+fn print_no_hooks_directory() {
+    println!("{}", "No hooks directory found.".yellow());
+    println!("Create .guisu/hooks/pre/ and .guisu/hooks/post/ directories to get started.");
+    println!("\nExample structure:");
+    println!(
+        "{}",
+        r"
+.guisu/hooks/
+  pre/
+    01-setup.sh          # Script to run before applying
+    02-install.toml      # Hook configuration
+  post/
+    01-cleanup.sh        # Script to run after applying
+    99-notify.toml       # Notification hook
+"
+        .dimmed()
+    );
 }
 
 /// List configured hooks

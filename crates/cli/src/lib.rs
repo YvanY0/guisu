@@ -276,13 +276,16 @@ pub enum TemplatesCommands {
 #[derive(Subcommand)]
 pub enum HooksCommands {
     /// Run hooks from configuration
+    ///
+    /// With no positional HOOK, runs every configured hook (pre + post).
+    /// When a HOOK name is given, runs only hooks whose name matches it.
     Run {
         /// Skip confirmation prompt
         #[arg(short, long)]
         yes: bool,
 
-        /// Run only the specified hook by name (optional)
-        #[arg(long)]
+        /// Name of a single hook to run; omit to run all hooks
+        #[arg(value_name = "HOOK")]
         hook: Option<String>,
     },
 
