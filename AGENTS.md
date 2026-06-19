@@ -62,5 +62,3 @@ Claude Code automations on this repo:
 - **Hooks** — `.claude/settings.json` `hooks` block. PostToolUse runs `rustfmt` on `.rs` files. Stop hook runs `cargo fmt --check && cargo clippy --workspace -- -D warnings` and blocks completion on failure. Destructive Bash commands are not blocked; rely on the project's `AGENTS.md` "Ask first" rule below.
 - **Pre-commit** — `pre-commit` framework via `.pre-commit-config.yaml` (independent of Claude Code). Runs lint hooks on `git commit` from a terminal.
 - **Rust CI** — `.github/workflows/rust.yml`. Runs cargo fmt/check/clippy/test/deny/outdated in GitHub Actions. Auto-skipped on PRs that don't touch Rust files.
-
-Memory (`.claude/memory/`) is **manually maintained**, not auto-synced. Edit it when you learn something the next session should know.
