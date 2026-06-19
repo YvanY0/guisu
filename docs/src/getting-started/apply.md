@@ -45,6 +45,10 @@ guisu apply --interactive
 > **Pipe-friendly output**
 > `guisu apply --dry-run` prints a list of planned changes. Combine with `guisu info` for a complete preview before a real apply.
 
+> [!NOTE]
+> **Output order**
+> Files are written sequentially in path-sorted order (e.g. `.zshrc` before `.config/zsh/conf.d/00_utils.zsh`). The order is deterministic across runs and matches what `guisu diff` shows. Earlier versions applied entries in parallel via rayon, which made the print order non-deterministic; sequential execution trades a small amount of throughput for predictable, log-friendly output. For very large repos the per-entry overhead is bounded — entries that already match the destination short-circuit on `needs_update` and cost only a `stat` + read.
+
 
 
 ## Exit codes

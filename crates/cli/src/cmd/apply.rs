@@ -23,6 +23,7 @@ use crate::conflict::{ChangeType, ConflictHandler};
 use crate::stats::ApplyStats;
 use crate::ui::ConflictAction;
 use crate::ui::progress;
+use crate::utils::filter::path_matches_any_filter;
 use crate::utils::path::SourceDirExt;
 
 // File permission constants
@@ -280,22 +281,10 @@ fn filter_entries_to_apply<'a>(
             let target_path = entry.path();
 
             // Filter by files or directories
-            if let Some(filter) = filter_paths {
-                let matches = filter.iter().any(|filter_path| {
-                    if filter_path == target_path {
-                        return true;
-                    }
-
-                    let filter_str = filter_path.as_path().to_str().unwrap_or("");
-                    let target_str = target_path.as_path().to_str().unwrap_or("");
-
-                    target_str.starts_with(filter_str)
-                        && target_str.as_bytes().get(filter_str.len()) == Some(&b'/')
-                });
-
-                if !matches {
-                    return false;
-                }
+            if let Some(filter) = filter_paths
+                && !path_matches_any_filter(target_path, filter)
+            {
+                return false;
             }
 
             if ignore_matcher.is_ignored(entry.path().as_path(), None) {
@@ -596,183 +585,6 @@ fn process_entries_sequential(
     Ok(())
 }
 
-/// Get user confirmations for entries with local modifications
-fn get_user_confirmations(
-    db: &guisu_engine::state::RedbPersistentState,
-    entries: &[&TargetEntry],
-    dest_abs: &AbsPath,
-    identities: &[guisu_crypto::Identity],
-    fail_on_decrypt_error: bool,
-) -> Result<std::collections::HashSet<String>> {
-    use dialoguer::{Confirm, theme::ColorfulTheme};
-    use std::collections::HashSet;
-
-    let mut confirmed_paths = HashSet::new();
-    let mut has_warnings = false;
-
-    for entry in entries {
-        let dest_path = dest_abs.join(entry.path());
-        if !needs_update(entry, &dest_path, identities, fail_on_decrypt_error)? {
-            continue;
-        }
-
-        let last_written_hash = get_last_written_hash(db, entry);
-        if let Ok(Some(change_type)) = ConflictHandler::detect_change_type(
-            entry,
-            dest_abs,
-            last_written_hash.as_ref().map(|arr| &arr[..]),
-            identities,
-        ) {
-            match change_type {
-                ChangeType::LocalModification | ChangeType::TrueConflict => {
-                    has_warnings = true;
-                    let change_label = match change_type {
-                        ChangeType::LocalModification => "Local modification",
-                        ChangeType::TrueConflict => "Conflict (both local and source modified)",
-                        ChangeType::SourceUpdate => {
-                            unreachable!("SourceUpdate filtered by outer match")
-                        }
-                    };
-
-                    println!("\n{} {}", "⚠".yellow(), change_label.yellow().bold());
-                    println!("  File: {}", entry.path().bright_white());
-                    println!("  {}", "This file has been modified locally.".yellow());
-                    println!(
-                        "  {}",
-                        "Applying will overwrite your local changes.".yellow()
-                    );
-
-                    let theme = ColorfulTheme::default();
-                    let confirmed = Confirm::with_theme(&theme)
-                        .with_prompt("Continue and overwrite local changes?")
-                        .default(false)
-                        .interact()
-                        .context("Failed to read user input")?;
-
-                    if confirmed {
-                        confirmed_paths.insert(entry.path().to_string());
-                    }
-                }
-                ChangeType::SourceUpdate => {
-                    confirmed_paths.insert(entry.path().to_string());
-                }
-            }
-        } else {
-            confirmed_paths.insert(entry.path().to_string());
-        }
-    }
-
-    if has_warnings {
-        println!();
-    }
-
-    Ok(confirmed_paths)
-}
-
-/// Process a single entry and return batch data if successful
-fn process_single_entry(
-    entry: &TargetEntry,
-    dest_abs: &AbsPath,
-    identities: &[guisu_crypto::Identity],
-    stats: &ApplyStats,
-    show_icons: bool,
-    fail_on_decrypt_error: bool,
-) -> Result<Option<BatchEntryData>> {
-    let dest_path = dest_abs.join(entry.path());
-
-    if !needs_update(entry, &dest_path, identities, fail_on_decrypt_error)? {
-        debug!(path = %entry.path(), "File is already up to date, skipping");
-        return Ok(None);
-    }
-
-    apply_target_entry(entry, &dest_path, identities, fail_on_decrypt_error)?;
-    debug!(path = %entry.path(), "Applied entry successfully");
-    print_success_entry(entry, show_icons);
-    stats.record_success(entry);
-
-    // Prepare entry data for batch save (only for files)
-    let state_data = if let TargetEntry::File { content, mode, .. } = entry {
-        let final_content = decrypt_inline_age_values(content, identities, fail_on_decrypt_error)
-            .unwrap_or_else(|e| {
-                warn!(path = %entry.path(), error = %e, "Failed to decrypt inline age values for state saving");
-                content.clone()
-            });
-        Some((entry.path().to_string(), final_content, *mode))
-    } else {
-        None
-    };
-
-    Ok(state_data)
-}
-
-/// Process entries in parallel (for non-interactive mode)
-#[allow(clippy::too_many_arguments, clippy::fn_params_excessive_bools)]
-fn process_entries_parallel(
-    db: &guisu_engine::state::RedbPersistentState,
-    entries: &[&TargetEntry],
-    dest_abs: &AbsPath,
-    identities: &[guisu_crypto::Identity],
-    stats: &ApplyStats,
-    show_icons: bool,
-    fail_on_decrypt_error: bool,
-    force: bool,
-) -> Result<()> {
-    // Get user confirmations for conflicting files (skipped if force mode)
-    let confirmed_paths = if force {
-        // In force mode, confirm all entries that need updating
-        entries
-            .iter()
-            .filter(|entry| {
-                let dest_path = dest_abs.join(entry.path());
-                needs_update(entry, &dest_path, identities, fail_on_decrypt_error).unwrap_or(false)
-            })
-            .map(|entry| entry.path().to_string())
-            .collect()
-    } else {
-        get_user_confirmations(db, entries, dest_abs, identities, fail_on_decrypt_error)?
-    };
-
-    // Process confirmed files in parallel
-    let results: Vec<Result<Option<BatchEntryData>>> = entries
-        .par_iter()
-        .filter(|entry| confirmed_paths.contains(&entry.path().to_string()))
-        .map(|entry| {
-            process_single_entry(
-                entry,
-                dest_abs,
-                identities,
-                stats,
-                show_icons,
-                fail_on_decrypt_error,
-            )
-            .map_err(|e| {
-                warn!(path = %entry.path(), error = %e, "Failed to apply entry");
-                print_error_entry(entry, &e, show_icons);
-                stats.record_failure();
-                e
-            })
-        })
-        .collect();
-
-    // Collect successful entries and check for errors
-    let mut batch_entries = Vec::with_capacity(results.len());
-    for result in results {
-        if let Some(data) = result? {
-            batch_entries.push(data);
-        }
-    }
-
-    // Batch save all successful entries to database
-    if !batch_entries.is_empty() {
-        guisu_engine::save_entry_states_batch(db, &batch_entries).map_err(|e| {
-            warn!(error = %e, "Failed to save batch state to database");
-            e
-        })?;
-    }
-
-    Ok(())
-}
-
 impl Command for ApplyCommand {
     type Output = ApplyStats;
     #[allow(clippy::too_many_lines)]
@@ -881,32 +693,23 @@ impl Command for ApplyCommand {
         // Apply entries
         let stats = Arc::new(ApplyStats::new());
 
-        // Use parallel processing only when NOT in interactive mode
-        if self.interactive || self.dry_run {
-            process_entries_sequential(
-                database,
-                entries_to_apply,
-                dest_abs,
-                &identities,
-                &mut conflict_handler,
-                &stats,
-                show_icons,
-                self.dry_run,
-                fail_on_decrypt_error,
-                self.force,
-            )?;
-        } else {
-            process_entries_parallel(
-                database,
-                &entries_to_apply,
-                dest_abs,
-                &identities,
-                &stats,
-                show_icons,
-                fail_on_decrypt_error,
-                self.force,
-            )?;
-        }
+        // Sequential processing. `filter_entries_to_apply` already sorts
+        // `entries_to_apply` by path, so output order is deterministic across
+        // runs. Parallel execution was removed because rayon `par_iter()`
+        // produces non-deterministic print order — see "apply ordering" in
+        // CHANGELOG if the regression needs revisiting.
+        process_entries_sequential(
+            database,
+            entries_to_apply,
+            dest_abs,
+            &identities,
+            &mut conflict_handler,
+            &stats,
+            show_icons,
+            self.dry_run,
+            fail_on_decrypt_error,
+            self.force,
+        )?;
 
         // Return stats instead of printing here
         // The caller (lib.rs) will print the summary after hooks complete
@@ -965,8 +768,15 @@ fn needs_update(
                 if let Some(target_mode) = mode
                     && let Ok(metadata) = fs::metadata(dest_path.as_path())
                 {
+                    // `target_mode` carries the source file's mode *with* the
+                    // S_IFREG file-type bit set (it's the raw `PermissionsExt::mode()`
+                    // from `std::fs::metadata`). The destination's mode is masked
+                    // to permission bits before comparison, so mask here too —
+                    // otherwise a regular 0o644 file would falsely compare unequal
+                    // to its target_mode of 0o100644 on every apply.
                     let current_mode = metadata.permissions().mode() & PERM_MASK;
-                    if current_mode != *target_mode {
+                    let target_mode_masked = *target_mode & PERM_MASK;
+                    if current_mode != target_mode_masked {
                         return Ok(true);
                     }
                 }

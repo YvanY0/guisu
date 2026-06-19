@@ -24,6 +24,7 @@ use crate::command::Command;
 use crate::common::RuntimeContext;
 use crate::conflict::{ThreeWayComparisonResult, compare_three_way};
 use crate::ui::icons::{FileIconInfo, icon_for_file};
+use crate::utils::filter::path_matches_any_filter;
 use crate::utils::path::SourceDirExt;
 use guisu_config::Config;
 use lscolors::{LsColors, Style};
@@ -164,7 +165,7 @@ fn build_status_target_state(
 
         // If filtering, skip entries not in the filter
         if let Some(filter) = filter_paths
-            && !filter.iter().any(|p| p == target_path)
+            && !path_matches_any_filter(target_path, filter)
         {
             continue;
         }
@@ -506,7 +507,7 @@ fn process_entry_for_status(
 
     // Skip if filtering and this file is not in the filter
     if let Some(filter) = filter_paths
-        && !filter.iter().any(|p| p == target_path)
+        && !path_matches_any_filter(target_path, filter)
     {
         return None;
     }

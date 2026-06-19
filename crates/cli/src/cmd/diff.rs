@@ -30,6 +30,7 @@ use crate::command::Command;
 use crate::common::RuntimeContext;
 use crate::stats::DiffStats;
 use crate::ui::{FileDiff, FileStatus, InteractiveDiffViewer};
+use crate::utils::filter::path_matches_any_filter;
 use crate::utils::path::SourceDirExt;
 use guisu_config::Config;
 
@@ -149,7 +150,7 @@ fn build_diff_target_state(
 
         // If filtering, skip entries not in the filter
         if let Some(filter) = filter_paths
-            && !filter.contains(target_path)
+            && !path_matches_any_filter(target_path, filter)
         {
             continue;
         }
@@ -243,7 +244,7 @@ fn generate_diff_outputs(
 
             // Skip if filtering and this file is not in the filter
             if let Some(filter) = filter_paths
-                && !filter.iter().any(|p| p == target_path)
+                && !path_matches_any_filter(target_path, filter)
             {
                 return None;
             }
@@ -306,7 +307,7 @@ fn build_interactive_file_diffs(
 
             // Skip if filtering and this file is not in the filter
             if let Some(filter) = filter_paths
-                && !filter.iter().any(|p| p == target_path)
+                && !path_matches_any_filter(target_path, filter)
             {
                 return None;
             }
