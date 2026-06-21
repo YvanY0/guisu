@@ -43,7 +43,7 @@ Recommended tools:
 ## Pull request process
 
 1. Branch from `main`. Use a short descriptive prefix: `feat/...`, `fix/...`, `docs/...`, `refactor/...`.
-2. Commit with `-s` and `-S` (DCO + GPG/SSH signature). The repo enforces both. See `AGENTS.md` "Commit rules".
+2. Commit with `-s` and `-S` (DCO + GPG/SSH signature). The repo enforces both. See `.claude/rules/committing.md` (auto-loaded when you touch `.github/workflows/**` or `.pre-commit-config.yaml`).
 3. Run the build & verify commands above. They must all pass.
 4. Open a PR with a clear title and a short description of the change. Reference any related issues.
 5. Address review feedback. Squash-merge is preferred for a linear history.
