@@ -1092,6 +1092,97 @@ mod tests {
         assert_eq!(metadata, restored);
     }
 
+    /// Regression: `HookState::update_with_collections` must produce bytes that
+    /// `HookState::from_bytes` can decode. The previous on-disk layout silently
+    /// became unreadable when `last_collections` was set (because `Hook` carried
+    /// `#[serde(skip_serializing_if = "Option::is_none")]` on `cmd`/`script`,
+    /// which postcard cannot honor — its encoder skipped the field but the
+    /// decoder still tried to read it). The silent `unwrap_or_else` in
+    /// `HookState::from_bytes` then dropped the data, so `guisu status` showed
+    /// every hook as Latent after `guisu hooks run`.
+    #[test]
+    fn hook_state_with_collections_serde_roundtrip() {
+        use crate::hooks::config::{Hook, HookCollections, HookMode};
+        use crate::hooks::types::HookName;
+        use indexmap::IndexMap;
+
+        // Build a collection that exercises both `cmd: None` and `script: None` —
+        // the exact shape that triggered the original skip_serializing_if bug.
+        let mut collections = HookCollections::default();
+        collections.pre.push(Hook {
+            name: HookName::new("cmd-only").unwrap(),
+            order: 5,
+            platforms: vec![],
+            cmd: Some("true".to_string()),
+            script: None,
+            script_content: None,
+            env: IndexMap::new(),
+            failfast: true,
+            mode: HookMode::Once,
+            timeout: 0,
+        });
+        collections.pre.push(Hook {
+            name: HookName::new("script-only").unwrap(),
+            order: 10,
+            platforms: vec![],
+            cmd: None,
+            script: Some("install.sh".to_string()),
+            script_content: None,
+            env: IndexMap::new(),
+            failfast: true,
+            mode: HookMode::OnChange,
+            timeout: 0,
+        });
+        collections.post.push(Hook {
+            name: HookName::new("empty").unwrap(),
+            order: 100,
+            platforms: vec![],
+            cmd: None,
+            script: None,
+            script_content: None,
+            env: IndexMap::new(),
+            failfast: false,
+            mode: HookMode::Always,
+            timeout: 0,
+        });
+
+        let mut state = HookState::new();
+        state.content_hash = Some([7u8; 32]);
+        state.last_executed = Some(UNIX_EPOCH + Duration::from_secs(1_700_000_000));
+        state.once_executed.insert("cmd-only".to_string());
+        state
+            .onchange_hashes
+            .insert("script-only".to_string(), [9u8; 32]);
+        state
+            .onchange_rendered
+            .insert("script-only".to_string(), "rendered payload".to_string());
+        state.last_collections = Some(collections);
+
+        let bytes = state.to_bytes().unwrap();
+        let restored = HookState::from_bytes(&bytes)
+            .expect("HookState with last_collections must round-trip via postcard");
+
+        assert_eq!(state.content_hash, restored.content_hash);
+        assert_eq!(state.last_executed, restored.last_executed);
+        assert_eq!(state.once_executed, restored.once_executed);
+        assert_eq!(state.onchange_hashes, restored.onchange_hashes);
+        assert_eq!(state.onchange_rendered, restored.onchange_rendered);
+        let lc = restored
+            .last_collections
+            .expect("last_collections round-trips");
+        assert_eq!(lc.pre.len(), 2);
+        assert_eq!(lc.post.len(), 1);
+        assert_eq!(lc.pre[0].name.as_str(), "cmd-only");
+        assert_eq!(lc.pre[0].cmd.as_deref(), Some("true"));
+        assert_eq!(lc.pre[0].script, None);
+        assert_eq!(lc.pre[1].name.as_str(), "script-only");
+        assert_eq!(lc.pre[1].cmd, None);
+        assert_eq!(lc.pre[1].script.as_deref(), Some("install.sh"));
+        assert_eq!(lc.post[0].name.as_str(), "empty");
+        assert_eq!(lc.post[0].cmd, None);
+        assert_eq!(lc.post[0].script, None);
+    }
+
     #[test]
     fn config_metadata_template_matches() {
         let metadata = ConfigMetadata::new("my template", "rendered".to_string());

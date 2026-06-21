@@ -1283,11 +1283,14 @@ pub fn compare_and_print_hooks(
                 .script
                 .as_ref()
                 .is_some_and(|s| s.to_lowercase().ends_with(".j2"));
+            // `script_content` is intentionally excluded: it's a runtime-only
+            // field (#[serde(skip)]) that never round-trips through the
+            // persistent `last_collections`, so comparing it would always
+            // register a false change after any run.
             let mut has_changes = hook.order != last_hook.order
                 || hook.mode != last_hook.mode
                 || hook.cmd != last_hook.cmd
-                || hook.script != last_hook.script
-                || (!is_template && hook.script_content != last_hook.script_content);
+                || hook.script != last_hook.script;
 
             // For mode=onchange templates, check if rendered content hash changed
             if !has_changes
@@ -1319,14 +1322,33 @@ pub fn compare_and_print_hooks(
 
             // Only show hooks that have actual changes
             if has_changes {
-                // Check if this is specifically an onchange dependency change
+                // Check if this is specifically an onchange dependency change.
+                // `script_content` is `#[serde(skip)]` and never persisted, so we
+                // cannot compare it directly — instead we hash the *rendered*
+                // content, which `HookState::onchange_rendered` does persist.
+                let current_rendered_hash = if is_template && hook.mode == HookMode::OnChange {
+                    hook.script.as_ref().zip(hook.script_content.as_ref()).map(
+                        |(script, content)| {
+                            let rendered =
+                                render_script_content(source_dir, script, content, config);
+                            guisu_engine::hash_content(rendered.as_bytes())
+                        },
+                    )
+                } else {
+                    None
+                };
+                let saved_rendered_hash = current_rendered_hash.and_then(|_h| {
+                    onchange_rendered
+                        .get(hook.name.as_str())
+                        .map(|r| guisu_engine::hash_content(r.as_bytes()))
+                });
                 let is_onchange_dep_change = is_template
                     && hook.mode == HookMode::OnChange
                     && hook.order == last_hook.order
                     && hook.mode == last_hook.mode
                     && hook.cmd == last_hook.cmd
                     && hook.script == last_hook.script
-                    && hook.script_content == last_hook.script_content;
+                    && current_rendered_hash == saved_rendered_hash;
 
                 if is_onchange_dep_change {
                     // Special handling for onchange dependency changes - show unified diff

@@ -1069,18 +1069,24 @@ fn print_hooks_status(
             });
 
             if let Some(last_hook) = last_hook {
-                // Check if hook definition changed (same logic as diff.rs)
-                // Compare basic fields: order, mode, cmd, script, script_content
+                // Check if hook definition changed (same logic as diff.rs).
+                // `script_content` is intentionally excluded: it's a runtime-only
+                // field (#[serde(skip)]) that never round-trips through the
+                // persistent `last_collections`, so comparing it would always
+                // register a false change after any run.
                 let mut has_changes = hook.order != last_hook.order
                     || hook.mode != last_hook.mode
                     || hook.cmd != last_hook.cmd
-                    || hook.script != last_hook.script
-                    || hook.script_content != last_hook.script_content;
+                    || hook.script != last_hook.script;
 
-                // For mode=onchange hooks, also check if rendered content hash changed
+                // For mode=onchange hooks, also check if rendered content hash changed.
+                // A missing saved hash means the hook has never been executed (or
+                // wasn't part of the most recent run); that's a `Latent` first-run
+                // signal, not a `Behind` change.
                 if !has_changes
                     && hook.mode == HookMode::OnChange
                     && let Some(content) = &hook.script_content
+                    && let Some(saved_hash) = state.onchange_hashes.get(hook.name.as_str())
                 {
                     // Render current content and compute hash
                     let rendered = render_script_content(
@@ -1090,22 +1096,34 @@ fn print_hooks_status(
                         config,
                     );
                     let current_hash = guisu_engine::hash_content(rendered.as_bytes());
-
-                    // Compare with saved hash
-                    if let Some(saved_hash) = state.onchange_hashes.get(hook.name.as_str()) {
-                        if &current_hash != saved_hash {
-                            has_changes = true;
-                        }
-                    } else {
-                        // No saved hash means first run
+                    if &current_hash != saved_hash {
                         has_changes = true;
                     }
+                    // No saved hash → leave has_changes as false; the hook will
+                    // fall through to the `Latent` branch below (handled by the
+                    // caller, since no entry in onchange_hashes means the hook
+                    // hasn't been executed yet).
                 }
 
                 if has_changes {
                     FileStatus::Behind
                 } else {
-                    FileStatus::Steady
+                    // Hook definition matches the last run AND (if mode=onchange)
+                    // the rendered content hash matches. For mode=once, also
+                    // require that the hook has been executed; otherwise the
+                    // first-run signal would be hidden behind a matching
+                    // definition. Without this check, a never-run `mode=once`
+                    // hook would show as Steady as soon as its definition
+                    // round-trips through `last_collections`.
+                    if (hook.mode == HookMode::OnChange
+                        && !state.onchange_hashes.contains_key(hook.name.as_str()))
+                        || (hook.mode == HookMode::Once
+                            && !state.once_executed.contains(hook.name.as_str()))
+                    {
+                        FileStatus::Latent
+                    } else {
+                        FileStatus::Steady
+                    }
                 }
             } else {
                 // New hook

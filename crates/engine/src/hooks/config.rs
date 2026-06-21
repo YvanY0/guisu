@@ -53,11 +53,9 @@ pub struct Hook {
     pub platforms: Vec<String>,
 
     /// Direct command to execute
-    #[serde(skip_serializing_if = "Option::is_none")]
     pub cmd: Option<String>,
 
     /// Path to script file to execute
-    #[serde(skip_serializing_if = "Option::is_none")]
     pub script: Option<String>,
 
     /// Script file content (for diffing, not loaded from TOML)

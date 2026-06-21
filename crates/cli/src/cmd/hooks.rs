@@ -181,8 +181,16 @@ fn execute_and_persist(
     }
 
     let hooks_dir = source_dir.hooks_dir();
+    // Persist the FULL collection (not the filter-narrowed `collections`) so that
+    // `status`/`diff` can compare every hook's current definition against the
+    // last-run snapshot. Saving the filtered collection would leave hooks that
+    // weren't in this run invisible to subsequent comparisons and cause them to
+    // be reported as Latent forever.
+    let full_collections = HookLoader::new(source_dir)
+        .load()
+        .context("Failed to load full hook collection for state persistence")?;
     state
-        .update(&hooks_dir)
+        .update_with_collections(&hooks_dir, full_collections)
         .context("Failed to update hook state")?;
     persistence
         .save(&state)
@@ -986,6 +994,50 @@ order = {}
         assert!(
             result.is_ok(),
             "Should default to simple format for unknown format"
+        );
+    }
+
+    /// `guisu hooks run <name>` must persist `last_collections` so that
+    /// subsequent `guisu status`/`guisu diff` can compare current hook
+    /// definitions against the last run. Without this, every hook is
+    /// reported as Latent after a successful `hooks run`.
+    ///
+    /// Regression test for: status showing [L] for already-run `mode=once` hook.
+    #[test]
+    fn test_hooks_run_persists_last_collections() {
+        use guisu_engine::state::{HookStatePersistence, RedbPersistentState};
+
+        let (temp, config) = setup_hooks_test_env();
+        let source_dir = temp.path();
+
+        // Use a hook whose cmd is a no-op so execution succeeds without side effects.
+        let hooks_dir = source_dir.hooks_dir();
+        fs::write(
+            hooks_dir.join("pre/05-noop.toml"),
+            r#"
+name = "noop"
+cmd = "true"
+order = 5
+mode = "once"
+"#,
+        )
+        .unwrap();
+
+        let db_path = temp.path().join("state.redb");
+        let db = RedbPersistentState::new(&db_path).unwrap();
+
+        run_hooks(source_dir, &config, &db, true, Some("noop")).unwrap();
+
+        let persistence = HookStatePersistence::new(&db);
+        let state = persistence.load().unwrap();
+
+        assert!(
+            state.last_collections.is_some(),
+            "hooks run must persist last_collections so `status` can mark hooks Steady"
+        );
+        assert!(
+            state.once_executed.contains("noop"),
+            "mode=once hook should be recorded as executed"
         );
     }
 }
