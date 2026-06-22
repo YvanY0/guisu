@@ -39,6 +39,8 @@ A code change is not done until all of these pass:
 - `cargo clippy --workspace -- -D warnings`
 - `cargo test --workspace` (skip for docs-only changes)
 
+The three cargo checks are only required when the change can affect the build — any `.rs` file, `Cargo.toml`, `Cargo.lock`, `.cargo/config.toml`, or similar. Pure docs/config/script edits (`.md`, `.sh`, non-Cargo `.toml`/`.yaml`/`.json`) can skip them.
+
 User-facing changes also need `developer-guide/contributing.md` "Documentation" checklist satisfied.
 
 Pick the right iteration pattern before editing — see `.claude/rules/loop-patterns.md` (auto-loaded on Rust paths).
