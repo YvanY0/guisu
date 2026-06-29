@@ -23,6 +23,7 @@ pub mod processor;
 pub mod state;
 pub(crate) mod system;
 pub mod validator;
+pub mod verify;
 
 // Re-export path types from core
 pub use guisu_core::path::{AbsPath, RelPath, SourceRelPath};
@@ -48,3 +49,6 @@ pub use system::{DryRunSystem, Operation, RealSystem, System};
 
 // Re-export state types used by CLI
 pub use state::{ConfigMetadata, RedbPersistentState};
+
+// Re-export verify types
+pub use verify::{MatchResult, PERM_MASK, matches_dest};
