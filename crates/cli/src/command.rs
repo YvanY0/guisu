@@ -61,4 +61,13 @@ pub trait Command {
     /// Returns a `CommandError` if the command fails to execute. Error messages should
     /// be descriptive enough for the user to understand what went wrong.
     fn execute(&self, context: &RuntimeContext) -> Result<Self::Output>;
+
+    /// Map the command's `Output` to a process exit code.
+    ///
+    /// Default is `0` (success). Commands whose semantic outcome is "fail"
+    /// rather than "error" (e.g. `guisu verify` finding drift) override
+    /// this to translate their `Output` into a non-zero exit code.
+    fn exit_code(&self, _output: &Self::Output) -> i32 {
+        0
+    }
 }
