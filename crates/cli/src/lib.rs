@@ -172,6 +172,9 @@ Examples:
     /// Manage hooks (run, list, show)
     #[command(subcommand)]
     Hooks(HooksCommands),
+
+    /// Verify that the destination matches the source (CI-friendly exit codes)
+    Verify(cmd::verify::VerifyCommand),
 }
 
 /// Age encryption management commands
@@ -444,7 +447,25 @@ fn handle_apply_command(
 
 /// Execute the command based on the command type
 #[allow(clippy::too_many_lines)]
+/// Run a leaf command: invoke `execute`, then translate the `Output`
+/// into a process exit code via `Command::exit_code`. Errors propagate
+/// to the caller via `?`; successes call `std::process::exit(code)` and
+/// therefore never return.
+fn dispatch_leaf(cmd: &impl command::Command, context: &RuntimeContext) -> Result<()> {
+    match cmd.execute(context) {
+        Ok(output) => std::process::exit(cmd.exit_code(&output)),
+        Err(e) => Err(anyhow::Error::from(e)),
+    }
+}
+
 fn execute_command(command: Commands, context: &RuntimeContext) -> Result<()> {
+    // Leaf commands are routed through `dispatch_leaf` which calls
+    // `Command::exit_code` to translate the command's `Output` into a
+    // process exit code. This separates "command ran successfully and
+    // found drift" (`Ok(false)` → exit 1) from "command itself failed"
+    // (`Err(_)` → propagates as the standard internal-error exit code).
+    // Commands that need to wrap `execute` with extra logic (pre/post
+    // hooks, summary printing) call `cmd.execute(context)?` directly.
     match command {
         Commands::Init { .. } => {
             unreachable!("Init command already handled above")
@@ -452,15 +473,15 @@ fn execute_command(command: Commands, context: &RuntimeContext) -> Result<()> {
         Commands::Completion(_) => {
             unreachable!("Completion command already handled above")
         }
-        Commands::Add(add_cmd) => {
-            add_cmd.execute(context)?;
-        }
+        Commands::Add(add_cmd) => dispatch_leaf(&add_cmd, context)?,
         Commands::Apply(apply_cmd) => {
+            // Apply runs hooks before/after `execute` and prints a
+            // summary, so it has its own wrapper rather than going
+            // through `dispatch_leaf`. Its default `exit_code` (0) is
+            // already what we want.
             handle_apply_command(&apply_cmd, context)?;
         }
-        Commands::Diff(diff_cmd) => {
-            diff_cmd.execute(context)?;
-        }
+        Commands::Diff(diff_cmd) => dispatch_leaf(&diff_cmd, context)?,
         Commands::Age(age_cmd) => match age_cmd {
             AgeCommands::Generate { output } => {
                 cmd::age::generate(output)?;
@@ -493,15 +514,9 @@ fn execute_command(command: Commands, context: &RuntimeContext) -> Result<()> {
                 )?;
             }
         },
-        Commands::Status(status_cmd) => {
-            status_cmd.execute(context)?;
-        }
-        Commands::Cat(cat_cmd) => {
-            cat_cmd.execute(context)?;
-        }
-        Commands::Edit(edit_cmd) => {
-            edit_cmd.execute(context)?;
-        }
+        Commands::Status(status_cmd) => dispatch_leaf(&status_cmd, context)?,
+        Commands::Cat(cat_cmd) => dispatch_leaf(&cat_cmd, context)?,
+        Commands::Edit(edit_cmd) => dispatch_leaf(&edit_cmd, context)?,
         Commands::Ignored(ignored_cmd) => match ignored_cmd {
             IgnoredCommands::List => {
                 cmd::ignored::run_list(context.source_dir(), &context.config)?;
@@ -523,15 +538,9 @@ fn execute_command(command: Commands, context: &RuntimeContext) -> Result<()> {
                 )?;
             }
         },
-        Commands::Update(update_cmd) => {
-            update_cmd.execute(context)?;
-        }
-        Commands::Info(info_cmd) => {
-            info_cmd.execute(context)?;
-        }
-        Commands::Variables(vars_cmd) => {
-            vars_cmd.execute(context)?;
-        }
+        Commands::Update(update_cmd) => dispatch_leaf(&update_cmd, context)?,
+        Commands::Info(info_cmd) => dispatch_leaf(&info_cmd, context)?,
+        Commands::Variables(vars_cmd) => dispatch_leaf(&vars_cmd, context)?,
         Commands::Hooks(hooks_cmd) => match hooks_cmd {
             HooksCommands::Run { yes, hook } => {
                 cmd::hooks::run_hooks(
@@ -549,6 +558,7 @@ fn execute_command(command: Commands, context: &RuntimeContext) -> Result<()> {
                 cmd::hooks::run_show(context.source_dir(), &context.config, &name)?;
             }
         },
+        Commands::Verify(verify_cmd) => dispatch_leaf(&verify_cmd, context)?,
     }
 
     Ok(())

@@ -26,8 +26,6 @@ pub enum MatchResult {
     Missing,
     /// Destination exists but content / mode / target differs.
     Modified,
-    /// Destination exists but should not (e.g. extra file in a `remove` path).
-    Extra,
 }
 
 /// Compare one `TargetEntry` against the destination path on disk.

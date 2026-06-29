@@ -17,3 +17,4 @@ pub mod status;
 pub mod templates;
 pub mod update;
 pub mod variables;
+pub mod verify;
