@@ -8,6 +8,7 @@ use guisu_core::path::AbsPath;
 use guisu_engine::entry::TargetEntry;
 use guisu_engine::processor::ContentProcessor;
 use guisu_engine::state::{SourceState, TargetState};
+use guisu_engine::verify::{decrypt_inline_age_values, matches_dest};
 use owo_colors::OwoColorize;
 use rayon::prelude::*;
 use std::fs;
@@ -27,7 +28,6 @@ use crate::utils::filter::path_matches_any_filter;
 use crate::utils::path::SourceDirExt;
 
 // File permission constants
-const PERM_MASK: u32 = 0o777; // Permission bits mask (rwxrwxrwx)
 const DEFAULT_SECURE_MODE: u32 = 0o600; // Default secure file mode (rw-------)
 
 /// Type alias for batch entry state data (path, content, mode)
@@ -74,7 +74,7 @@ fn get_last_written_hash(
 }
 
 /// Load and prepare all variables for template rendering
-fn load_all_variables(
+pub(crate) fn load_all_variables(
     source_dir: &std::path::Path,
     config: &guisu_config::Config,
 ) -> Result<indexmap::IndexMap<String, serde_json::Value>> {
@@ -171,7 +171,7 @@ fn apply_removed_paths(
 }
 
 /// Setup content processor with decryptor and template renderer
-fn setup_content_processor(
+pub(crate) fn setup_content_processor(
     source_dir: &std::path::Path,
     identities: &Arc<Vec<guisu_crypto::Identity>>,
     config: &guisu_config::Config,
@@ -196,7 +196,7 @@ fn setup_content_processor(
 }
 
 /// Read source state with optional ignore filtering
-fn read_source_state(
+pub(crate) fn read_source_state(
     source_abs: AbsPath,
     source_dir: &std::path::Path,
     is_single_file: bool,
@@ -342,7 +342,7 @@ fn handle_dry_run_entry(
     show_icons: bool,
     fail_on_decrypt_error: bool,
 ) -> Result<bool> {
-    if !needs_update(entry, dest_path, identities, fail_on_decrypt_error)? {
+    if entry_needs_update(entry, dest_path, identities, fail_on_decrypt_error)? {
         debug!(path = %entry.path(), "File is already up to date, skipping");
         return Ok(false);
     }
@@ -351,6 +351,23 @@ fn handle_dry_run_entry(
     print_dry_run_entry(entry, show_icons);
     stats.record_dry_run(entry);
     Ok(true)
+}
+
+/// Did the destination fall out of sync with the target entry?
+///
+/// Thin wrapper over `engine::verify::matches_dest` that returns a `bool`
+/// matching the old `needs_update` semantic: `true` if applying this
+/// entry would write to the destination.
+fn entry_needs_update(
+    entry: &TargetEntry,
+    dest_path: &AbsPath,
+    identities: &[guisu_crypto::Identity],
+    fail_on_decrypt_error: bool,
+) -> Result<bool> {
+    Ok(
+        matches_dest(entry, dest_path, identities, fail_on_decrypt_error)?
+            != guisu_engine::verify::MatchResult::Match,
+    )
 }
 
 /// Handle interactive conflict resolution
@@ -367,7 +384,7 @@ fn handle_interactive_conflict(
 ) -> Result<bool> {
     // Force mode: skip conflict detection and apply directly
     if force {
-        return needs_update(entry, dest_path, identities, fail_on_decrypt_error);
+        return entry_needs_update(entry, dest_path, identities, fail_on_decrypt_error);
     }
 
     let last_written_hash = get_last_written_hash(db, entry);
@@ -393,7 +410,12 @@ fn handle_interactive_conflict(
             _ => unreachable!("Unexpected action returned from prompt_action"),
         }
     } else {
-        needs_update(entry, dest_path, identities, fail_on_decrypt_error)
+        Ok(entry_needs_update(
+            entry,
+            dest_path,
+            identities,
+            fail_on_decrypt_error,
+        )?)
     }
 }
 
@@ -409,10 +431,10 @@ fn handle_non_interactive_conflict(
 ) -> Result<bool> {
     // Force mode: skip all conflict detection and apply directly
     if force {
-        return needs_update(entry, dest_path, identities, fail_on_decrypt_error);
+        return entry_needs_update(entry, dest_path, identities, fail_on_decrypt_error);
     }
 
-    if !needs_update(entry, dest_path, identities, fail_on_decrypt_error)? {
+    if !entry_needs_update(entry, dest_path, identities, fail_on_decrypt_error)? {
         return Ok(false);
     }
 
@@ -720,123 +742,6 @@ impl Command for ApplyCommand {
         }
 
         Ok(stats.snapshot())
-    }
-}
-
-/// Check if a target entry needs to be updated at the destination
-///
-/// Returns true if:
-/// - The destination file/directory doesn't exist
-/// - The content differs from the target
-/// - The permissions differ from the target
-///
-/// NOTE: This function should NOT be used alone to determine if a file needs updating.
-/// Use `detect_change_type` instead for proper three-way comparison.
-/// This function is only called after `detect_change_type` returns None.
-fn needs_update(
-    entry: &TargetEntry,
-    dest_path: &AbsPath,
-    identities: &[guisu_crypto::Identity],
-    fail_on_decrypt_error: bool,
-) -> Result<bool> {
-    match entry {
-        TargetEntry::File { content, mode, .. } => {
-            // If file doesn't exist, it needs to be created
-            if !dest_path.as_path().exists() {
-                return Ok(true);
-            }
-
-            // Decrypt inline age values in target content before comparing
-            // This matches the behavior in detect_change_type and apply_target_entry
-            let target_content_decrypted =
-                decrypt_inline_age_values(content, identities, fail_on_decrypt_error)?;
-
-            // Check if content differs
-            if let Ok(existing_content) = fs::read(dest_path.as_path()) {
-                if existing_content != target_content_decrypted {
-                    return Ok(true);
-                }
-            } else {
-                // Can't read file, assume it needs update
-                return Ok(true);
-            }
-
-            // Check if permissions differ (Unix only)
-            #[cfg(unix)]
-            {
-                use std::os::unix::fs::PermissionsExt;
-                if let Some(target_mode) = mode
-                    && let Ok(metadata) = fs::metadata(dest_path.as_path())
-                {
-                    // `target_mode` carries the source file's mode *with* the
-                    // S_IFREG file-type bit set (it's the raw `PermissionsExt::mode()`
-                    // from `std::fs::metadata`). The destination's mode is masked
-                    // to permission bits before comparison, so mask here too —
-                    // otherwise a regular 0o644 file would falsely compare unequal
-                    // to its target_mode of 0o100644 on every apply.
-                    let current_mode = metadata.permissions().mode() & PERM_MASK;
-                    let target_mode_masked = *target_mode & PERM_MASK;
-                    if current_mode != target_mode_masked {
-                        return Ok(true);
-                    }
-                }
-            }
-
-            // Content and permissions match, no update needed
-            Ok(false)
-        }
-        TargetEntry::Directory { mode, .. } => {
-            // If directory doesn't exist, it needs to be created
-            if !dest_path.as_path().exists() {
-                return Ok(true);
-            }
-
-            // Check if it's actually a directory
-            if !dest_path.as_path().is_dir() {
-                return Ok(true);
-            }
-
-            // Check if permissions differ (Unix only)
-            #[cfg(unix)]
-            {
-                use std::os::unix::fs::PermissionsExt;
-                if let Some(target_mode) = mode
-                    && let Ok(metadata) = fs::metadata(dest_path.as_path())
-                {
-                    let current_mode = metadata.permissions().mode() & PERM_MASK;
-                    if current_mode != *target_mode {
-                        return Ok(true);
-                    }
-                }
-            }
-
-            // Directory exists with correct permissions
-            Ok(false)
-        }
-        TargetEntry::Symlink { target, .. } => {
-            // If symlink doesn't exist, it needs to be created
-            if !dest_path.as_path().exists() {
-                return Ok(true);
-            }
-
-            // Check if it's actually a symlink
-            if !dest_path.as_path().is_symlink() {
-                return Ok(true);
-            }
-
-            // Check if symlink target differs
-            if let Ok(existing_target) = fs::read_link(dest_path.as_path()) {
-                if existing_target != target.as_path() {
-                    return Ok(true);
-                }
-            } else {
-                // Can't read symlink, assume it needs update
-                return Ok(true);
-            }
-
-            // Symlink exists with correct target
-            Ok(false)
-        }
     }
 }
 
@@ -1182,72 +1087,6 @@ fn detect_config_drift(
             }
         })
         .collect()
-}
-
-/// Decrypt inline age: encrypted values in file content
-///
-/// This function scans the content for age:base64(...) patterns and decrypts them,
-/// allowing source files to store encrypted secrets while destination files get plaintext.
-///
-/// This enables the workflow:
-/// - Source: password: age:YWdlLWVuY3J5cHRpb24...
-/// - Destination: password: my-secret-password
-///
-/// # Behavior
-///
-/// - If `fail_on_decrypt_error` is true (default), decryption failures cause an error
-/// - If `fail_on_decrypt_error` is false, decryption failures log a warning and return original content
-/// - If no identities are available, returns the original content (not an error)
-/// - If content is binary (non-UTF-8), returns the original content (not an error)
-/// - If no age: patterns are found, returns the original content (not an error)
-fn decrypt_inline_age_values(
-    content: &[u8],
-    identities: &[guisu_crypto::Identity],
-    fail_on_decrypt_error: bool,
-) -> Result<Vec<u8>> {
-    // Convert to string (if not valid UTF-8, return original)
-    let Ok(content_str) = String::from_utf8(content.to_vec()) else {
-        return Ok(content.to_vec()); // Binary file, return as-is
-    };
-
-    // Check if content contains age: prefix (quick check before decrypting)
-    if !content_str.contains("age:") {
-        return Ok(content.to_vec()); // No encrypted values, return as-is
-    }
-
-    // If no identities available, return original content
-    if identities.is_empty() {
-        return Ok(content.to_vec());
-    }
-
-    // Decrypt all inline age values
-    match guisu_crypto::decrypt_file_content(&content_str, identities) {
-        Ok(decrypted) => Ok(decrypted.into_bytes()),
-        Err(e) => {
-            if fail_on_decrypt_error {
-                // Fail loudly for security (matches chezmoi behavior)
-                Err(anyhow::anyhow!(
-                    "Failed to decrypt inline age values in file. \
-                     This usually means the wrong identity was used or the encrypted value is corrupted. \
-                     Error: {e}"
-                ))
-            } else {
-                // Log the error with context
-                warn!(
-                    "Failed to decrypt inline age values in file. \
-                     Content will be written with encrypted age: values intact. \
-                     Applications may not be able to use these values. \
-                     Error: {}",
-                    e
-                );
-
-                // Return original content with encrypted values
-                // This allows the file to be applied, but the application
-                // will see "age:..." strings instead of plaintext
-                Ok(content.to_vec())
-            }
-        }
-    }
 }
 
 #[cfg(test)]
