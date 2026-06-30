@@ -359,19 +359,23 @@ fn handle_dry_run_entry(
 
 /// Did the destination fall out of sync with the target entry?
 ///
-/// Thin wrapper over `engine::verify::matches_dest` that returns a `bool`
-/// matching the old `needs_update` semantic: `true` if applying this
-/// entry would write to the destination.
+/// Returns `true` if applying this entry would write to the destination.
+/// `MatchResult` collapses into a single "needs write" predicate here:
+/// both `Missing` and `Modified` (and any future "stale" variant) count
+/// as drift. Adding a new `MatchResult` variant forces a decision in
+/// the `match` below — the compiler won't let a new variant be silently
+/// bucketed into the wrong category.
 fn entry_needs_update(
     entry: &TargetEntry,
     dest_path: &AbsPath,
     identities: &[guisu_crypto::Identity],
     fail_on_decrypt_error: bool,
 ) -> Result<bool> {
-    Ok(
-        matches_dest(entry, dest_path, identities, fail_on_decrypt_error)?
-            != guisu_engine::verify::MatchResult::Match,
-    )
+    use guisu_engine::verify::MatchResult;
+    Ok(matches!(
+        matches_dest(entry, dest_path, identities, fail_on_decrypt_error)?,
+        MatchResult::Missing | MatchResult::Modified
+    ))
 }
 
 /// Handle interactive conflict resolution
@@ -1571,5 +1575,51 @@ mod tests {
                 "{label} must be gated on `has_named_target` (single named path is the off-switch)"
             );
         }
+    }
+
+    /// `entry_needs_update` must use an exhaustive `match` on `MatchResult`
+    /// rather than `!= MatchResult::Match`. The exhaustive form forces
+    /// a decision on every future variant — `Missing` and `Modified`
+    /// count as drift today, but if `MatchResult` gains e.g. `Stale`
+    /// or `SymlinkTarget`, the compiler pins the call site until someone
+    /// consciously decides where the new variant belongs.
+    #[test]
+    fn test_entry_needs_update_uses_exhaustive_match() {
+        let src = include_str!("apply.rs");
+        // Locate the function body — find the definition line and walk
+        // forward to its closing `}`.
+        let def_idx = src
+            .find("fn entry_needs_update(")
+            .expect("entry_needs_update must exist");
+        let body_start = src[def_idx..]
+            .find('{')
+            .map(|o| def_idx + o + 1)
+            .expect("function body must start with `{{`");
+        let body_end = src[body_start..]
+            .find("\n}\n")
+            .map(|o| body_start + o)
+            .expect("function body must end with `}}` at column 0");
+        let body = &src[body_start..body_end];
+
+        assert!(
+            body.contains("matches!(") || body.contains("match "),
+            "entry_needs_update must branch on MatchResult via match/matches! \
+             rather than `!= MatchResult::Match`"
+        );
+        assert!(
+            !body.contains("!= MatchResult::Match")
+                && !body.contains("!= guisu_engine::verify::MatchResult::Match"),
+            "entry_needs_update must not use the `!= Match` collapsing pattern \
+             (forces new variants through exhaustive decision)"
+        );
+        // And pin the explicit variants we currently bucket as drift.
+        assert!(
+            body.contains("Missing"),
+            "entry_needs_update body must enumerate `Missing`"
+        );
+        assert!(
+            body.contains("Modified"),
+            "entry_needs_update body must enumerate `Modified`"
+        );
     }
 }
