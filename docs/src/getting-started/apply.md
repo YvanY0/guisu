@@ -57,7 +57,8 @@ guisu apply --interactive
 | --- | --- |
 | `0` | All changes applied (or nothing to do). |
 | `1` | An error occurred. |
-| Non-zero with `--dry-run` | A planned change would have been made. |
+
+For drift detection in CI, use `guisu verify` — it exits 1 on drift, 0 on a clean state.
 
 ## Hooks
 
