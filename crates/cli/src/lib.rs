@@ -417,7 +417,6 @@ fn handle_apply_command(
     }
 
     // Execute apply command and get stats
-    let is_single_file = apply_cmd.files.len() == 1;
     let dry_run = apply_cmd.dry_run;
     let stats = apply_cmd.execute(context)?;
 
@@ -436,11 +435,14 @@ fn handle_apply_command(
         );
     }
 
-    // Print summary after hooks complete (skip for single file mode)
-    if !is_single_file {
-        println!();
-        stats.print_summary(dry_run);
-    }
+    // Print summary after hooks complete. A positional argument may be a
+    // directory or a path that doesn't exist, so we can't tell at parse
+    // time whether the user targeted one entry or many — print the
+    // summary unconditionally and let the per-entry gates decide what
+    // to show.
+    println!();
+    let mut stdout = std::io::stdout();
+    stats.print_summary(&mut stdout, dry_run);
 
     Ok(())
 }

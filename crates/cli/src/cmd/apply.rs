@@ -113,6 +113,7 @@ fn apply_removed_paths(
     dest_root: &AbsPath,
     system: &dyn guisu_engine::System,
     dry_run: bool,
+    stats: &ApplyStats,
 ) -> Result<()> {
     for path_str in metadata.remove.iter() {
         let path = crate::expand_tilde(Path::new(path_str));
@@ -159,12 +160,14 @@ fn apply_removed_paths(
                 "→".bright_cyan(),
                 dest_path.display()
             );
+            stats.inc_removed();
             continue;
         }
 
         system
             .remove(&abs_path)
             .with_context(|| format!("Failed to remove: {}", dest_path.display()))?;
+        stats.inc_removed();
         info!("{} removed: {}", "✓".bright_green(), dest_path.display());
     }
     Ok(())
@@ -199,9 +202,9 @@ pub(crate) fn setup_content_processor(
 pub(crate) fn read_source_state(
     source_abs: AbsPath,
     source_dir: &std::path::Path,
-    is_single_file: bool,
+    has_named_target: bool,
 ) -> Result<SourceState> {
-    let spinner = if is_single_file {
+    let spinner = if has_named_target {
         None
     } else {
         Some(progress::create_spinner("Reading source state..."))
@@ -236,9 +239,9 @@ fn build_target_state(
     working_tree: &Path,
     config: &guisu_config::Config,
     all_variables: indexmap::IndexMap<String, serde_json::Value>,
-    is_single_file: bool,
+    has_named_target: bool,
 ) -> Result<TargetState> {
-    let spinner = if is_single_file {
+    let spinner = if has_named_target {
         None
     } else {
         Some(progress::create_spinner(
@@ -342,7 +345,8 @@ fn handle_dry_run_entry(
     show_icons: bool,
     fail_on_decrypt_error: bool,
 ) -> Result<bool> {
-    if entry_needs_update(entry, dest_path, identities, fail_on_decrypt_error)? {
+    let needs_update = entry_needs_update(entry, dest_path, identities, fail_on_decrypt_error)?;
+    if !needs_update {
         debug!(path = %entry.path(), "File is already up to date, skipping");
         return Ok(false);
     }
@@ -618,10 +622,6 @@ impl Command for ApplyCommand {
         let config = &context.config;
         let database = context.database();
 
-        if self.dry_run {
-            info!("Dry run mode - no changes will be made");
-        }
-
         // Load age identities for decryption
         let spinner = progress::create_spinner("Loading identities...");
         let identities = std::sync::Arc::new(config.age_identities().unwrap_or_default());
@@ -642,17 +642,34 @@ impl Command for ApplyCommand {
         let metadata =
             guisu_engine::state::Metadata::load(source_dir).context("Failed to load metadata")?;
 
+        // Stats accumulator — declared early so `apply_removed_paths`
+        // (which runs before source/target state is built) can record
+        // any pending `Metadata::remove` directives into the same
+        // counters that the post-apply summary reads.
+        let stats = Arc::new(ApplyStats::new());
+
         // Apply remove directives from .guisu/state.toml.
-        apply_removed_paths(&metadata, dest_abs, &guisu_engine::RealSystem, self.dry_run)?;
+        apply_removed_paths(
+            &metadata,
+            dest_abs,
+            &guisu_engine::RealSystem,
+            self.dry_run,
+            &stats,
+        )?;
 
         // Create ignore matcher from .guisu/ignores.toml
         let ignore_matcher = guisu_config::IgnoreMatcher::from_ignores_toml(source_dir)
             .context("Failed to load ignore patterns from .guisu/ignores.toml")?;
 
-        // Check if we're applying a single file (affects output verbosity)
-        let is_single_file = !self.files.is_empty() && self.files.len() == 1;
+        // `has_named_target` is true when the user passed exactly one positional
+        // path. Drives verbose-mode gates: spinner + drift-detection are
+        // skipped because a single named target doesn't benefit from
+        // progress bars or per-file conflict hints. The two "No files"
+        // messages below are intentionally UNCONDITIONAL — silently
+        // succeeding on a typo'd path is worse than a noisy info line.
+        let has_named_target = !self.files.is_empty() && self.files.len() == 1;
 
-        // Build filter paths if specific files requested
+        // Build filter paths if specific paths requested
         let filter_paths = if self.files.is_empty() {
             None
         } else {
@@ -660,12 +677,10 @@ impl Command for ApplyCommand {
         };
 
         // Read source state
-        let source_state = read_source_state(source_abs.to_owned(), source_dir, is_single_file)?;
+        let source_state = read_source_state(source_abs.to_owned(), source_dir, has_named_target)?;
 
         if source_state.is_empty() {
-            if !is_single_file {
-                info!("No files to apply");
-            }
+            info!("No files to apply");
             return Ok(ApplyStats::new());
         }
 
@@ -679,7 +694,7 @@ impl Command for ApplyCommand {
             &working_tree,
             config,
             all_variables,
-            is_single_file,
+            has_named_target,
         )?;
 
         // Filter entries to apply
@@ -697,7 +712,7 @@ impl Command for ApplyCommand {
         }
 
         // Check for configuration drift (files modified by user AND source updated)
-        if !self.dry_run && !is_single_file {
+        if !self.dry_run && !has_named_target {
             let drift_warnings = detect_config_drift(database, &entries_to_apply, dest_abs);
             display_drift_warnings(&drift_warnings);
         }
@@ -711,9 +726,6 @@ impl Command for ApplyCommand {
         } else {
             None
         };
-
-        // Apply entries
-        let stats = Arc::new(ApplyStats::new());
 
         // Sequential processing. `filter_entries_to_apply` already sorts
         // `entries_to_apply` by path, so output order is deterministic across
@@ -1303,8 +1315,14 @@ mod tests {
         metadata.remove.add("victim.txt".to_string());
         metadata.remove.add("not-there.txt".to_string());
 
-        apply_removed_paths(&metadata, &dest_dir, &guisu_engine::RealSystem, false)
-            .expect("apply_removed_paths failed");
+        apply_removed_paths(
+            &metadata,
+            &dest_dir,
+            &guisu_engine::RealSystem,
+            false,
+            &ApplyStats::new(),
+        )
+        .expect("apply_removed_paths failed");
 
         assert!(!victim.exists(), "victim should have been removed");
         assert!(survivor.exists(), "survivor must not be touched");
@@ -1329,7 +1347,13 @@ mod tests {
         let mut metadata = guisu_engine::state::Metadata::default();
         metadata.remove.add(absolute_outside.clone());
 
-        let result = apply_removed_paths(&metadata, &dest_dir, &guisu_engine::RealSystem, false);
+        let result = apply_removed_paths(
+            &metadata,
+            &dest_dir,
+            &guisu_engine::RealSystem,
+            false,
+            &ApplyStats::new(),
+        );
         assert!(
             result.is_err(),
             "apply_removed_paths must reject absolute path escape"
@@ -1361,9 +1385,191 @@ mod tests {
         let mut metadata = guisu_engine::state::Metadata::default();
         metadata.remove.add("victim.txt".to_string());
 
-        apply_removed_paths(&metadata, &dest_dir, &guisu_engine::RealSystem, true)
-            .expect("dry-run must not error");
+        apply_removed_paths(
+            &metadata,
+            &dest_dir,
+            &guisu_engine::RealSystem,
+            true,
+            &ApplyStats::new(),
+        )
+        .expect("dry-run must not error");
 
         assert!(victim.exists(), "dry-run must not actually remove the file");
+    }
+
+    /// Regression test: `handle_dry_run_entry` must only emit output for
+    /// entries that actually drifted against the destination. An entry
+    /// whose target content already matches the dest is a no-op for
+    /// `apply` and must be skipped (returning `false`, no `record_dry_run`,
+    /// no `print_dry_run_entry`). An entry whose target content differs
+    /// from the dest must be reported (returning `true`).
+    ///
+    /// This pins the polarity: the previous bug had the conditions
+    /// inverted, so dry-run printed only up-to-date files and silently
+    /// hid the drifted ones — the opposite of chezmoi's behaviour.
+    #[test]
+    fn dry_run_entry_skips_up_to_date_and_prints_drifted() {
+        let temp = TempDir::new().expect("Failed to create temp dir");
+        let temp_canon =
+            std::fs::canonicalize(temp.path()).expect("Failed to canonicalize temp dir");
+        let dest_dir = AbsPath::new(temp_canon).expect("Failed to create AbsPath");
+
+        // Entry 1: dest already matches target — should be skipped.
+        let up_to_date_content = b"already in sync".to_vec();
+        let up_to_date_path = dest_dir.as_path().join("up_to_date.txt");
+        std::fs::write(&up_to_date_path, &up_to_date_content).expect("Failed to write dest");
+
+        let up_to_date_entry = TargetEntry::File {
+            path: guisu_core::path::RelPath::new("up_to_date.txt".into())
+                .expect("Invalid rel path"),
+            content: up_to_date_content.clone(),
+            content_hash: hash_content(&up_to_date_content),
+            mode: None,
+        };
+        let up_to_date_dest = dest_dir.join(up_to_date_entry.path());
+
+        // Entry 2: dest missing — should be reported as would-apply.
+        let drifted_content = b"new content not on dest yet".to_vec();
+        let drifted_entry = TargetEntry::File {
+            path: guisu_core::path::RelPath::new("drifted.txt".into()).expect("Invalid rel path"),
+            content: drifted_content.clone(),
+            content_hash: hash_content(&drifted_content),
+            mode: None,
+        };
+        let drifted_dest = dest_dir.join(drifted_entry.path());
+
+        let stats = ApplyStats::new();
+
+        // Up-to-date entry: handle_dry_run_entry must return Ok(false) and
+        // record nothing.
+        let applied = handle_dry_run_entry(
+            &up_to_date_entry,
+            &up_to_date_dest,
+            &[],
+            &stats,
+            false,
+            false,
+        )
+        .expect("handle_dry_run_entry failed on up-to-date entry");
+        assert!(
+            !applied,
+            "up-to-date entry must not be reported by dry-run, got applied=true"
+        );
+        assert_eq!(
+            stats.files(),
+            0,
+            "up-to-date entry must not increment dry-run file count"
+        );
+
+        // Drifted entry must report and bump stats.files() to 1.
+        let applied =
+            handle_dry_run_entry(&drifted_entry, &drifted_dest, &[], &stats, false, false)
+                .expect("handle_dry_run_entry failed on drifted entry");
+        assert!(
+            applied,
+            "drifted entry must be reported by dry-run, got applied=false"
+        );
+        assert_eq!(
+            stats.files(),
+            1,
+            "drifted entry must increment dry-run file count exactly once"
+        );
+    }
+
+    /// Regression: dry-run `apply_removed_paths` must bump stats so the
+    /// summary headline counts pending removes.
+    #[test]
+    fn test_apply_removed_paths_increments_stats_on_dry_run() {
+        let temp = TempDir::new().expect("Failed to create temp dir");
+        let temp_canon =
+            std::fs::canonicalize(temp.path()).expect("Failed to canonicalize temp dir");
+        let dest_dir = AbsPath::new(temp_canon).expect("Failed to create AbsPath");
+
+        let victim = dest_dir.as_path().join("victim.txt");
+        std::fs::write(&victim, b"remove me").expect("Failed to write victim");
+
+        let mut metadata = guisu_engine::state::Metadata::default();
+        metadata.remove.add("victim.txt".to_string());
+
+        let stats = ApplyStats::new();
+        apply_removed_paths(
+            &metadata,
+            &dest_dir,
+            &guisu_engine::RealSystem,
+            true,
+            &stats,
+        )
+        .expect("apply_removed_paths dry-run must not error");
+
+        assert!(
+            stats.total() >= 1,
+            "dry-run must record at least one pending remove in stats, got total={}",
+            stats.total()
+        );
+    }
+
+    /// Both `info!("No files to apply")` and `info!("No matching files to apply")`
+    /// must be UNCONDITIONAL. A user who explicitly named a single path
+    /// (e.g. `guisu apply ~/.bashrc`) needs to see "nothing to apply"
+    /// when their path is filtered out — silent failure is worse than
+    /// a single info line. We assert via `include_str!` rather than
+    /// capturing log output; `tracing-subscriber` for one test isn't
+    /// worth the dep.
+    #[test]
+    fn test_no_matching_files_message_always_emitted() {
+        let src = include_str!("apply.rs");
+        let window_before = |needle: &str| -> &str {
+            let idx = src
+                .find(needle)
+                .unwrap_or_else(|| panic!("`{needle}` must exist in apply.rs"));
+            &src[idx.saturating_sub(160)..idx]
+        };
+
+        for needle in [
+            "info!(\"No files to apply\")",
+            "info!(\"No matching files to apply\")",
+        ] {
+            assert!(
+                !window_before(needle).contains("!is_single_file"),
+                "`{needle}` must NOT be gated on `!is_single_file` \
+                 — single-path users need to see why nothing was applied"
+            );
+        }
+    }
+
+    /// The spinner and drift-detection gates must still suppress work
+    /// for a single named path (they're per-entry noise gates — spinner
+    /// is meaningless for one entry, drift detection is expensive and
+    /// redundant when the user named exactly one file). Pin by name
+    /// `has_named_target` so the predicate reflects "positional argument
+    /// present" rather than the misleading "is single file" (which
+    /// misreads `apply ~/.config/zsh` as single-file when it's a
+    /// directory).
+    #[test]
+    fn test_named_target_gates_remain_on_spinner_and_drift() {
+        let src = include_str!("apply.rs");
+
+        let spinner_gate = src
+            .find("create_spinner(\"Reading source state...\")")
+            .expect("read-source spinner must exist");
+        let drift_gate = src
+            .find("detect_config_drift(database, &entries_to_apply, dest_abs)")
+            .expect("drift detection call must exist");
+        let target_state_spinner = src
+            .find("create_spinner(\n            \"Processing templates and encrypted files...\",\n        )")
+            .or_else(|| src.find("Processing templates and encrypted files..."))
+            .expect("target-state spinner must exist");
+
+        for (label, idx) in [
+            ("read_source_state spinner", spinner_gate),
+            ("build_target_state spinner", target_state_spinner),
+            ("drift detection", drift_gate),
+        ] {
+            let window = &src[idx.saturating_sub(160)..idx];
+            assert!(
+                window.contains("has_named_target"),
+                "{label} must be gated on `has_named_target` (single named path is the off-switch)"
+            );
+        }
     }
 }

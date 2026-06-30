@@ -14,6 +14,8 @@ pub struct ApplyStats {
     directories: AtomicU32,
     /// Number of symlinks processed
     symlinks: AtomicU32,
+    /// Number of paths removed via `Metadata::remove`
+    removed: AtomicU32,
     /// Number of failed operations
     failed: AtomicU32,
 }
@@ -40,6 +42,11 @@ impl ApplyStats {
         self.symlinks.fetch_add(1, Ordering::Relaxed);
     }
 
+    /// Increment removed-path count (from `Metadata::remove`).
+    pub fn inc_removed(&self) {
+        self.removed.fetch_add(1, Ordering::Relaxed);
+    }
+
     /// Increment failed operation count
     pub fn inc_failed(&self) {
         self.failed.fetch_add(1, Ordering::Relaxed);
@@ -60,14 +67,19 @@ impl ApplyStats {
         self.symlinks.load(Ordering::Relaxed) as usize
     }
 
+    /// Get current removed-path count
+    pub fn removed(&self) -> usize {
+        self.removed.load(Ordering::Relaxed) as usize
+    }
+
     /// Get current failed operation count
     pub fn failed(&self) -> usize {
         self.failed.load(Ordering::Relaxed) as usize
     }
 
-    /// Get total count (excludes failed)
+    /// Get total count (excludes failed; includes removes)
     pub fn total(&self) -> usize {
-        self.files() + self.directories() + self.symlinks()
+        self.files() + self.directories() + self.symlinks() + self.removed()
     }
 
     /// Create a snapshot of current stats
@@ -79,56 +91,82 @@ impl ApplyStats {
             files: AtomicU32::new(self.files.load(Ordering::Relaxed)),
             directories: AtomicU32::new(self.directories.load(Ordering::Relaxed)),
             symlinks: AtomicU32::new(self.symlinks.load(Ordering::Relaxed)),
+            removed: AtomicU32::new(self.removed.load(Ordering::Relaxed)),
             failed: AtomicU32::new(self.failed.load(Ordering::Relaxed)),
         }
     }
 
-    /// Print summary of apply statistics
-    pub fn print_summary(&self, dry_run: bool) {
+    /// Print apply summary. The `writer` parameter lets tests capture
+    /// output without touching global state; production passes stdout.
+    pub fn print_summary<W: std::io::Write>(&self, writer: &mut W, dry_run: bool) {
         use owo_colors::OwoColorize;
 
         let total = self.total();
         let failed = self.failed();
-        let files = self.files();
-        let directories = self.directories();
-        let symlinks = self.symlinks();
 
+        // Dry-run headline is `N would be applied`; always printed (even
+        // at N=0) so scripts see a confirmation that the run executed.
         if dry_run {
-            println!(
+            writeln!(
+                writer,
                 "{} {} would be applied",
                 "●".bright_green(),
                 total.to_string().bright_white().bold()
-            );
-        } else if failed > 0 {
-            println!(
+            )
+            .expect("writing to in-memory buffer cannot fail");
+            self.print_breakdown(writer);
+            return;
+        }
+
+        if failed > 0 {
+            writeln!(
+                writer,
                 "{} {} | {} {}",
                 "●".bright_green(),
                 total.to_string().bright_green().bold(),
                 "●".bright_red(),
                 failed.to_string().bright_red().bold(),
-            );
+            )
+            .expect("writing to in-memory buffer cannot fail");
         } else {
-            println!(
+            writeln!(
+                writer,
                 "{} {} applied",
                 "●".bright_green(),
                 total.to_string().bright_green().bold()
-            );
+            )
+            .expect("writing to in-memory buffer cannot fail");
         }
+        self.print_breakdown(writer);
+    }
 
-        // Show breakdown if more than just files
-        if directories > 0 || symlinks > 0 {
-            let mut parts = Vec::new();
-            if files > 0 {
-                parts.push(format!("{files} files"));
-            }
-            if directories > 0 {
-                parts.push(format!("{directories} directories"));
-            }
-            if symlinks > 0 {
-                parts.push(format!("{symlinks} symlinks"));
-            }
-            println!("  {}", parts.join(", ").dimmed());
+    /// Print the breakdown line. Suppressed when only files were processed
+    /// (already covered by the headline number).
+    fn print_breakdown<W: std::io::Write>(&self, writer: &mut W) {
+        use owo_colors::OwoColorize;
+
+        let directories = self.directories();
+        let symlinks = self.symlinks();
+        let files = self.files();
+        let removed = self.removed();
+        if directories == 0 && symlinks == 0 && removed == 0 {
+            return;
         }
+        let mut parts = Vec::new();
+        if files > 0 {
+            parts.push(format!("{files} files"));
+        }
+        if directories > 0 {
+            parts.push(format!("{directories} directories"));
+        }
+        if symlinks > 0 {
+            parts.push(format!("{symlinks} symlinks"));
+        }
+        if removed > 0 {
+            parts.push(format!("{removed} removed"));
+        }
+        writeln!(writer, "  {}", parts.join(", ").dimmed())
+            .expect("writing to in-memory buffer cannot fail");
     }
 }
 
@@ -366,5 +404,62 @@ mod tests {
         assert_eq!(stats.modified(), 3);
         assert_eq!(stats.unchanged(), 1);
         assert_eq!(stats.errors(), 1);
+    }
+
+    // Tests for `ApplyStats::print_summary` dry-run contract
+
+    /// Dry-run with zero drift prints the `● 0 would be applied` headline.
+    #[test]
+    fn test_apply_stats_dry_run_prints_zero_headline() {
+        let stats = ApplyStats::new();
+        let mut buf: Vec<u8> = Vec::new();
+        stats.print_summary(&mut buf, /* dry_run */ true);
+        let out = String::from_utf8(buf).expect("print_summary must write UTF-8");
+        let stripped = strip_ansi(&out);
+        assert!(
+            stripped.contains("0 would be applied"),
+            "dry-run summary must emit `● 0 would be applied` headline at N=0, got: {stripped:?}"
+        );
+    }
+
+    #[test]
+    fn test_apply_stats_dry_run_records_drift_in_counters() {
+        let stats = ApplyStats::new();
+        stats.inc_files();
+        stats.inc_files();
+        stats.inc_directories();
+        stats.inc_symlinks();
+        assert_eq!(stats.files(), 2);
+        assert_eq!(stats.directories(), 1);
+        assert_eq!(stats.symlinks(), 1);
+        assert_eq!(stats.total(), 4, "total drives the headline in summary");
+        let mut buf: Vec<u8> = Vec::new();
+        stats.print_summary(&mut buf, /* dry_run */ true);
+        let out = String::from_utf8(buf).expect("print_summary must write UTF-8");
+        let stripped = strip_ansi(&out);
+        assert!(
+            stripped.contains("4 would be applied"),
+            "dry-run summary must surface the total in the headline, got: {stripped:?}"
+        );
+    }
+
+    /// Strip ANSI CSI escapes so color-aware assertions stay TTY-independent.
+    fn strip_ansi(s: &str) -> String {
+        let mut out = String::with_capacity(s.len());
+        let mut chars = s.chars().peekable();
+        while let Some(c) = chars.next() {
+            if c == '\u{1b}' && chars.peek() == Some(&'[') {
+                chars.next();
+                while let Some(&nc) = chars.peek() {
+                    chars.next();
+                    if nc.is_ascii_alphabetic() {
+                        break;
+                    }
+                }
+                continue;
+            }
+            out.push(c);
+        }
+        out
     }
 }
