@@ -11,7 +11,7 @@ members = [
 resolver = "2"
 
 [workspace.package]
-version = "0.2.4"
+version = "0.2.5"
 edition = "2024"
 authors = ["Yihuang Yu <yuyihuang@live.com>"]
 license = "MIT OR Apache-2.0"
@@ -31,13 +31,13 @@ unsafe_code = "deny"
 missing_docs = "warn"
 
 [workspace.dependencies]
-guisu-core = { path = "crates/core", version = "0.2.4" }
-guisu-crypto = { path = "crates/crypto", version = "0.2.4" }
-guisu-config = { path = "crates/config", version = "0.2.4" }
-guisu-vault = { path = "crates/vault", version = "0.2.4" }
-guisu-template = { path = "crates/template", version = "0.2.4" }
-guisu-engine = { path = "crates/engine", version = "0.2.4" }
-guisu = { path = "crates/cli", version = "0.2.4" }
+guisu-core = { path = "crates/core", version = "0.2.5" }
+guisu-crypto = { path = "crates/crypto", version = "0.2.5" }
+guisu-config = { path = "crates/config", version = "0.2.5" }
+guisu-vault = { path = "crates/vault", version = "0.2.5" }
+guisu-template = { path = "crates/template", version = "0.2.5" }
+guisu-engine = { path = "crates/engine", version = "0.2.5" }
+guisu = { path = "crates/cli", version = "0.2.5" }
 
 clap = { version = "4.6", features = ["derive", "cargo", "env"] }
 clap_complete = "4.6"
