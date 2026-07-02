@@ -3,6 +3,10 @@ version: 2
 updates:
   - package-ecosystem: "github-actions"
     directory: "/"
+    # dist owns release.yml and hardcodes action versions; dependabot bumps
+    # break `dist plan`. Keep this file out of the github-actions group.
+    exclude-paths:
+      - ".github/workflows/release.yml"
     schedule:
       interval: "monthly"
       day: "monday"
