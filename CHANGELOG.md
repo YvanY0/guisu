@@ -7,6 +7,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.2.5](https://github.com/YvanY0/guisu/compare/v0.2.4...v0.2.5) - 2026-07-02
+
+### Added
+
+- *(cli)* add guisu verify subcommand
+- *(command)* add default exit_code method to Command trait
+- *(engine)* promote per-entry comparison into verify module
+
+### Fixed
+
+- *(apply)* correct dry-run polarity, surface remove ops in summary, rename is_single_file
+
+### Other
+
+- *(apply)* exhaustive match on MatchResult in entry_needs_update
+- *(apply)* use engine verify module for drift detection
+
 ## [0.2.4](https://github.com/YvanY0/guisu/compare/v0.2.3...v0.2.4) - 2026-06-22
 
 ### Added
