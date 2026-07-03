@@ -26,6 +26,7 @@ use crate::conflict::{ThreeWayComparisonResult, compare_three_way};
 use crate::ui::icons::{FileIconInfo, icon_for_file};
 use crate::utils::filter::path_matches_any_filter;
 use crate::utils::path::SourceDirExt;
+use crate::utils::path_display::{PathDisplayStyle, PathFormatter};
 use guisu_config::Config;
 use lscolors::{LsColors, Style};
 use nu_ansi_term::Style as AnsiStyle;
@@ -125,6 +126,11 @@ pub struct StatusCommand {
     /// Display output in tree format
     #[arg(long)]
     pub tree: bool,
+
+    /// Show full destination paths instead of chezmoi-style relative
+    /// paths (`.config/foo` vs `/Users/yvanyo/.config/foo`).
+    #[arg(long)]
+    pub absolute: bool,
 }
 
 impl Command for StatusCommand {
@@ -143,6 +149,7 @@ impl Command for StatusCommand {
             &self.files,
             self.all,
             output_format,
+            self.absolute,
         )
         .map_err(Into::into)
     }
@@ -236,6 +243,7 @@ fn build_status_target_state(
 }
 
 /// Run the status command implementation
+#[allow(clippy::too_many_arguments)]
 fn run_impl(
     database: &std::sync::Arc<guisu_engine::state::RedbPersistentState>,
     source_dir: &Path,
@@ -244,6 +252,7 @@ fn run_impl(
     files: &[PathBuf],
     show_all: bool,
     output_format: OutputFormat,
+    absolute_paths: bool,
 ) -> Result<()> {
     // Initialize lscolors from environment
     let lscolors = LsColors::from_env().unwrap_or_default();
@@ -356,6 +365,7 @@ fn run_impl(
         metadata: &metadata,
         filter_paths: filter_paths.as_ref(),
         ignore_matcher: &ignore_matcher,
+        absolute_paths,
     });
 
     // Check if we're viewing a single file (don't show summary header)
@@ -392,6 +402,7 @@ struct CollectParams<'a> {
     metadata: &'a guisu_engine::state::Metadata,
     filter_paths: Option<&'a Vec<RelPath>>,
     ignore_matcher: &'a guisu_config::IgnoreMatcher,
+    absolute_paths: bool,
 }
 
 /// Get file type character from source entry
@@ -404,18 +415,42 @@ fn get_entry_file_type(entry: &guisu_engine::entry::SourceEntry) -> char {
     }
 }
 
-/// Format path for display with ~/ prefix if under home directory
-fn format_display_path(dest_root: &AbsPath, target_path: &RelPath) -> String {
-    let full_dest_path = dest_root.join(target_path);
-    if let Some(home_dir) = dirs::home_dir() {
-        // If path is under home, show as ~/relative/path
-        if let Ok(rel_path) = full_dest_path.as_path().strip_prefix(&home_dir) {
-            format!("~/{}", rel_path.display())
-        } else {
-            full_dest_path.as_path().display().to_string()
-        }
+/// Format path for display.
+///
+/// Default (`absolute_paths = false`) emits the chezmoi-style bare target
+/// path: `.config/foo`. With `--absolute-paths` it joins the destination
+/// root and emits the full path: `/Users/yvanyo/.config/foo`.
+fn format_display_path(dest_root: &AbsPath, target_path: &RelPath, absolute_paths: bool) -> String {
+    let formatter = PathFormatter::new(dest_root);
+    let style = if absolute_paths {
+        PathDisplayStyle::Absolute
     } else {
-        full_dest_path.as_path().display().to_string()
+        PathDisplayStyle::Relative
+    };
+    formatter.display(style, target_path)
+}
+
+#[cfg(test)]
+mod format_display_path_tests {
+    #![allow(clippy::unwrap_used)]
+    use super::*;
+
+    fn dest_root() -> AbsPath {
+        AbsPath::new(std::path::PathBuf::from("/home/user/.config")).unwrap()
+    }
+
+    #[test]
+    fn default_emits_chezmoi_style_relative_path() {
+        let rel = RelPath::new(std::path::PathBuf::from("foo/bar")).unwrap();
+        let out = format_display_path(&dest_root(), &rel, false);
+        assert_eq!(out, "foo/bar");
+    }
+
+    #[test]
+    fn absolute_paths_flag_emits_full_destination_path() {
+        let rel = RelPath::new(std::path::PathBuf::from("foo/bar")).unwrap();
+        let out = format_display_path(&dest_root(), &rel, true);
+        assert_eq!(out, "/home/user/.config/foo/bar");
     }
 }
 
@@ -500,6 +535,7 @@ fn process_entry_for_status(
     metadata: &guisu_engine::state::Metadata,
     filter_paths: Option<&Vec<RelPath>>,
     ignore_matcher: &guisu_config::IgnoreMatcher,
+    absolute_paths: bool,
 ) -> Option<FileInfo> {
     use guisu_engine::entry::EntryKind;
 
@@ -543,7 +579,7 @@ fn process_entry_for_status(
     // Handle create-once files that already exist - show as Steady
     if metadata.is_create_once(&path_str) && dest_entry.kind != EntryKind::Missing {
         let file_type = get_entry_file_type(entry);
-        let display_path = format_display_path(dest_root, target_path);
+        let display_path = format_display_path(dest_root, target_path, absolute_paths);
 
         return Some(FileInfo {
             path: display_path,
@@ -576,7 +612,7 @@ fn process_entry_for_status(
     };
 
     // Format path for display
-    let display_path = format_display_path(dest_root, target_path);
+    let display_path = format_display_path(dest_root, target_path, absolute_paths);
 
     Some(FileInfo {
         path: display_path,
@@ -600,6 +636,7 @@ fn collect_file_info(params: CollectParams) -> Vec<FileInfo> {
         metadata,
         filter_paths,
         ignore_matcher,
+        absolute_paths,
     } = params;
 
     // Wrap dest_state in a Mutex for thread-safe access during parallel processing
@@ -621,6 +658,7 @@ fn collect_file_info(params: CollectParams) -> Vec<FileInfo> {
                 metadata,
                 filter_paths,
                 ignore_matcher,
+                absolute_paths,
             )
         })
         .collect();
@@ -1503,11 +1541,13 @@ mod tests {
             files: vec![],
             all: false,
             tree: false,
+            absolute: false,
         };
 
         assert!(cmd.files.is_empty());
         assert!(!cmd.all);
         assert!(!cmd.tree);
+        assert!(!cmd.absolute);
     }
 
     #[test]
@@ -1516,6 +1556,7 @@ mod tests {
             files: vec![PathBuf::from("file1.txt"), PathBuf::from("file2.txt")],
             all: false,
             tree: false,
+            absolute: false,
         };
 
         assert_eq!(cmd.files.len(), 2);
@@ -1529,6 +1570,7 @@ mod tests {
             files: vec![],
             all: true,
             tree: false,
+            absolute: false,
         };
 
         assert!(cmd.all);
@@ -1541,6 +1583,7 @@ mod tests {
             files: vec![],
             all: false,
             tree: true,
+            absolute: false,
         };
 
         assert!(!cmd.all);
@@ -1553,6 +1596,7 @@ mod tests {
             files: vec![PathBuf::from("test.txt")],
             all: true,
             tree: true,
+            absolute: false,
         };
 
         assert_eq!(cmd.files.len(), 1);

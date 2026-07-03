@@ -3,3 +3,4 @@
 pub mod filter;
 pub mod hooks;
 pub mod path;
+pub mod path_display;
