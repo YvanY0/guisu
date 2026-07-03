@@ -32,6 +32,7 @@ use crate::stats::DiffStats;
 use crate::ui::{FileDiff, FileStatus, InteractiveDiffViewer};
 use crate::utils::filter::path_matches_any_filter;
 use crate::utils::path::SourceDirExt;
+use crate::utils::path_display::{DiffSide, PathDisplayStyle, PathFormatter};
 use guisu_config::Config;
 
 // File permission constants
@@ -230,6 +231,7 @@ fn generate_diff_outputs(
     dest_abs: &AbsPath,
     stats: &DiffStats,
     config: &Config,
+    formatter: &PathFormatter,
 ) -> Vec<String> {
     target_state
         .entries()
@@ -262,7 +264,7 @@ fn generate_diff_outputs(
                 }
             }
 
-            match diff_target_entry(entry, dest_abs, stats) {
+            match diff_target_entry(entry, dest_abs, stats, formatter) {
                 Ok(entry_diff) => {
                     if entry_diff.is_empty() {
                         None
@@ -277,9 +279,14 @@ fn generate_diff_outputs(
                     // Debug log for verbose mode
                     debug!(path = %target_path, error = %e, "Failed to diff file");
 
-                    // Show path with root_entry prefix for better context
-                    let display_path =
-                        format!("{}/{}", config.general.root_entry.display(), target_path);
+                    // Show path through the formatter so users see `~/...`
+                    // instead of bare relative paths in error messages.
+                    let display_path = formatter.display(
+                        PathDisplayStyle::SourceRelative {
+                            root_entry: &config.general.root_entry,
+                        },
+                        target_path,
+                    );
                     warn!("Error processing {}: {}", display_path, e);
                     None
                 }
@@ -497,6 +504,9 @@ fn run_impl(
         config,
     );
 
+    // All path-formatting decisions flow through this one formatter.
+    let formatter = PathFormatter::new(dest_abs);
+
     // Use thread-safe stats for parallel processing
     let stats = Arc::new(DiffStats::new());
 
@@ -521,6 +531,7 @@ fn run_impl(
         dest_abs,
         &stats,
         config,
+        &formatter,
     );
 
     display_diff_output(source_dir, &diff_outputs, &stats, pager, config, db)
@@ -528,7 +539,12 @@ fn run_impl(
 
 /// Diff a single target entry against destination
 #[allow(clippy::too_many_lines)]
-fn diff_target_entry(entry: &TargetEntry, dest_abs: &AbsPath, stats: &DiffStats) -> Result<String> {
+fn diff_target_entry(
+    entry: &TargetEntry,
+    dest_abs: &AbsPath,
+    stats: &DiffStats,
+    formatter: &PathFormatter,
+) -> Result<String> {
     let target_path = entry.path();
     let dest_path = dest_abs.join(target_path);
 
@@ -537,6 +553,20 @@ fn diff_target_entry(entry: &TargetEntry, dest_abs: &AbsPath, stats: &DiffStats)
         TargetEntry::File { content, mode, .. } => (content.clone(), *mode),
         _ => return Ok(String::new()),
     };
+
+    // Pre-compute the diff-header labels so every format branch agrees.
+    let old_label = formatter.display(
+        PathDisplayStyle::DiffHeader {
+            side: DiffSide::Old,
+        },
+        target_path,
+    );
+    let new_label = formatter.display(
+        PathDisplayStyle::DiffHeader {
+            side: DiffSide::New,
+        },
+        target_path,
+    );
 
     // Check if destination exists
     if !dest_path.as_path().exists() {
@@ -552,7 +582,7 @@ fn diff_target_entry(entry: &TargetEntry, dest_abs: &AbsPath, stats: &DiffStats)
             let _ = writeln!(
                 output,
                 "{} {}",
-                format!("+++ b/{}", target_path.as_path().display()).bold(),
+                format!("+++ {new_label}").bold(),
                 new_mode_str.dimmed()
             );
 
@@ -561,13 +591,14 @@ fn diff_target_entry(entry: &TargetEntry, dest_abs: &AbsPath, stats: &DiffStats)
                 output,
                 "{} {} {}",
                 "Binary file".bold(),
-                format!("b/{}", target_path.as_path().display()).cyan(),
+                new_label.cyan(),
                 "to be added".green()
             );
             return Ok(output);
         }
         return Ok(format_new_file(
-            target_path.as_path(),
+            &old_label,
+            &new_label,
             &source_content,
             source_mode,
         ));
@@ -614,13 +645,13 @@ fn diff_target_entry(entry: &TargetEntry, dest_abs: &AbsPath, stats: &DiffStats)
             let _ = writeln!(
                 output,
                 "{} {}",
-                format!("--- a/{}", target_path.as_path().display()).bold(),
+                format!("--- {old_label}").bold(),
                 old_mode_str.dimmed()
             );
             let _ = writeln!(
                 output,
                 "{} {}",
-                format!("+++ b/{}", target_path.as_path().display()).bold(),
+                format!("+++ {new_label}").bold(),
                 new_mode_str.dimmed()
             );
 
@@ -629,8 +660,8 @@ fn diff_target_entry(entry: &TargetEntry, dest_abs: &AbsPath, stats: &DiffStats)
                 output,
                 "{} {} and {} differ",
                 "Binary files".bold(),
-                format!("a/{}", target_path.as_path().display()).dimmed(),
-                format!("b/{}", target_path.as_path().display()).cyan()
+                old_label.dimmed(),
+                new_label.cyan()
             );
             return Ok(output);
         }
@@ -654,8 +685,8 @@ fn diff_target_entry(entry: &TargetEntry, dest_abs: &AbsPath, stats: &DiffStats)
     Ok(generate_unified_diff(
         &dest_str,
         &source_str,
-        &format!("a/{target_path}"),
-        &format!("b/{target_path}"),
+        &old_label,
+        &new_label,
         dest_mode,
         effective_source_mode,
     ))
@@ -769,7 +800,7 @@ fn generate_unified_diff(
 }
 
 /// Format a new file for diff output
-fn format_new_file(path: &Path, content: &[u8], mode: Option<u32>) -> String {
+fn format_new_file(new_label: &str, _old_label: &str, content: &[u8], mode: Option<u32>) -> String {
     let content_str = String::from_utf8_lossy(content);
     let mut output = String::new();
 
@@ -780,7 +811,7 @@ fn format_new_file(path: &Path, content: &[u8], mode: Option<u32>) -> String {
     let _ = writeln!(
         output,
         "{} {}",
-        format!("+++ b/{}", path.display()).bold(),
+        format!("+++ {new_label}").bold(),
         mode_str.dimmed()
     );
 
@@ -1674,10 +1705,9 @@ mod tests {
 
     #[test]
     fn test_format_new_file_simple() {
-        let path = Path::new("test.txt");
         let content = b"line1\nline2\n";
 
-        let result = format_new_file(path, content, None);
+        let result = format_new_file("b/test.txt", "a/test.txt", content, None);
 
         // Output contains ANSI color codes, check for plain content
         assert!(result.contains("+++ b/test.txt"));
@@ -1687,10 +1717,9 @@ mod tests {
 
     #[test]
     fn test_format_new_file_with_mode() {
-        let path = Path::new("script.sh");
         let content = b"#!/bin/bash\necho hello\n";
 
-        let result = format_new_file(path, content, Some(0o755));
+        let result = format_new_file("b/script.sh", "a/script.sh", content, Some(0o755));
 
         // Output contains ANSI color codes, check for plain content
         assert!(result.contains("+++ b/script.sh"));
@@ -1701,10 +1730,9 @@ mod tests {
 
     #[test]
     fn test_format_new_file_empty() {
-        let path = Path::new("empty.txt");
         let content = b"";
 
-        let result = format_new_file(path, content, None);
+        let result = format_new_file("b/empty.txt", "a/empty.txt", content, None);
 
         assert!(result.contains("+++ b/empty.txt"));
         assert!(result.contains("@@ -0,0 +1,0 @@"));
@@ -1712,10 +1740,9 @@ mod tests {
 
     #[test]
     fn test_format_new_file_single_line() {
-        let path = Path::new("single.txt");
         let content = b"single line";
 
-        let result = format_new_file(path, content, None);
+        let result = format_new_file("b/single.txt", "a/single.txt", content, None);
 
         assert!(result.contains("+++ b/single.txt"));
         assert!(result.contains("@@ -0,0 +1,1 @@"));
@@ -1724,10 +1751,9 @@ mod tests {
 
     #[test]
     fn test_format_new_file_line_count() {
-        let path = Path::new("multi.txt");
         let content = b"line1\nline2\nline3\nline4\nline5\n";
 
-        let result = format_new_file(path, content, None);
+        let result = format_new_file("b/multi.txt", "a/multi.txt", content, None);
 
         // Should show correct line count in hunk header
         assert!(result.contains("@@ -0,0 +1,5 @@"));
