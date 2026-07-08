@@ -52,4 +52,4 @@ guisu add --force ~/.bashrc
 
 ## Next step
 
-[Getting Started — apply](getting-started/apply.md).
+[Getting Started — apply](apply.md).

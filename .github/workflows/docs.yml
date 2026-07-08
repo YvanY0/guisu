@@ -2,10 +2,7 @@ name: docs
 on:
   push:
     branches: [main]
-    paths:
-      - 'docs/**'
-      - '.github/workflows/docs.yml'
-  workflow_dispatch:
+  workflow_dispatch:  # 'Run workflow' button on the Actions tab
 permissions:
   contents: read
   pages: write
@@ -18,17 +15,17 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7
-      - uses: dtolnay/rust-toolchain@stable
-      - name: Install mdbook
-        run: |
-          cargo install mdbook --locked
-          cargo install mdbook-toc --locked
+      - uses: actions/setup-python@v6
+        with:
+          python-version: '3.12'
+      - name: Install Zensical
+        run: pip install zensical
       - name: Build
-        run: cd docs && mdbook build
+        run: zensical build --strict
       - name: Upload artifact
         uses: actions/upload-pages-artifact@v5
         with:
-          path: docs/book
+          path: site
   deploy:
     needs: build
     if: success()

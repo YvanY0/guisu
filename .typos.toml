@@ -3,9 +3,9 @@
 ratatui = "ratatui"
 Hashi = "Hashi"
 HashiCorp = "HashiCorp"
-# Upstream mdbook 0.4 and 0.5 both use this misspelling for the
-# 'sidebar non-existent entry' CSS custom property; renaming our
-# variable would break the Nord override.
+# 'non-existant' retained as a legitimate variant. (Originally added as a
+# workaround for an upstream mdbook CSS API misspelling; mdbook has since
+# been removed.)
 non-existant = "non-existant"
 
 [default]
