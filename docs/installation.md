@@ -25,9 +25,9 @@ guisu info
 
 The `info` command prints the resolved source directory, working tree, and destination directory so you can confirm Guisu sees your repository correctly. Add `--all` for build info, version, public keys, and configuration; add `--json` for machine-readable output.
 
-> [!TIP]
-> **Check the source dir**
-> `guisu info` will print the **resolved** source dir, which is `.` if you run it inside a source repo, or `~/.local/share/guisu` if you do not. If the resolved value is not what you expect, fix it with `guisu init` or by setting `[general] src_dir` in your `.guisu.toml`.
+!!! tip "Check the source dir"
+
+    `guisu info` will print the **resolved** source dir, which is `.` if you run it inside a source repo, or `~/.local/share/guisu` if you do not. If the resolved value is not what you expect, fix it with `guisu init` or by setting `[general] src_dir` in your `.guisu.toml`.
 
 
 

@@ -29,8 +29,10 @@ docs/superpowers/
 # Documentation build artifacts
 /docs/_build/
 /docs/.doctrees/
-# mdbook build output
-docs/book/
+
+# Zensical build output (cache dir .cache/ is matched by *.cache in user-global gitignore)
+site/
+.cache/
 
 # Coverage reports
 *.gcda

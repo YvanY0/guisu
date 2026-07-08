@@ -58,20 +58,21 @@ release-minor:
 release-major:
     cargo release major --execute --no-confirm
 
-# Install mdbook and plugins (one-time)
+# Install Zensical system-wide (optional; uvx runs without this).
 docs-install:
-	cargo install mdbook --locked
-	cargo install mdbook-toc --locked
-	cargo install mdbook-linkcheck --locked
+	uv tool install -r requirements.txt
 
-# Build the docs site into docs/book/
+# Build the docs site into site/ (strict mode catches broken links).
+# `uvx zensical` always pulls the latest version matching requirements.txt
+# (no pin — you asked for latest); CI pins `zensical` in the workflow too.
 docs-build:
-	cd docs && mdbook build
+	uvx --from zensical zensical build --strict
 
-# Serve the docs site at http://localhost:3000 with live reload
+# Serve the docs site at http://localhost:3000 with live reload.
+# Zensical 0.0.47 renamed `-p` to `-a <IP:PORT>` (default localhost:8000).
 docs-serve:
-	cd docs && mdbook serve -p 3000
+	uvx --from zensical zensical serve -a 127.0.0.1:3000
 
-# Check internal links in the docs site
+# Strict build acts as the link/internal-link check (alias of docs-build).
 docs-check:
-	cd docs && mdbook-linkcheck
+	uvx --from zensical zensical build --strict

@@ -1,0 +1,150 @@
+/* ============================================================================
+ * Guisu docs — extra CSS overrides on top of Zensical's 'material' theme.
+ *
+ * Two goals here:
+ *   1. Apply a Nord-inspired dark palette (Polar Night background, Snow Storm
+ *      text, Frost/Aurora accents) by overriding the data attribute tokens
+ *      that Zensical's theme sets on <html>.
+ *   2. Readability/typography tightening — code-line-height, body width,
+ *      table zebra-striping, subtle focus rings.
+ *
+ * Zensical emits e.g. <html data-md-color-primary="indigo" ... data-md-color-scheme="slate">,
+ * and its main.min.css reads them via [data-md-color-scheme="slate"] { ... } blocks.
+ * We piggyback on those selectors here without forking the bundle.
+ * ============================================================================ */
+
+/* --- Color tokens (Nord theme) ------------------------------------------- */
+/* Polar Night: #2e3440 #3b4252 #434c5e #4c566a
+ * Snow Storm:  #d8dee9 #e5e9f0 #eceff4
+ * Frost:       #8fbcbb #88c0d0 #81a1c1
+ * Aurora:      #bf616a #d08770 #ebcb8b #a3be8c #b48ead */
+
+:root {
+  --nord-primary:   #88c0d0;  /* Frost cyan/teal — links, primary */
+  --nord-accent:    #b48ead;  /* Aurora purple — accent / hover */
+  --nord-fg:        #eceff4;  /* Snow Storm white */
+  --nord-fg-muted:  #d8dee9;
+  --nord-bg:        #2e3440;  /* Polar Night deep */
+  --nord-bg-soft:   #3b4252;
+  --nord-bg-line:   #434c5e;
+  --nord-success:   #a3be8c;  /* Aurora green */
+  --nord-warning:   #ebcb8b;  /* Aurora yellow */
+  --nord-error:     #bf616a;  /* Aurora red */
+}
+
+/* --- Dark mode (Nord) --------------------------------------------------- */
+[data-md-color-scheme="slate"] {
+  --md-default-fg-color:           var(--nord-fg);
+  --md-default-fg-color--light:    var(--nord-fg-muted);
+  --md-default-fg-color--lighter:  #b6bcc7;
+  --md-default-fg-color--lightest: #98a0ac;
+  --md-default-bg-color:           var(--nord-bg);
+  --md-default-bg-color--light:    var(--nord-bg-soft);
+
+  --md-primary-fg-color:        var(--nord-primary);
+  --md-primary-fg-color--light: #a3c8d4;
+  --md-primary-fg-color--dark:  #7ea7b6;
+  --md-primary-bg-color:        var(--nord-bg);
+  --md-primary-bg-color--light: var(--nord-bg-soft);
+
+  --md-accent-fg-color:        var(--nord-accent);
+  --md-accent-fg-color--light: #c69bc8;
+  --md-accent-fg-color--dark:  #957394;
+  --md-accent-bg-color:        var(--nord-bg);
+  --md-accent-bg-color--light: var(--nord-bg-soft);
+
+  --md-code-fg-color:               var(--nord-fg);
+  --md-code-bg-color:               var(--nord-bg-soft);
+  --md-code-hl-color:               var(--nord-warning);  /* keywords */
+  --md-code-hl-attribute-color:     var(--nord-accent);
+  --md-code-hl-function-color:      var(--nord-primary);
+  --md-code-hl-number-color:        var(--nord-success);
+  --md-code-hl-string-color:        var(--nord-error);
+  --md-code-hl-comment-color:       #6b7280;
+  --md-code-hl-keyword-color:       var(--nord-accent);
+  --md-code-hl-special-color:       var(--nord-primary);
+  --md-code-hl-name-color:          var(--nord-fg);
+  --md-code-hl-variable-color:      var(--nord-fg-muted);
+
+  --md-typeset-color: var(--nord-fg-muted);
+
+  --md-default-bg-color--darker: var(--nord-bg);
+  --md-default-bg-color--transparent: rgba(46, 52, 64, 0);
+}
+
+/* Light mode — warmer "Nord Snow Storm" tints (vs the default crisp white) */
+[data-md-color-scheme="default"] {
+  --md-primary-fg-color:        #5e81ac;  /* Frost mid-blue, NT-style */
+  --md-primary-fg-color--light: #81a1c1;
+  --md-primary-fg-color--dark:  #4c6680;
+  --md-accent-fg-color:         #b48ead;  /* Aurora purple */
+  --md-accent-fg-color--light: #c69bc8;
+  --md-accent-fg-color--dark:  #957394;
+  --md-code-hl-color:            #d08770; /* Aurora orange — keywords */
+  --md-code-hl-function-color:   #5e81ac;
+  --md-code-hl-number-color:     #a3be8c;
+  --md-code-hl-string-color:     #bf616a;
+  --md-code-hl-comment-color:    #8b95a1;
+}
+
+/* --- Typography & spacing (both modes) ----------------------------------- */
+:root {
+  --md-text-font: "Inter", system-ui, -apple-system, sans-serif;
+  --md-code-font: "JetBrains Mono", ui-monospace, "SF Mono", monospace;
+}
+
+body {
+  font-feature-settings: "kern", "liga", "calt";   /* nicer typography */
+  text-rendering: optimizeLegibility;
+}
+
+/* A touch more breathing room inside <article> paragraphs */
+.md-typeset p {
+  line-height: 1.7;
+}
+
+/* Code blocks: a tighter feel; ensure long lines wrap instead of overflowing */
+.md-typeset pre > code,
+.md-typeset code {
+  line-height: 1.55;
+  font-size: 0.85em;
+  word-break: break-word;
+}
+
+/* Inline code matches the codebase font weight — less punchy than
+ * defaults so it doesn't draw too much attention mid-paragraph. */
+.md-typeset code:not(pre code) {
+  padding: 0.05em 0.4em;
+  font-weight: 400;
+}
+
+/* Heading hierarchy: clearer top-to-bottom weight cascade */
+.md-typeset h1 { font-weight: 700; }
+.md-typeset h2 { font-weight: 600; }
+.md-typeset h3 { font-weight: 600; }
+.md-typeset h4 { font-weight: 500; }
+
+/* Tables zebra-stripe even with material's default, more contrast */
+.md-typeset table:not([class]) tbody tr:nth-child(2n) {
+  background: rgba(127, 127, 127, 0.045);
+}
+[data-md-color-scheme="default"] .md-typeset table:not([class]) tbody tr:nth-child(2n) {
+  background: rgba(0, 0, 0, 0.04);
+}
+
+/* Sidebar nicer focus ring (accessibility) */
+.md-nav__link:focus-visible {
+  outline: 2px solid var(--md-accent-fg-color);
+  outline-offset: 2px;
+  border-radius: 2px;
+}
+
+/* Slightly nicer selection colour (use accent) */
+::selection {
+  background: var(--nord-accent);
+  color: var(--nord-bg);
+}
+[data-md-color-scheme="default"] ::selection {
+  background: rgba(180, 142, 173, 0.45);
+  color: inherit;
+}

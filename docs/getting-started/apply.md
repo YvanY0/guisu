@@ -66,4 +66,4 @@ For drift detection in CI, use `guisu verify` — it exits 1 on drift, 0 on a cl
 
 ## Next step
 
-Read the [User Guide](user-guide/file-attributes.md) for the file-attribute conventions, or jump to [Templates](user-guide/templates.md) if your dotfiles need environment-specific rendering.
+Read the [User Guide](../user-guide/file-attributes.md) for the file-attribute conventions, or jump to [Templates](../user-guide/templates.md) if your dotfiles need environment-specific rendering.

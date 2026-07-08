@@ -128,7 +128,7 @@ impl Command for ApplyCommand {
 
 ## Public surface stability
 
-The `guisu-cli` binary's command-line interface is stable. The library crates (`guisu-core`, `guisu-crypto`, `guisu-vault`, `guisu-template`, `guisu-config`, `guisu-engine`) are not yet API-stable; expect breaking changes before v1.0. See the [Roadmap](../roadmap.md) for the stabilisation timeline.
+The `guisu-cli` binary's command-line interface is stable. The library crates (`guisu-core`, `guisu-crypto`, `guisu-vault`, `guisu-template`, `guisu-config`, `guisu-engine`) are not yet API-stable; expect breaking changes before v1.0. The stabilisation timeline is currently tracked informally in `release-plz.toml`; a published Roadmap doc will land before v1.0.
 
 ## See also
 

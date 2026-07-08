@@ -1,0 +1,162 @@
+[project]
+site_name = "Guisu"
+site_description = "Documentation for the Guisu dotfile manager"
+# site_url drives canonical links and "View on GitHub" anchors. Left
+# empty so local `serve` (no base-path strip) and GitHub Pages deploys
+# (where Pages prepends /guisu/) both work without URL rewriting. Set
+# this to "https://YvanY0.github.io/guisu/" only before producing the
+# production Pages build (it impacts canonical <link> tags only).
+site_url = ""
+site_language = "en"
+
+repo_url = "https://github.com/YvanY0/guisu"
+repo_name = "guisu"
+edit_uri = "edit/main/docs"
+
+docs_dir = "docs"
+site_dir = "site"
+
+# Nord dark palette + readability tweaks. Path is relative to docs_dir.
+# The CSS overrides Material's CSS tokens via data-md-color-scheme selectors.
+extra_css = ["stylesheets/extra.css"]
+
+# Use the default modern theme variant (matches zensical.org demo since 0.0.47).
+# Modern variant renders the "lifted" sidebar style — no need to set `variant`.
+
+# Recommended feature set, matching zensical.org's own demo.
+features = [
+  "announce.dismiss",
+  "content.action.edit",
+  "content.code.copy",
+  "content.code.annotate",
+  "content.tabs.link",
+  "content.tooltips",
+  "content.footnote.tooltips",
+  "navigation.tabs",
+  "navigation.sections",
+  "navigation.indexes",
+  "navigation.top",
+  "navigation.footer",
+  "navigation.path",
+  "navigation.tracking",
+  "navigation.expand",
+  "navigation.instant",
+  "navigation.instant.prefetch",
+  "navigation.instant.progress",
+  "search.suggest",
+  "search.highlight",
+  "search.share",
+]
+
+nav = [
+  { "Introduction" = "index.md" },
+  { "Installation" = "installation.md" },
+  { "Getting Started" = [
+    { "init" = "getting-started/init.md" },
+    { "add" = "getting-started/add.md" },
+    { "apply" = "getting-started/apply.md" },
+  ] },
+  { "User Guide" = [
+    { "File Attributes" = "user-guide/file-attributes.md" },
+    { "Templates" = "user-guide/templates.md" },
+    { "Encryption" = "user-guide/encryption.md" },
+    { "Vault" = "user-guide/vault.md" },
+    { "Hooks" = "user-guide/hooks.md" },
+    { "Configuration" = "user-guide/config.md" },
+  ] },
+  { "Reference" = [
+    { "Commands" = "reference/commands.md" },
+    { "Template Functions" = "reference/template-functions.md" },
+    { "Configuration Reference" = "reference/configuration.md" },
+  ] },
+  { "Developer Guide" = [
+    { "Architecture" = "developer-guide/architecture.md" },
+    { "Three-State Model" = "developer-guide/three-state-model.md" },
+    { "Data Flow" = "developer-guide/data-flow.md" },
+    { "Crates" = "developer-guide/crates.md" },
+    { "Error Handling" = "developer-guide/error-handling.md" },
+    { "Contributing" = "developer-guide/contributing.md" },
+  ] },
+]
+
+[project.theme]
+language = "en"
+# `name: material` is the third theme variant in Zensical (alongside
+# `modern` and `classic`); it is the closest match to zensical.org's own
+# demo site (https://zensical.org/docs/get-started/) and inherits the
+# Material for MkDocs look-and-feel. We render the nav as **sidebar-only**
+# (no `navigation.tabs`) to match the layout used by j178/prek, which has a
+# comparable page count and benefits more from a single, scannable column
+# than from the top-bar section tabs zensical.org uses.
+name = "material"
+
+# Feature toggles — matched against zensical.org docs site's own config
+# (https://github.com/zensical/docs/blob/master/mkdocs.yml), which is the
+# canonical reference for "what modern Zensical UI looks like in 0.0.47".
+features = [
+  "announce.dismiss",
+  "content.action.edit",
+  "content.code.annotate",
+  "content.code.copy",
+  "content.footnote.tooltips",
+  "content.tabs.link",
+  "content.tooltips",
+  "navigation.footer",
+  "navigation.indexes",
+  "navigation.path",
+  "navigation.sections",
+  "navigation.top",
+  "search.highlight",
+] # Skipped from the demo: content.action.view, content.code.select (both
+# add buttons most code blocks don't need); navigation.expand (already
+# implicit in navigation.sections); search.suggest, search.share
+# (the demo doesn't enable them); navigation.instant + .prefetch +
+# .progress, navigation.tracking, navigation.side (the `material` variant
+# in Zensical 0.0.47 is the MkDocs Material template and uses its own
+# navigation defaults — instant features are off in the upstream demo).
+
+# 3-palette system with system-preference detection (matches zensical.org demo).
+[[project.theme.palette]]
+media = "(prefers-color-scheme)"
+toggle.icon = "lucide/sun-moon"
+toggle.name = "Switch to light mode"
+
+[[project.theme.palette]]
+media = "(prefers-color-scheme: light)"
+scheme = "default"
+primary = "indigo"
+accent = "indigo"
+toggle.icon = "lucide/sun"
+toggle.name = "Switch to dark mode"
+
+[[project.theme.palette]]
+media = "(prefers-color-scheme: dark)"
+scheme = "slate"
+primary = "indigo"
+accent = "orange"
+toggle.icon = "lucide/moon-star"
+toggle.name = "Switch to system preference"
+
+[project.theme.font]
+text = "Inter"
+code = "JetBrains Mono"
+
+[project.markdown_extensions.admonition]
+[project.markdown_extensions.attr_list]
+[project.markdown_extensions.def_list]
+[project.markdown_extensions.footnotes]
+[project.markdown_extensions.md_in_html]
+[project.markdown_extensions.meta]
+[project.markdown_extensions.tables]
+[project.markdown_extensions.toc]
+permalink = true
+[project.markdown_extensions.pymdownx.details]
+[project.markdown_extensions.pymdownx.superfences]
+[project.markdown_extensions.pymdownx.tabbed]
+alternate_style = true
+combine_header_slug = true
+[project.markdown_extensions.pymdownx.inlinehilite]
+[project.markdown_extensions.pymdownx.highlight]
+anchor_linenums = true
+line_spans = "__span"
+pygments_lang_class = true

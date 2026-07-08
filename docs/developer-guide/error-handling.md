@@ -1,6 +1,6 @@
 # Error Handling
 
-Guisu uses a two-tier error strategy, mirrored by [AGENTS.md](../../AGENTS.md) "Rules":
+Guisu uses a two-tier error strategy, mirrored by [AGENTS.md](https://github.com/YvanY0/guisu/blob/main/AGENTS.md) "Rules":
 
 1. **Libraries** (`guisu-core`, `guisu-crypto`, `guisu-engine`, …) — typed errors via `thiserror`. The error enum is `pub` and variants are matchable. Errors are converted to `anyhow::Error` at the boundary.
 2. **CLI** (`guisu-cli`) — `anyhow::Result` at the boundary. Library errors are converted via `?` and `.context(...)` is added at the call site.
@@ -83,4 +83,4 @@ Application code (`guisu-cli`) uses `anyhow::Context` and lets miette display th
 ## See also
 
 - [Contributing](contributing.md) — the rules for adding new errors.
-- [AGENTS.md](../../AGENTS.md) — the project-level rule "No bare `unwrap()` — use `?` with anyhow".
+- [AGENTS.md](https://github.com/YvanY0/guisu/blob/main/AGENTS.md) — the project-level rule "No bare `unwrap()` — use `?` with anyhow".

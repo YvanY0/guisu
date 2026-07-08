@@ -46,4 +46,4 @@ This creates a new directory, initialises git inside it, and writes a starter `.
 
 ## Next step
 
-[Getting Started — add](getting-started/add.md).
+[Getting Started — add](add.md).
