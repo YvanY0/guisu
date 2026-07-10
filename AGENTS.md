@@ -31,6 +31,10 @@ Subsystem rules: `crates/core/AGENTS.md` (foundation), `crates/crypto/AGENTS.md`
 
 **Never delete user state files**. The persistent state DB at `${XDG_STATE_HOME:-~/.local/state}/guisu/state.db` (and `~/.guisu/state.toml`) is durable user data — it records which hooks have run, content hashes, and three-state reconciliation history. Deleting it silently loses that history (e.g. `mode=once` hooks will re-run, source→dest drift detection forgets prior state). Do not `rm` these files even when debugging; reload from source to reset only when the user explicitly asks.
 
+## Committing and signing
+
+All commits must use `git commit -s -S` with `Signed-off-by:` matching your real `user.name`/`user.email`; if signing is unavailable, stop and ask the user to commit for you — never inject fake trailers or bypass with `--no-gpg-sign`/`--no-verify`.
+
 ## Loop completion
 
 A code change is not done until all of these pass:
