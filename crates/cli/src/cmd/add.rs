@@ -1070,8 +1070,8 @@ mod tests {
         assert_eq!(vars.len(), 4);
 
         let names: Vec<_> = vars.iter().map(|v| v.path.as_str()).collect();
-        assert!(names.iter().filter(|&&n| n == "name").count() == 2);
-        assert!(names.iter().filter(|&&n| n == "email").count() == 2);
+        assert_eq!(names.iter().filter(|&&n| n == "name").count(), 2);
+        assert_eq!(names.iter().filter(|&&n| n == "email").count(), 2);
     }
 
     #[test]
@@ -1090,9 +1090,9 @@ mod tests {
         assert_eq!(vars.len(), 6);
 
         let paths: Vec<_> = vars.iter().map(|v| v.path.as_str()).collect();
-        assert!(paths.iter().filter(|&&p| p == "user.name").count() == 2);
-        assert!(paths.iter().filter(|&&p| p == "user.email").count() == 2);
-        assert!(paths.iter().filter(|&&p| p == "system.os").count() == 2);
+        assert_eq!(paths.iter().filter(|&&p| p == "user.name").count(), 2);
+        assert_eq!(paths.iter().filter(|&&p| p == "user.email").count(), 2);
+        assert_eq!(paths.iter().filter(|&&p| p == "system.os").count(), 2);
     }
 
     #[test]
