@@ -33,7 +33,7 @@ Subsystem rules: `crates/core/AGENTS.md` (foundation), `crates/crypto/AGENTS.md`
 
 ## Committing and signing
 
-All commits must use `git commit -s -S` with `Signed-off-by:` matching your real `user.name`/`user.email`; if signing is unavailable, stop and ask the user to commit for you — never inject fake trailers or bypass with `--no-gpg-sign`/`--no-verify`.
+Use `git commit -s -S`. Never inject fake `Signed-off-by:` trailers or bypass with `--no-gpg-sign`/`--no-verify`; if signing fails, stop and ask the user to commit for you.
 
 ## Loop completion
 
