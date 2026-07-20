@@ -1517,7 +1517,7 @@ dependencies = [
 
 [[package]]
 name = "guisu"
-version = "0.2.6"
+version = "0.2.7"
 dependencies = [
  "anyhow",
  "assert_cmd",
@@ -1567,7 +1567,7 @@ dependencies = [
 
 [[package]]
 name = "guisu-config"
-version = "0.2.6"
+version = "0.2.7"
 dependencies = [
  "dirs",
  "guisu-core",
@@ -1585,7 +1585,7 @@ dependencies = [
 
 [[package]]
 name = "guisu-core"
-version = "0.2.6"
+version = "0.2.7"
 dependencies = [
  "anyhow",
  "git2",
@@ -1598,7 +1598,7 @@ dependencies = [
 
 [[package]]
 name = "guisu-crypto"
-version = "0.2.6"
+version = "0.2.7"
 dependencies = [
  "age",
  "base64",
@@ -1613,7 +1613,7 @@ dependencies = [
 
 [[package]]
 name = "guisu-engine"
-version = "0.2.6"
+version = "0.2.7"
 dependencies = [
  "bitflags 2.13.1",
  "blake3",
@@ -1647,7 +1647,7 @@ dependencies = [
 
 [[package]]
 name = "guisu-template"
-version = "0.2.6"
+version = "0.2.7"
 dependencies = [
  "blake3",
  "chrono",
@@ -1679,7 +1679,7 @@ dependencies = [
 
 [[package]]
 name = "guisu-vault"
-version = "0.2.6"
+version = "0.2.7"
 dependencies = [
  "guisu-core",
  "indexmap",

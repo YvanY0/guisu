@@ -7,6 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.2.7](https://github.com/YvanY0/guisu/compare/v0.2.6...v0.2.7) - 2026-07-20
+
+### Other
+
+- update Cargo.lock dependencies
+- update Cargo.toml dependencies
+
 ## [0.2.6](https://github.com/YvanY0/guisu/compare/v0.2.5...v0.2.6) - 2026-07-13
 
 ### Fixed
