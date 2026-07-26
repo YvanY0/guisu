@@ -74,6 +74,10 @@ fn map_decrypt_error(e: age::DecryptError) -> Error {
 
         // I/O errors (pass through)
         age::DecryptError::Io(io_err) => Error::Io(io_err),
+
+        // `DecryptError` is #[non_exhaustive]; surface any future/unhandled
+        // variant (e.g. plugin errors we don't enable) with its own message.
+        other => Error::Age(other.to_string()),
     }
 }
 
