@@ -100,7 +100,7 @@ vergen-git2 = { version = "10.0", features = ["build"] }
 assert_cmd = "2.2"
 assert_fs = "1.1"
 predicates = "3.1"
-serial_test = "3.5"
+serial_test = "4.0"
 temp-env = "0.3"
 
 criterion = { version = "0.8", features = ["html_reports"] }
