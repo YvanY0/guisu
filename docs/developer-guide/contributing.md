@@ -6,7 +6,7 @@ Thanks for your interest in contributing. Guisu is pre-1.0; expect breaking API 
 
 > [!WARNING]
 > **Update docs in the same PR**
-> Every PR that adds or changes a user-facing command, flag, config key, file-attribute convention, template function, or hook mode must update the relevant page under `docs/src/{user-guide,reference}/` in the same PR. The PR template (below) has a matching checklist.
+> Every PR that adds or changes a user-facing command, flag, config key, file-attribute convention, template function, or hook mode must update the relevant page under `docs/{user-guide,reference}/` in the same PR. The PR template (below) has a matching checklist.
 
 
 
@@ -17,7 +17,7 @@ Checklist before opening a PR:
 - [ ] If the PR adds a config key, update [Reference — Configuration](../reference/configuration.md) with type, default, and notes.
 - [ ] If the PR changes file-attribute behaviour, update [User Guide — File Attributes](../user-guide/file-attributes.md).
 - [ ] If the PR changes hook semantics, update [User Guide — Hooks](../user-guide/hooks.md).
-- [ ] If the PR changes the CLI global flags (`--source`, `--dest`, `--config`, `--log-file`, `--color`, `--progress`), update [Reference — Commands](../reference/commands.md).
+- [ ] If the PR changes the CLI global flags (`--source`, `--dest`, `--config`, `--log-file`, `--verbose`), update [Reference — Commands](../reference/commands.md).
 - [ ] If the PR adds a new shell or installer integration (e.g. extending `guisu completion`), update [README — Shell completion](https://github.com/YvanY0/guisu/blob/main/README.md#shell-completion) with install instructions for the new shell.
 - [ ] If the PR fixes a user-visible bug that previously diverged between commands (e.g. `diff` and `apply` reporting different file sets, or non-deterministic output order), document the corrected behaviour in the relevant getting-started / user-guide page so users can trust the docs again. Bug-fix PRs are not exempt from the "update docs in the same PR" rule above.
 
@@ -40,10 +40,26 @@ Recommended tools:
 - `pre-commit` — see `.pre-commit-config.yaml`. Install once with `pre-commit install`.
 - `cargo-nextest` — faster test runner (`cargo nextest run`).
 
+## CI & local hooks
+
+- `.github/workflows/rust.yml` runs `cargo fmt`/`check`/`clippy`/`test`/`deny`/`outdated`. It auto-skips on PRs that don't touch Rust files.
+- `.pre-commit-config.yaml` runs local lint hooks (taplo, gitleaks, typos, commitlint) on the `pre-commit` stage and cargo `fmt`/`clippy`/`check`/`test`/`deny` on the `pre-push` stage. Run from a terminal via `prek` or `pre-commit`.
+- `.claude/settings.json` has a PostToolUse hook (on `Edit`/`Write` to `*.rs`) that runs `rustfmt` to auto-format saved files.
+
+## Signing commits
+
+`git commit` must include both `-s` (DCO `Signed-off-by:`) and `-S` (GPG or SSH signature). Don't commit without them; don't bypass with `--no-gpg-sign`/`--no-verify`. If signing fails, stop and ask the user to commit for you.
+
+Tip: in `~/.gitconfig`, set `[commit] gpgsign = true` and `signoff = true` so git injects `-s` and `-S` automatically on every commit.
+
+## Docs site tooling
+
+**Zensical 0.0.47** (Python, Material-fork `material` theme variant). Configured via `zensical.toml` at the repo root — the `nav` block there is the source of truth for site navigation. Version pinned in `requirements.txt`. Local dev via `uvx` (no global install) or `uv tool install -r requirements.txt` (one-time). Justfile recipes: `docs-install`, `docs-build`, `docs-serve`, `docs-check`.
+
 ## Pull request process
 
 1. Branch from `main`. Use a short descriptive prefix: `feat/...`, `fix/...`, `docs/...`, `refactor/...`.
-2. Commit with `-s` and `-S` (DCO + GPG/SSH signature). The repo enforces both. See `.claude/rules/committing.md` (auto-loaded when you touch `.github/workflows/**` or `.pre-commit-config.yaml`).
+2. Commit with `-s` and `-S` (DCO + GPG/SSH signature). The repo enforces both — see [Signing commits](#signing-commits) above.
 3. Run the build & verify commands above. They must all pass.
 4. Open a PR with a clear title and a short description of the change. Reference any related issues.
 5. Address review feedback. Squash-merge is preferred for a linear history.
@@ -82,7 +98,7 @@ How was this tested?
 - Use newtype paths (`AbsPath`, `RelPath`), not raw `PathBuf`.
 - Use `?` with `.context(...)` in the CLI, not bare `unwrap()`. Library errors use `thiserror`; see [Error Handling](error-handling.md).
 - For new template functions, follow the existing per-category layout in `crates/template/src/functions/`. One file per category; one function per `pub fn` with a doctest.
-- For new vault providers, implement `SecretProvider` in `crates/vault/src/`. See the `add-vault-provider` skill for the full checklist.
+- For new vault providers, implement `SecretProvider` in `crates/vault/src/`. See [vault/AGENTS.md](https://github.com/YvanY0/guisu/blob/main/crates/vault/AGENTS.md) for the full checklist.
 
 ## Adding a new subcommand
 

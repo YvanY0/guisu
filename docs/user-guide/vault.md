@@ -38,7 +38,7 @@ The vault layer caches the response for the duration of a single `apply`. If you
 
 ## Adding a new provider
 
-See the `add-vault-provider` skill in the repository. New providers implement the `SecretProvider` trait in `guisu-vault`:
+New providers implement the `SecretProvider` trait in `guisu-vault` (see [crates/vault/AGENTS.md](https://github.com/YvanY0/guisu/blob/main/crates/vault/AGENTS.md) for the full checklist):
 
 ```rust
 pub trait SecretProvider: Send + Sync {

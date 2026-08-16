@@ -27,7 +27,7 @@ Each category gets its own file with one or more `pub fn` definitions, **each wi
 
 ## Rules
 
-- **One file per category, one `pub fn` per function, doctest required.** The `add-template-function` skill enforces this; if you find yourself adding a second function to a file, split it.
+- **One file per category, one `pub fn` per function, doctest required.** If you find yourself adding a second function to a file, split it.
 - **Vault / crypto functions are feature-gated or guarded by provider availability** — never panic on missing backend. Return `Result` and let the caller decide.
 - **`secrecy::Secret` values are exposed as opaque** to templates — `vault()` returns `String` after unwrapping, but raw key material must not leak into the template context.
 - **Globals are registered in `engine.rs`**, not at call sites. Don't add a function by registering it lazily inside `context.rs`.
@@ -38,6 +38,4 @@ Each category gets its own file with one or more `pub fn` definitions, **each wi
 1. Pick the category file (or create a new one if the function doesn't fit existing categories).
 2. Add `pub fn your_name(...) -> ...` with a `///` doctest showing a worked example.
 3. Register the function in `engine.rs` (and any necessary context fields in `context.rs`).
-4. Add a row to `docs/src/reference/template-functions.md` — see contributing.md checklist.
-
-Full checklist: `add-template-function` skill.
+4. Add a row to `docs/reference/template-functions.md` — see contributing.md checklist.

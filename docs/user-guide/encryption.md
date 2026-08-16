@@ -30,7 +30,7 @@ When `derive = true`, Guisu uses the SSH public key as an age recipient. You can
 guisu add --encrypt ~/.ssh/id_rsa
 ```
 
-The source file is `id_rsa.age` (ASCII-armored). On apply, it is decrypted to `~/.ssh/id_rsa` with mode `0600`, because Guisa infers the `private_` prefix from the destination path `.ssh/...`.
+The source file is `id_rsa.age` (ASCII-armored). On apply, it is decrypted to `~/.ssh/id_rsa`. The destination mode is the source file's own mode — `chmod 600` the `.age` file in the source repo and `apply` propagates `0600` to the destination (see [File Attributes](file-attributes.md#file-permissions)).
 
 ## Edit an encrypted file
 

@@ -60,13 +60,10 @@ When a hook is invoked, the following variables are set:
 
 | Variable | Value |
 | --- | --- |
-| `GUISU_SOURCE_DIR` | Absolute path to the source repo |
-| `GUISU_DEST_DIR` | Absolute path to the destination root |
-| `GUISU_WORKING_TREE` | Path of the dotfiles working tree |
-| `GUISU_PHASE` | `pre` or `post` |
-| `GUISU_MODE` | `always`, `once`, or `onchange` |
-| `GUISU_SCRIPT` | Absolute path to the script being run |
-| `GUISU_TARGET` | (modify_ files only) The destination path the script should modify |
+| `GUISU_SOURCE` | Absolute path to the source repo |
+| `HOME` | The current user's home directory |
+
+Hook scripts also inherit the parent shell's environment. Hook phase (`pre`/`post`) and mode (`always`/`once`/`onchange`) are configuration, not exposed to scripts as environment variables.
 
 ## See also
 

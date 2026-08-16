@@ -101,6 +101,7 @@ The three-state model and the apply loop. The largest crate by line count.
 | `hash.rs` | BLAKE3 helpers. |
 | `system.rs` | Platform-specific destination state reads. |
 | `validator.rs` | Cross-state validation. |
+| `verify.rs` | Per-entry drift detection between target and destination; shared comparison primitive for `apply`/`verify`. |
 | `git.rs` | In-process git operations (init, fetch, merge) using `git2`. |
 | `hooks/` | Pre/post/once/onchange hook discovery and execution. |
 | `adapters/` | Alternative implementations (e.g. for tests). |
@@ -112,7 +113,7 @@ Binary + library. The binary entry point is `src/main.rs`, which delegates to `g
 | Module | What it contains |
 | --- | --- |
 | `lib.rs` | `Cli` (clap derive) and `Commands` enum. |
-| `cmd/` | One file per subcommand: `add.rs`, `age.rs`, `apply.rs`, `cat.rs`, `diff.rs`, `edit.rs`, `hooks.rs`, `ignored.rs`, `info.rs`, `init.rs`, `status.rs`, `templates.rs`, `update.rs`, `variables.rs`. |
+| `cmd/` | One file per subcommand: `add.rs`, `age.rs`, `apply.rs`, `cat.rs`, `diff.rs`, `edit.rs`, `hooks.rs`, `ignored.rs`, `info.rs`, `init.rs`, `status.rs`, `templates.rs`, `update.rs`, `variables.rs`, `verify.rs`. |
 | `command.rs` | The `Command` trait implemented by every subcommand. |
 | `common.rs` | `RuntimeContext` — shared state (config, paths, etc.) passed to every command. |
 | `conflict.rs` | The interactive conflict TUI. |

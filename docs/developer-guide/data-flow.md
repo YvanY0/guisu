@@ -6,7 +6,7 @@ This page traces the major commands through the layers. Each flow is the same sh
 
 The core command. Materialises source into destination. The flow is:
 
-1. **Parse CLI args** — `--interactive`, `--dry-run`, `--include`, `--exclude`, source/destination overrides.
+1. **Parse CLI args** — `--interactive`, `--dry-run`, `--force`, source/destination overrides.
 2. **Load `.guisu.toml`** + any platform-specific variable files; merge them.
 3. **Load age identities** from the configured identity files (age keys or SSH keys).
 4. **Build the template engine** and a context populated with system info, guisu metadata, and user variables.
@@ -42,8 +42,6 @@ Steps 5 and 6 use rayon for parallel processing. Steps 8 and 9 are sequential so
 3. If `--encrypt` was passed, encrypt the content and append `.age` as the suffix. `--template` instead appends `.j2`. Otherwise the file is used as-is.
 4. Copy the (possibly transformed) file to the source directory, preserving metadata.
 5. Run `git add` on the resulting source path.
-
-`--private` and `--executable` do not change the file's location, only the attributes Guisa applies on the next apply.
 
 ## `guisu update`
 

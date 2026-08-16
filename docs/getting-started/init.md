@@ -9,10 +9,10 @@ guisu init username                       # shorthand for github.com/username/do
 guisu init https://github.com/username/dotfiles.git
 guisu init --ssh username                 # use SSH instead of HTTPS
 guisu init --depth 1 username             # shallow clone (faster, no history)
-guisu init --no-apply username            # clone but do not apply yet
+guisu init --apply username              # clone and apply in one step
 ```
 
-`guisu init` clones into the source directory (default `~/.local/share/guisu`) and then runs `guisu apply`. On the first run, apply uses interactive mode by default so you can review the changes before they land in your home directory.
+`guisu init` clones into the source directory (default `~/.local/share/guisu`). It does **not** apply automatically — pass `--apply` to materialise the files in the same step, or run `guisu apply` afterward. Use `guisu apply --interactive` to review each change before it lands in your home directory.
 
 ## Initialise a brand-new local repository
 

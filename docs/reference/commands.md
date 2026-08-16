@@ -36,7 +36,7 @@ guisu init [PATH_OR_REPO] [FLAGS]
 
 | Flag | Effect |
 | --- | --- |
-| --apply / -a | Apply changes after initialisation (default behaviour for cloned repos). |
+| --apply / -a | Apply changes after initialisation (off by default). |
 | --depth N | Shallow clone with the given commit depth. |
 | --branch NAME | Clone the specified branch. |
 | --ssh | Use SSH instead of HTTPS when guessing the GitHub URL. |
@@ -52,13 +52,12 @@ guisu add PATH... [FLAGS]
 
 | Flag | Effect |
 | --- | --- |
-| --encrypt | Store the file as name.age in the source. |
-| --template | Store the file as name.j2 for Jinja rendering. |
-| --private | Force mode 0600 (or 0700 for directories). |
-| --executable | Force mode 0755. |
-| --exact | Preserve the source filename as-is; do not infer attributes. |
-| --force | Overwrite an existing source entry. |
-| --no-git | Skip the git add step. |
+| `--encrypt`, `-E` | Encrypt the file with age; store as `name.age`. |
+| `--template`, `-t` | Store the file as `name.j2` for Jinja rendering. |
+| `--autotemplate`, `-a` | Auto-detect template variables; store as `name.j2` (implies `--template`). |
+| `--create`, `-c` | Create-once: only copy if the destination doesn't already exist. |
+| `--force`, `-f` | Overwrite an existing source entry. |
+| `--secrets {ignore\|warning\|error}` | How to handle files containing secrets (default `warning`). |
 
 ### guisu apply
 
@@ -68,12 +67,9 @@ guisu apply [PATH]... [FLAGS]
 
 | Flag | Effect |
 | --- | --- |
-| --dry-run | Show planned changes without writing. |
-| --force | Overwrite destination without prompting. |
-| --interactive | Open the TUI for every conflict. |
-| --include PATTERN | Only apply files matching the pattern. |
-| --exclude PATTERN | Skip files matching the pattern. |
-| --no-apply | (Used by init.) Skip the apply step. |
+| `--dry-run`, `-n` | Show planned changes without writing. |
+| `--force`, `-f` | Overwrite destination without prompting. |
+| `--interactive`, `-i` | Open the TUI for every conflict. |
 
 ### guisu diff
 
@@ -81,7 +77,7 @@ guisu apply [PATH]... [FLAGS]
 guisu diff [PATH]... [FLAGS]
 ```
 
-Shows a unified diff between target and destination. Honours --include / --exclude and the same source/destination overrides as apply.
+Shows a unified diff between target and destination. Honours the same source/destination overrides as apply.
 
 ### guisu status
 
@@ -154,8 +150,7 @@ Metadata::remove paths. Hooks and scripts are skipped in v1 — run
 guisu status if you also need to check hook source drift. To see
 *what* drifted, run guisu diff.
 
-guisu verify always recurses into all managed entries; there is no
-flag to limit recursion.
+`guisu verify` recurses into all managed entries; it does not limit recursion depth. Use `--include`/`--exclude` to filter which entry types are checked.
 
 PATHS accepts both chezmoi-style absolute paths (~/.bashrc) and
 dest-relative paths (.bashrc, foo/bar); both are normalised
@@ -165,8 +160,8 @@ with an error.
 
 | Flag | Effect |
 | --- | --- |
-| -x, --exclude TYPES | Exclude entry types (comma-separated: dirs,files,symlinks,remove). |
-| -i, --include TYPES | Include only these entry types. Default: dirs,files,symlinks,remove. |
+| `--exclude TYPES` | Exclude entry types (comma-separated: `dirs,files,symlinks,remove`). |
+| `--include TYPES` | Include only these entry types. Default: `dirs,files,symlinks,remove`. |
 
 --include and --exclude are mutually exclusive; combining them
 errors out.
@@ -253,9 +248,8 @@ Most top-level commands accept:
 
 | Flag | Effect |
 | --- | --- |
-| --source DIR | Override the source directory. Also reads GUISU_SOURCE_DIR. |
-| --dest DIR | Override the destination directory. Also reads GUISU_DEST_DIR. |
-| --config FILE | Override the config file path. Also reads GUISU_CONFIG. |
-| --log-file FILE | Mirror logs to this file. Also reads GUISU_LOG_FILE. |
-| --color WHEN | auto / always / never. |
-| --progress WHEN | auto / always / never. |
+| `--source DIR` | Override the source directory. Also reads `GUISU_SOURCE_DIR`. |
+| `--dest DIR` | Override the destination directory. Also reads `GUISU_DEST_DIR`. |
+| `--config FILE` | Override the config file path. Also reads `GUISU_CONFIG`. |
+| `--log-file FILE` | Mirror logs to this file. Also reads `GUISU_LOG_FILE`. |
+| `--verbose`, `-v` | Show debug-level logs. |

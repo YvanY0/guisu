@@ -45,14 +45,14 @@ Read row-by-row:
 | --- | --- |
 | `state.rs` | `SourceState`, `TargetState`, `DestinationState`, `PersistentState` trait, redb-backed implementation. |
 | `entry.rs` | `SourceEntry`, `TargetEntry`, `DestEntry`, `EntryKind` enums. |
-| `attr.rs` | `FileAttributes` (bitflags: DOT, PRIVATE, READONLY, EXECUTABLE, TEMPLATE, ENCRYPTED). |
+| `attr.rs` | `FileAttributes` (plain struct: `is_template`, `is_encrypted`, `mode`). |
 | `content.rs` | The raw byte pipeline: read, decrypt, render. |
 | `processor.rs` | `ContentProcessor<D, R>` — generic decrypt + render pipeline. |
 | `database.rs` | redb table definitions. |
 | `hash.rs` | BLAKE3 helpers. |
-| `modify.rs` | In-place modification of `modify_*` files. |
 | `system.rs` | Platform-specific destination state reads. |
 | `validator.rs` | Cross-state validation (e.g. is the source well-formed?). |
+| `verify.rs` | Per-entry drift detection between target and destination; shared comparison primitive for `apply`/`verify`. |
 | `git.rs` | In-process git operations (init, fetch, merge) using `git2`. |
 | `hooks/` | Pre/post/once/onchange hook discovery and execution. |
 | `adapters/` | Adapters to alternative implementations (e.g. an HTTP-based `SourceState` reader for tests). |

@@ -1,50 +1,62 @@
 # Guisu
 
-Rust dotfile manager. Three-state model: Source → Target → Destination.
+Rust dotfile manager. Three-state model: **Source → Target → Destination**
+(see [three-state-model](docs/developer-guide/three-state-model.md)).
 
-## Build & Verify
+## Build & verify
 
 ```bash
 cargo check --workspace && cargo test --workspace && cargo clippy --workspace -- -D warnings && cargo fmt -- --check
 ```
 
-Also via `just`: `just clippy`, `just test`, `just build`, `just fmt`.
+`just` aliases: `just clippy`, `just test`, `just build`, `just fmt`.
+Docs-only changes may skip the cargo checks.
 
-- Complex logic → write `#[test]` first
-- Bug fix → write test first, then fix
-- Simple change → tests not required
+## Where things live
 
-## Rules
+- Architecture & data flow — [architecture](docs/developer-guide/architecture.md),
+  [three-state-model](docs/developer-guide/three-state-model.md),
+  [data-flow](docs/developer-guide/data-flow.md),
+  [error-handling](docs/developer-guide/error-handling.md),
+  [crates](docs/developer-guide/crates.md)
+- Per-crate guidance — `crates/{core,crypto,vault,config,template,engine,cli}/AGENTS.md`
+- Contributing, CI, docs tooling — [contributing](docs/developer-guide/contributing.md)
 
-- No bare `unwrap()` — use `?` with anyhow
-- Use newtype paths: `AbsPath`/`RelPath`, never raw `PathBuf`
-- Add context to errors with `anyhow::Context`
-- Look for existing utilities first
-- Don't narrate code — well-named identifiers self-document
-- Three similar lines > premature abstraction
+Read the per-crate `AGENTS.md` before editing that crate.
 
-Subsystem rules: `crates/core/AGENTS.md` (foundation), `crates/crypto/AGENTS.md`, `crates/vault/AGENTS.md`, `crates/config/AGENTS.md`, `crates/template/AGENTS.md`, `crates/engine/AGENTS.md`, `crates/cli/AGENTS.md`.
+## Hard invariants
 
-## Scope
+- No bare `unwrap()` — use `?` with anyhow.
+- Newtype paths: `AbsPath`/`RelPath`, never raw `PathBuf`.
+- Add context to errors with `anyhow::Context`.
+- Look for existing utilities before adding new ones.
 
-**Ask first**: delete files, modify CI/CD, change settings, force-push
+## Tests
 
-**Never delete user state files**. The persistent state DB at `${XDG_STATE_HOME:-~/.local/state}/guisu/state.db` (and `~/.guisu/state.toml`) is durable user data — it records which hooks have run, content hashes, and three-state reconciliation history. Deleting it silently loses that history (e.g. `mode=once` hooks will re-run, source→dest drift detection forgets prior state). Do not `rm` these files even when debugging; reload from source to reset only when the user explicitly asks.
+Complex logic → write `#[test]` first. Bug fix → test first, then fix.
+Simple change → tests not required.
 
-## Committing and signing
+## Scope — ask first
 
-Use `git commit -s -S`. Never inject fake `Signed-off-by:` trailers or bypass with `--no-gpg-sign`/`--no-verify`; if signing fails, stop and ask the user to commit for you.
+Deleting files, modifying CI/CD, changing settings, or force-pushing: confirm first.
 
-## Loop completion
+**Never delete user state.** The state DB at
+`${XDG_STATE_HOME:-~/.local/state}/guisu/state.db` (and `~/.guisu/state.toml`)
+is durable user data — it records hook history, content hashes, and three-state
+reconciliation. Deleting it silently loses history (e.g. `mode=once` hooks
+re-run, drift detection forgets prior state). Reload from source to reset only
+when the user explicitly asks.
 
-A code change is not done until all of these pass:
+## Committing
 
-- `cargo fmt -- --check`
-- `cargo clippy --workspace -- -D warnings`
-- `cargo test --workspace` (skip for docs-only changes)
+`git commit -s -S`. No fake `Signed-off-by:` trailers, no
+`--no-gpg-sign`/`--no-verify`; if signing fails, stop and ask the user to commit
+for you. Details: [contributing](docs/developer-guide/contributing.md).
 
-The three cargo checks are only required when the change can affect the build — any `.rs` file, `Cargo.toml`, `Cargo.lock`, `.cargo/config.toml`, or similar. Pure docs/config/script edits (`.md`, `.sh`, non-Cargo `.toml`/`.yaml`/`.json`) can skip them.
+## When done
 
-User-facing changes also need `developer-guide/contributing.md` "Documentation" checklist satisfied.
-
-Pick the right iteration pattern before editing — see `.claude/rules/loop-patterns.md` (auto-loaded on Rust paths).
+Before claiming complete: `cargo fmt -- --check`,
+`cargo clippy --workspace -- -D warnings`, `cargo test --workspace`
+(skip for docs-only). Don't `#[ignore]` a test or `#[allow]` a lint to
+make checks pass — fix the cause. User-facing changes also satisfy the
+[contributing "Documentation" checklist](docs/developer-guide/contributing.md).

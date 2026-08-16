@@ -10,7 +10,6 @@ guisu apply --dry-run       # show what would change, do not write
 guisu apply --interactive   # prompt for conflicts in a TUI
 guisu apply --force         # overwrite destination without asking
 guisu apply path1 path2     # apply only specific paths
-guisu apply --include 'dot_*' --exclude '*.tmp'
 ```
 
 ## How status is determined

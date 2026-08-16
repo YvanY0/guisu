@@ -52,7 +52,7 @@ removing subcommands does not require any manual maintenance.
 ## Documentation
 
 Full documentation is at <https://yvany0.github.io/guisu/> and lives in
-`docs/src/` of this repository.
+`docs/` of this repository.
 
 - [User Guide](https://yvany0.github.io/guisu/user-guide/file-attributes.html) —
   file attributes, templates, encryption, vault, hooks, config
@@ -66,7 +66,7 @@ Full documentation is at <https://yvany0.github.io/guisu/> and lives in
 Implemented: file/dir/symlink management, minijinja templates, age encryption,
 git integration, interactive conflict resolution TUI, redb state tracking,
 parallel processing, platform-specific config, Bitwarden integration, hooks
-system, modify/remove file types.
+system, removal directives via `state.toml`.
 
 Not yet: external resources, create-only files, password managers beyond
 Bitwarden, full template function parity with chezmoi. See the

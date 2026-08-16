@@ -48,3 +48,34 @@ checks). To add new entry types:
 3. Handle the variant in `TargetState::from_source()` in `state.rs`.
 4. Handle it in `apply_target_entry()` in `apply.rs` (CLI).
 5. Add tests in the same file.
+
+## Testing
+
+Use the in-repo test doubles — never the real `RedbPersistentState` or `std::fs`:
+
+| Tool | Location | Purpose |
+|------|----------|---------|
+| `MockPersistentState` | `engine/src/state.rs` | In-memory DB, no real redb |
+| `TempDir` | `tempfile` crate | Auto-cleanup temp dirs |
+| `NoOpDecryptor` | `engine/src/content.rs` | Skip encryption in tests |
+| `NoOpRenderer` | `engine/src/content.rs` | Skip template rendering in tests |
+| `NoOpProcessor` | `engine/src/content.rs` | Type alias for the above |
+
+Pattern: build a `TempDir`, a `MockPersistentState`, and a `RealSystem` (or `DryRunSystem`), then drive the pipeline through the `System` + `PersistentState` traits.
+
+## Debugging state
+
+Read the three states with:
+
+```bash
+guisu status            # per-file state code
+guisu diff              # content differences between states
+guisu info --all        # config, identities, DB status
+```
+
+Common `status` codes and causes:
+
+- **Behind** — destination changed outside guisu, or the state DB is stale. `guisu diff` shows what diverged; re-sync via `apply`, or re-add the source.
+- **Conflict** — both source and destination changed since the last apply. Resolve, then re-add.
+
+State lives in redb at `${XDG_STATE_HOME:-~/.local/state}/guisu/state.db`. **Never delete it to "reset"** — that silently loses hook history and drift detection (see AGENTS.md "Never delete user state"). Reload from source instead, and only when the user explicitly asks.
