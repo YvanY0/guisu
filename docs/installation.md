@@ -27,9 +27,22 @@ The `info` command prints the resolved source directory, working tree, and desti
 
 !!! tip "Check the source dir"
 
-    `guisu info` will print the **resolved** source dir, which is `.` if you run it inside a source repo, or `~/.local/share/guisu` if you do not. If the resolved value is not what you expect, fix it with `guisu init` or by setting `[general] src_dir` in your `.guisu.toml`.
+    `guisu info` will print the **resolved** source dir, which is `.` if you run it inside a source repo, or `~/.local/share/guisu` if you do not. If the resolved value is not what you expect, fix it with `guisu init` or by setting `[general] srcDir` in your `.guisu.toml`.
 
+## Shell completion
 
+Load the completion script for your shell with `eval`:
+
+```sh
+eval "$(guisu completion zsh)"   # zsh
+eval "$(guisu completion bash)"  # bash
+eval "$(guisu completion fish)"  # fish
+```
+
+This works immediately but does not persist across shells. To make it permanent,
+add the matching line to `~/.zshrc`, `~/.bashrc`, or `~/.config/fish/config.fish`
+respectively. The script is generated from the clap derive tree, so adding or
+removing subcommands requires no manual maintenance.
 
 ## Next step
 
