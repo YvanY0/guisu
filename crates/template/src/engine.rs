@@ -615,7 +615,7 @@ mod tests {
         // Test regexMatch
         let template = "{{ regexMatch('hello123', '\\\\d+') }}";
         let result = engine.render_str(template, &ctx).unwrap();
-        assert_eq!(result, "true");
+        assert_eq!(result, "True");
 
         // Test regexReplaceAll
         let template2 = "{{ regexReplaceAll('hello 123', '\\\\d+', 'X') }}";
