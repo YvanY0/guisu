@@ -36,10 +36,10 @@ Secret provider abstraction over password-manager CLIs.
 
 ```rust
 pub trait SecretProvider: Send + Sync {
-    fn name(&self) -> &str;
+    fn name(&self) -> &'static str;
     fn is_available(&self) -> bool;
     fn execute(&self, args: &[&str]) -> Result<serde_json::Value>;
-    fn help(&self) -> &str;
+    fn help(&self) -> &'static str;
 }
 ```
 
@@ -48,7 +48,7 @@ pub trait SecretProvider: Send + Sync {
 | `bw.rs` | `BwCli` (Bitwarden CLI) and `RbwCli` (unofficial Rust Bitwarden CLI). |
 | `bws.rs` | `BwsCli` (Bitwarden Secrets). |
 
-The cache lives in `guisu-template` (per-`apply`), not here.
+The cache lives in `guisu-template` (process-lifetime singleton — one `apply` is one process), not here.
 
 ## `guisu-template`
 
@@ -76,10 +76,10 @@ Loads and merges `.guisu.toml` plus platform-specific variable files.
 | Module | What it contains |
 | --- | --- |
 | `config.rs` | The `Config` struct and sub-configs (`GeneralConfig`, `AgeConfig`, `BitwardenConfig`, `UiConfig`, `IgnoreConfig`, `EditConfig`). |
-| `dirs.rs` | `resolve_dirs` — applies `[general] src_dir` / `dst_dir` to the runtime context. |
-| `ignores.rs` | `IgnoresConfig` and the loader for per-platform ignore files. |
+| `dirs.rs` | XDG-compliant directory helpers: `data_dir`, `state_dir`, `default_source_dir`, `default_age_identity`. |
+| `ignores.rs` | `IgnoresConfig` and the loader for the single `.guisu/ignores.toml` file (with `global` / `darwin` / `linux` / `windows` arrays). |
 | `patterns.rs` | `IgnoreMatcher` — gitignore-style pattern compilation. |
-| `variables.rs` | Per-platform variable loading (`.guisu/variables/{darwin,linux,windows}/*.toml`). |
+| `variables.rs` | Per-platform variable loading (`.guisu/variables/*.toml` and `.guisu/variables/<os>/*.toml`). |
 
 ```rust
 let config = Config::load_from_source(source_dir)?;
@@ -103,7 +103,7 @@ The three-state model and the apply loop. The largest crate by line count.
 | `validator.rs` | Cross-state validation. |
 | `verify.rs` | Per-entry drift detection between target and destination; shared comparison primitive for `apply`/`verify`. |
 | `git.rs` | In-process git operations (init, fetch, merge) using `git2`. |
-| `hooks/` | Pre/post/once/onchange hook discovery and execution. |
+| `hooks/` | Pre/post hook discovery and execution (modes: `always`/`once`/`onchange`). |
 | `adapters/` | Alternative implementations (e.g. for tests). |
 
 ## `guisu-cli`
@@ -113,7 +113,7 @@ Binary + library. The binary entry point is `src/main.rs`, which delegates to `g
 | Module | What it contains |
 | --- | --- |
 | `lib.rs` | `Cli` (clap derive) and `Commands` enum. |
-| `cmd/` | One file per subcommand: `add.rs`, `age.rs`, `apply.rs`, `cat.rs`, `diff.rs`, `edit.rs`, `hooks.rs`, `ignored.rs`, `info.rs`, `init.rs`, `status.rs`, `templates.rs`, `update.rs`, `variables.rs`, `verify.rs`. |
+| `cmd/` | One file per subcommand: `add.rs`, `age.rs`, `apply.rs`, `cat.rs`, `completion.rs`, `diff.rs`, `edit.rs`, `hooks.rs`, `ignored.rs`, `info.rs`, `init.rs`, `status.rs`, `templates.rs`, `update.rs`, `variables.rs`, `verify.rs`. |
 | `command.rs` | The `Command` trait implemented by every subcommand. |
 | `common.rs` | `RuntimeContext` — shared state (config, paths, etc.) passed to every command. |
 | `conflict.rs` | The interactive conflict TUI. |
@@ -129,7 +129,7 @@ impl Command for ApplyCommand {
 
 ## Public surface stability
 
-The `guisu-cli` binary's command-line interface is stable. The library crates (`guisu-core`, `guisu-crypto`, `guisu-vault`, `guisu-template`, `guisu-config`, `guisu-engine`) are not yet API-stable; expect breaking changes before v1.0. The stabilisation timeline is currently tracked informally in `release-plz.toml`; a published Roadmap doc will land before v1.0.
+The `guisu-cli` binary's command-line interface is stable. The library crates (`guisu-core`, `guisu-crypto`, `guisu-vault`, `guisu-template`, `guisu-config`, `guisu-engine`) are not yet API-stable; expect breaking changes before v1.0. The stabilisation timeline is tracked informally in `release-plz.toml`.
 
 ## See also
 

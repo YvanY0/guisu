@@ -6,14 +6,18 @@ The full list of functions and filters registered with the minijinja environment
 > **Functions vs filters**
 > A function is called with parentheses: `fn(arg)`. A filter is applied with the pipe operator: `value | filter`. The same underlying operation may exist as both — see the encryption row below.
 
+> [!NOTE]
+> **`os()` and `system.os` agree**
+> Both return `"darwin"` (macOS), `"linux"`, `"windows"`, or `"unknown"` — they share a single source of truth in `guisu_core::platform`. `os()` is the function form; `system.os` is the context field.
+
 
 
 ## System
 
 | Function | Returns | Notes |
 | --- | --- | --- |
-| `os()` | string | `"darwin"`, `"linux"`, or `"windows"`. |
-| `arch()` | string | `"x86_64"`, `"aarch64"`, `"arm"`. |
+| `os()` | string | `"darwin"`, `"linux"`, `"windows"`, or `"unknown"`. |
+| `arch()` | string | `env::consts::ARCH` — `x86_64`, `aarch64`, `arm`, … |
 | `hostname()` | string | Machine hostname. |
 | `username()` | string | Current OS user. |
 | `home_dir()` | string | `$HOME`. |
@@ -33,7 +37,11 @@ The full list of functions and filters registered with the minijinja environment
 
 ## Vault (Bitwarden)
 
-All four functions are available when the `[bitwarden]` provider is configured. Caching is per-`apply`.
+All four functions are available in the default CLI build (the `bw` and `bws`
+cargo features are on by default). `bitwarden` and `bitwardenFields` require
+either the `bw` or `rbw` feature; `bitwardenAttachment` requires `bw`;
+`bitwardenSecrets` requires `bws`. Results are cached for the lifetime of the
+process (one `apply` is one process, so effectively per-`apply`).
 
 | Function | Returns | Notes |
 | --- | --- | --- |
@@ -64,12 +72,15 @@ export TOKEN="{{ 'age:base64,YWdl...' | decrypt }}"
 
 ## Strings
 
+The string functions take the **subject first**, then the pattern/separator — the
+same order as `regex_match(text, pattern)` in the Rust regex crate, not Jinja's.
+
 | Function | Returns | Notes |
 | --- | --- | --- |
-| `regexMatch(pattern, string)` | bool | True if the regex matches anywhere. |
-| `regexReplaceAll(pattern, replacement, string)` | string | Replace all matches. |
-| `split(separator, string)` | list | Split a string into a list. |
-| `join(separator, list)` | string | Join a list into a string. |
+| `regexMatch(string, pattern)` | bool | True if the regex matches anywhere. |
+| `regexReplaceAll(string, pattern, replacement)` | string | Replace all matches. |
+| `split(string, separator)` | list | Split a string into a list. |
+| `join(list, separator)` | string | Join a list into a string. |
 
 ## String filters
 
@@ -79,7 +90,6 @@ export TOKEN="{{ 'age:base64,YWdl...' | decrypt }}"
 | `s \| trim` | string | Strip leading and trailing whitespace. |
 | `s \| trimStart` | string | Strip leading whitespace. |
 | `s \| trimEnd` | string | Strip trailing whitespace. |
-| `s \| custom` | string | Uppercase the string. (Built-in alias; useful for templates.) |
 
 ## Data formats
 
@@ -98,7 +108,7 @@ export TOKEN="{{ 'age:base64,YWdl...' | decrypt }}"
 
 > [!TIP]
 > **Generated inline values**
-> Run `guisu age encrypt --inline "my secret"` to print an inline-encrypted value. The output can be committed safely and embedded in templates as `{{ 'value' | decrypt }}`.
+> Run `guisu age encrypt "my secret"` to print an inline-encrypted value. The output can be committed safely and embedded in templates as `{{ 'value' | decrypt }}`.
 
 
 

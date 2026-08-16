@@ -12,14 +12,14 @@ The core command. Materialises source into destination. The flow is:
 4. **Build the template engine** and a context populated with system info, guisu metadata, and user variables.
 5. **Read `SourceState`** — walk the source directory in parallel via rayon; parse file attributes from each filename; build `SourceEntry` objects.
 6. **Build `TargetState`** — for each source entry, decrypt `.age` files and render `.j2` templates, again in parallel.
-7. **Open the redb database** at `<source>/.guisu-state.db`.
+7. **Open the redb database** at `${XDG_STATE_HOME:-~/.local/state}/guisu/state.db`.
 8. **For each entry in the target state** (sequential, so writes are deterministic):
     1. Read the corresponding `DestinationState` entry (the actual file on disk).
     2. Load the database entry (the last applied hash + mode).
-    3. Three-way compare the three to compute a `FileStatus`.
+    3. Three-way compare the three to compute a `FileStatus` (`Steady` / `Latent` / `Behind` / `Ahead` / `Conflict`).
     4. Resolve the status:
-        - `Synced` — skip.
-        - `Added` / `Modified` — write the target content with the target mode.
+        - `Steady` — skip.
+        - `Latent` / `Behind` / `Ahead` — write the target content with the target mode.
         - `Conflict` — if `--interactive`, open the TUI; otherwise overwrite.
         - User can also `Quit` from the TUI, which aborts the entire apply.
     5. Update the database with the new hash and mode.
@@ -59,7 +59,7 @@ Steps 5 and 6 use rayon for parallel processing. Steps 8 and 9 are sequential so
 4. If the content's hash changed, and the source is `.age`, re-encrypt and replace the source. Otherwise just replace the source.
 5. Delete the temp file.
 
-The temp file lives on the same filesystem as the source, with mode `0600`, and is `unlink()`-ed when the editor exits. Secure erasure (overwrite before unlink) is on the roadmap but not implemented.
+The temp file lives on the same filesystem as the source, with mode `0600`, and is `unlink()`-ed when the editor exits. Secure erasure (overwrite before unlink) is not yet implemented.
 
 ## Parallel processing
 

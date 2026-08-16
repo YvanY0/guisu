@@ -18,19 +18,17 @@ For each file, Guisu compares three sources of truth:
 
 1. **Target** — the rendered, decrypted content the source state wants.
 2. **Destination** — the file currently on disk.
-3. **Database** — the content hash stored the last time `apply` succeeded (in `<source>/.guisu-state.db`).
+3. **Database** — the content hash stored the last time `apply` succeeded (in `${XDG_STATE_HOME:-~/.local/state}/guisu/state.db`).
 
-The result is one of `Synced`, `Added`, `Modified`, `Removed`, or `Conflict`.
+The result is one of `Steady`, `Latent`, `Behind`, `Ahead`, or `Conflict`.
 
-| Target | Destination | Database | Status | Default action |
-| --- | --- | --- | --- | --- |
-| A | A | A | Synced | Skip |
-| A | B | A | Modified (by you) | Overwrite |
-| A | A | B | Modified (in source) | Apply |
-| A | B | C | Conflict | Prompt (`--interactive`) or overwrite |
-| A | — | — | Added | Create |
-| — | B | B | Removed | Delete |
-| — | B | A | Modified + Removed | Conflict |
+| Status | Meaning | Default action |
+| --- | --- | --- |
+| `Steady` | Target, destination, and last-applied hash all agree. | Skip. |
+| `Latent` | Destination missing — pending deployment. | Create. |
+| `Behind` | Source moved ahead of the last-applied state. | Apply. |
+| `Ahead` | Destination moved ahead (local edits). | Overwrite (or prompt). |
+| `Conflict` | Both source and destination moved since the last apply. | Prompt (`--interactive`) or overwrite. |
 
 ## Interactive mode
 
@@ -61,7 +59,7 @@ For drift detection in CI, use `guisu verify` — it exits 1 on drift, 0 on a cl
 
 ## Hooks
 
-`apply` runs pre- and post-hooks from `.guisu/hooks/{pre,post}/{always,once,onchange}/` around the apply. See [Hooks](../user-guide/hooks.md).
+`apply` runs pre- and post-hooks from `.guisu/hooks/pre/` and `.guisu/hooks/post/` around the apply. See [Hooks](../user-guide/hooks.md).
 
 ## Next step
 

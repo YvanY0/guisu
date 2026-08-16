@@ -4,17 +4,17 @@ Guisu uses [age](https://age-encryption.org/) for symmetric and asymmetric encry
 
 > [!WARNING]
 > **Do not commit your age key**
-> The age identity file is the only thing that can decrypt your secrets. Never commit it to the dotfiles repo; keep it in `~/.config/guisu/` (which is outside the source) or in a hardware token. If you lose the identity, the encrypted files are gone.
+> The age identity file is the only thing that can decrypt your secrets. Never commit it to the dotfiles repo; keep it in `~/.local/share/guisu/` (the default location, outside the source) or in a hardware token. If you lose the identity, the encrypted files are gone.
 
 
 
 ## Generate an identity
 
 ```bash
-guisu age generate -o ~/.config/guisu/key.txt
+guisu age generate
 ```
 
-This writes a native age key. To use an existing SSH key instead, point `.guisu.toml` at it:
+This writes a native age key to `~/.local/share/guisu/key.txt` (the default data directory) and prints the public key. Pass `-o PATH` to write elsewhere. To use an existing SSH key instead, point `.guisu.toml` at it:
 
 ```toml
 [age]
@@ -38,7 +38,7 @@ The source file is `id_rsa.age` (ASCII-armored). On apply, it is decrypted to `~
 guisu edit ~/.ssh/id_rsa
 ```
 
-Guisu decrypts to a temp file (mode `0600`), opens your `$EDITOR`, then re-encrypts and replaces the source on save. The temp file is securely deleted when the editor exits.
+Guisu decrypts to a temp file (mode `0600`), opens your `$EDITOR`, then re-encrypts and replaces the source on save. The temp file is securely deleted when the editor exits. `guisu edit` also handles files containing inline `age:` values — all inline values are decrypted for editing and re-encrypted on save. Pass `--apply`/`-a` (or set `[edit] apply = true`) to run `apply` automatically after a successful save.
 
 > [!WARNING]
 > **Editor backups and swap files**
@@ -57,10 +57,12 @@ export GITHUB_TOKEN="{{ 'age:base64,YWdl...' | decrypt }}"
 Generate an inline value with:
 
 ```bash
-guisu age encrypt --inline 'ghp_xxxxxxxxxxxx'
+guisu age encrypt 'ghp_xxxxxxxxxxxx'
 ```
 
-The output is safe to commit. Decryption happens at render time and the plaintext only ever exists in memory.
+`guisu age encrypt` always outputs the compact `age:base64,...` format — there
+is no `--inline` flag. With no value (or `--interactive`/`-i`), it reads from
+stdin. The output is safe to commit. Decryption happens at render time and the plaintext only ever exists in memory.
 
 ## Multiple recipients
 
@@ -70,7 +72,7 @@ recipients = [
     "age1ql3z7hjy54pw3hyww5ayyfg7zqgvc7w3j2elw8zmrj2kg5sfn9aqmcac8p",
     "age1j0p6m6j3xcfua6jn8u6vnn7qk8h0qg5k7z2q3w..."
 ]
-identity = "~/.config/guisu/key.txt"
+identity = "~/.local/share/guisu/key.txt"
 ```
 
 Guisu encrypts to every recipient; any one identity can decrypt. Use this to give multiple machines access to the same secrets without sharing a private key.

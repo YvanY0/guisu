@@ -12,7 +12,7 @@ The arrows below are read as "depends on". The table lists every cross-crate dep
 | **`crypto`** (Layer 1) | ✓ | — | | | | | |
 | **`vault`** (Layer 1) | ✓ | | — | | | | |
 | **`template`** (Layer 2) | ✓ | ✓ | ✓ | — | | | |
-| **`config`** (Layer 2) | ✓ | ✓ | | ✓ | — | | |
+| **`config`** (Layer 2) | ✓ | ✓ | | | — | | |
 | **`engine`** (Layer 3) | ✓ | ✓ | ✓ | ✓ | ✓ | — | |
 | **`cli`** (Layer 4) | ✓ | ✓ | | ✓ | ✓ | ✓ | — |
 
@@ -21,7 +21,7 @@ Read row-by-row:
 - `core` has no dependencies (only `std`).
 - `crypto` and `vault` depend only on `core`.
 - `template` depends on `core`, `crypto`, `vault` (so it can call encryption and vault lookups during rendering).
-- `config` depends on `core`, `crypto`, `template` (so `.guisu.toml.j2` can render with the same context as regular templates).
+- `config` depends on `core` and `crypto` only. It does **not** depend on `template` — when it finds a `.guisu.toml.j2`, it emits a helpful error and lets the CLI layer do the rendering (see `Config::load_from_source` in `crates/config/src/config.rs`). The CLI renders the template, caches the result keyed by template hash in the state DB, then feeds the rendered TOML back to `Config::from_toml_str`.
 - `engine` depends on all of `core`, `crypto`, `vault`, `template`, `config` (it orchestrates the apply pipeline).
 - `cli` depends on every other crate (it is the user-facing binary).
 
@@ -54,7 +54,7 @@ Read row-by-row:
 | `validator.rs` | Cross-state validation (e.g. is the source well-formed?). |
 | `verify.rs` | Per-entry drift detection between target and destination; shared comparison primitive for `apply`/`verify`. |
 | `git.rs` | In-process git operations (init, fetch, merge) using `git2`. |
-| `hooks/` | Pre/post/once/onchange hook discovery and execution. |
+| `hooks/` | Pre/post hook discovery and execution (modes: `always`/`once`/`onchange`, set in TOML). |
 | `adapters/` | Adapters to alternative implementations (e.g. an HTTP-based `SourceState` reader for tests). |
 
 ## Why strict layers?

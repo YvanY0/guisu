@@ -27,7 +27,7 @@ This creates a new directory, initialises git inside it, and writes a starter `.
 
 > [!NOTE]
 > **Where does the source go?**
-> By default, Guisu uses `~/.local/share/guisu` as the source directory — the same convention as chezmoi. Override per-call with `--source` or globally in `.guisu.toml` under `[general] src_dir`.
+> By default, Guisu uses `~/.local/share/guisu` as the source directory — the same convention as chezmoi. Override per-call with `--source` or globally in `.guisu.toml` under `[general] srcDir`.
 
 
 
@@ -35,9 +35,9 @@ This creates a new directory, initialises git inside it, and writes a starter `.
 
 | Path | Default | Override |
 | --- | --- | --- |
-| Source directory | `~/.local/share/guisu` | `--source` / `[general] src_dir` |
-| Destination directory | `$HOME` | `--dest` / `[general] dst_dir` |
-| Persistent state DB | `<source>/.guisu-state.db` | (not configurable) |
+| Source directory | `~/.local/share/guisu` | `--source` / `[general] srcDir` |
+| Destination directory | `$HOME` | `--dest` / `[general] dstDir` |
+| Persistent state DB | `${XDG_STATE_HOME:-~/.local/state}/guisu/state.db` | (not configurable) |
 | Editor (for `guisu edit`) | `$EDITOR` or `[general] editor` | env var or config |
 
 ## What `init` does not do

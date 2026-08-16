@@ -11,7 +11,7 @@ A Rust-based dotfile manager. Keep your configuration files under version contro
 Pick the path that matches your situation:
 
 - **New to Guisu:** start with [Installation](installation.md), then follow the [init](getting-started/init.md) walkthrough.
-- **Migrating from chezmoi:** drop your existing `~/.local/share/chezmoi` into `~/.local/share/guisu` and read the [Configuration](user-guide/config.md) page — file-attribute conventions are compatible by design.
+- **Migrating from chezmoi:** Guisu stores dotfiles under a `home/` subdirectory of the source dir by default (`rootEntry = "home"`), so drop your existing `~/.local/share/chezmoi` contents into `~/.local/share/guisu/home/` (or set `[general] rootEntry = ""` to match chezmoi's layout), then read the [Configuration](user-guide/config.md) page — file-attribute conventions are compatible by design.
 - **Looking for a specific flag or environment variable:** jump straight to the [Commands](reference/commands.md) or [Configuration Reference](reference/configuration.md).
 - **Hitting an error or unexpected diff:** start with [Error Handling](developer-guide/error-handling.md), then [Hooks](user-guide/hooks.md) if it's about the apply phase.
 - **Embedding Guisu as a library:** read [Architecture](developer-guide/architecture.md) and the [Three-State Model](developer-guide/three-state-model.md) first.
@@ -28,7 +28,7 @@ Source state          Target state         Destination state
   key.txt.age    →     key.txt (decrypted) →  ~/key.txt
 ```
 
-A persistent [redb](https://docs.rs/redb) database tracks the content hash of the **target** state that was last successfully applied. On the next run, Guisu compares the new target against the on-disk destination against the database and produces a status for each file: `Synced`, `Added`, `Modified`, `Removed`, or `Conflict`. The interactive `--interactive` mode lets you resolve conflicts in a TUI.
+A persistent [redb](https://docs.rs/redb) database tracks the content hash of the **target** state that was last successfully applied. On the next run, Guisu compares the new target against the on-disk destination against the database and produces a status for each file: `Steady`, `Latent`, `Behind`, `Ahead`, or `Conflict`. The interactive `--interactive` mode lets you resolve conflicts in a TUI.
 
 ## How it compares
 

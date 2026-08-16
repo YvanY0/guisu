@@ -17,7 +17,7 @@ key.txt.age    ───►    key.txt (decrypted)──►  ~/key.txt      ◄�
 Source     →  Target     : decrypt .age, then render .j2
 Target     →  Destination: write to disk, apply mode
 Target     ↔  Persistent : hash target, store in db
-Target     ↔  Destination: three-way compare to detect Synced/Modified/Conflict
+Target     ↔  Destination: three-way compare to detect Steady/Ahead/Behind/Conflict
 ```
 
 The bold arrows show the **writes** the apply loop performs. The plain arrows are **reads** that drive the comparison.
@@ -27,21 +27,21 @@ The bold arrows show the **writes** the apply loop performs. The plain arrows ar
 | **Source** | Files in the source repository (filesystem) | Read-only during apply | Filenames encode extensions (`.j2`, `.age`, `.j2.age`); file mode bits come from `metadata().mode()`. |
 | **Target** | Rendered, decrypted content (in memory) | Recomputed on demand | Always the desired post-`apply` state for a given source. |
 | **Destination** | The actual files on the user's machine (filesystem) | Read + Write | Where the user's dotfiles actually live. |
-| **Persistent** | `redb` database at `<source>/.guisu-state.db` | Written after a successful apply | Content hash + mode of the last applied target. |
+| **Persistent** | `redb` database at `${XDG_STATE_HOME:-~/.local/state}/guisu/state.db` | Written after a successful apply | Content hash + mode of the last applied target. |
 
 ## Status types
 
-For each file under management, the engine computes a status by comparing target, destination, and database:
+For each file under management, the engine computes a status by three-way-comparing target, destination, and the database hash. The status enum (`FileStatus`) is defined in the CLI crate (`crates/cli/src/cmd/status.rs`) and has five variants — there is no `Removed` variant; removals are expressed via `Metadata::remove` in `.guisu/state.toml` and processed in a pre-pass.
 
-| Target | Destination | Database | Status | Default action |
-| --- | --- | --- | --- | --- |
-| A | A | A | Synced | Skip |
-| A | B | A | Modified (by you) | Overwrite |
-| A | A | B | Modified (in source) | Apply |
-| A | B | C | Conflict | Prompt (`--interactive`) or overwrite |
-| A | — | — | Added | Create |
-| — | B | B | Removed | Delete |
-| — | B | A | Modified + Removed | Conflict |
+| Status | Label | Meaning | Default action |
+| --- | --- | --- | --- |
+| `Steady` | `[S]` | Target, destination, and last-applied hash all agree. | Skip. |
+| `Latent` | `[L]` | Destination missing — file is pending deployment. | Create. |
+| `Behind` | `[B]` | Source moved ahead of the last-applied state. | Apply. |
+| `Ahead` | `[A]` | Destination moved ahead of the last-applied state (local edits). | Overwrite (or prompt). |
+| `Conflict` | `[C]` | Both source and destination moved since the last apply. | Prompt (`--interactive`) or overwrite. |
+
+The conceptual mapping to chezmoi-style names: `Steady`≈synced, `Latent`≈added, `Behind`≈modified-in-source, `Ahead`≈modified-by-you, `Conflict`≈conflict.
 
 ## Entry types
 
@@ -55,10 +55,9 @@ pub enum SourceEntry {
 }
 
 pub enum TargetEntry {
-    File { path, content: Vec<u8>, mode: Option<u32> },
+    File { path, content: Vec<u8>, content_hash: [u8; 32], mode: Option<u32> },
     Directory { path, mode: Option<u32> },
     Symlink { path, target: PathBuf },
-    Remove { path },
 }
 
 pub struct DestEntry {
@@ -77,13 +76,13 @@ pub enum EntryKind {
 }
 ```
 
-`SourceEntry` and `TargetEntry` differ slightly because the source carries parsed `attributes` while the target carries concrete content.
+`SourceEntry` and `TargetEntry` differ slightly because the source carries parsed `attributes` while the target carries concrete content. `TargetEntry::File` stores a blake3 `content_hash` so drift detection can compare hashes without re-reading destination content.
 
-Destinations may also receive a **remove directive** from
-`Metadata::remove` (declared in `.guisu/state.toml`); see
-[User Guide — File Attributes](../user-guide/file-attributes.md#removing-a-file-from-the-destination).
-The apply step processes removes in a separate pre-pass before
-applying targets.
+> [!NOTE]
+> **No `TargetEntry::Remove`**
+> An earlier design had a `Remove` variant expressed via the `remove_` filename prefix. Both have been dropped. Removals are now declared via
+> `Metadata::remove` in `.guisu/state.toml`; the apply step processes them in a separate pre-pass before applying targets. See
+> [User Guide — File Attributes](../user-guide/file-attributes.md#removing-a-file-from-the-destination).
 
 ## File attributes
 
