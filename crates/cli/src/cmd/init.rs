@@ -311,6 +311,25 @@ fn initialize_local_directory(path: &Path) -> Result<()> {
         debug!(path = %path.display(), "Created directory");
     }
 
+    // If the user initialised to a non-default source dir, point subsequent
+    // `guisu apply` (no args) at it — `apply` falls back to `data_dir()`
+    // otherwise. GUISU_SOURCE_DIR is the per-machine, repo-external override
+    // (config stays repo-managed by design).
+    if let Some(default_dir) = guisu_config::dirs::default_source_dir()
+        && path != default_dir
+    {
+        println!();
+        println!(
+            "This is not the default source location ({}) on this machine.",
+            default_dir.display()
+        );
+        println!("Subsequent `guisu apply` (no args) defaults there. To use this");
+        println!("directory every time, export once in your shell profile:");
+        println!();
+        println!("    export GUISU_SOURCE_DIR=\"{}\"", path.display());
+        println!();
+        println!("Or pass --source on each invocation.");
+    }
     info!("Source directory initialized successfully");
 
     Ok(())

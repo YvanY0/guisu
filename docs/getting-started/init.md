@@ -14,20 +14,31 @@ guisu init --apply username              # clone and apply in one step
 
 `guisu init` clones into the source directory (default `~/.local/share/guisu`). It does **not** apply automatically — pass `--apply` to materialise the files in the same step, or run `guisu apply` afterward. Use `guisu apply --interactive` to review each change before it lands in your home directory.
 
-## Initialise a brand-new local repository
+By default the source dir is resolved as `--source` → `GUISU_SOURCE_DIR` → `[general] srcDir` in `.guisu.toml` → `~/.local/share/guisu` (the XDG data dir). Choose your path before running `init`:
+
+- **Use the default** (`~/.local/share/guisu`) — nothing to configure, `guisu init username` and later `guisu apply` "just work".
+- **Use a custom path** (e.g. `~/dotfiles`) — see the next section.
+
+## Initialise a brand-new local repository at a custom path
 
 ```bash
 mkdir ~/dotfiles && cd ~/dotfiles
 git init
 cd ..
-guisu init
+guisu init ~/dotfiles
 ```
 
-This creates a new directory, initialises git inside it, and writes a starter `.guisu.toml`. The next `guisu add` knows where to put files.
+`init` creates the directory if needed. When you pass an explicit path, `init` prints a hint pointing subsequent `guisu apply` (no args) at this location — since `apply` defaults to `~/.local/share/guisu`, you must either pass `--source` each time or set `GUISU_SOURCE_DIR` once in your shell profile:
+
+```bash
+echo 'export GUISU_SOURCE_DIR=~/dotfiles' >> ~/.zshrc
+```
+
+`guisu init` does not write a `.guisu.toml` for you — commit your files first, then `guisu add` to start tracking them.
 
 > [!NOTE]
 > **Where does the source go?**
-> By default, Guisu uses `~/.local/share/guisu` as the source directory — the same convention as chezmoi. Override per-call with `--source` or globally in `.guisu.toml` under `[general] srcDir`.
+> By default, Guisu uses `~/.local/share/guisu` as the source directory — the same convention as chezmoi. Override per-call with `--source`, per-session with `GUISU_SOURCE_DIR`, or persistently in the repo's `.guisu.toml` under `[general] srcDir`. Config stays repo-managed by design; the env var is the per-machine, repo-external override.
 
 
 
