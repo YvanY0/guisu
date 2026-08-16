@@ -22,20 +22,15 @@ pub fn env(name: &str) -> std::borrow::Cow<'static, str> {
 
 /// Get the operating system name
 ///
+/// Returns the same value as `system.os` and the platform subdirectories
+/// (`templates/darwin/`, `variables/darwin/`): `"darwin"` (macOS), `"linux"`,
+/// `"windows"`, or `"unknown"`. Delegates to `guisu_core::platform` so there
+/// is a single source of truth across the codebase.
+///
 /// Usage: `{{ os() }}`
 #[must_use]
 pub fn os() -> &'static str {
-    #[cfg(target_os = "linux")]
-    return "linux";
-
-    #[cfg(target_os = "macos")]
-    return "macos";
-
-    #[cfg(target_os = "windows")]
-    return "windows";
-
-    #[cfg(not(any(target_os = "linux", target_os = "macos", target_os = "windows")))]
-    return env::consts::OS;
+    guisu_core::platform::CURRENT_PLATFORM.os
 }
 
 /// Get the system architecture

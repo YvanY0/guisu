@@ -118,7 +118,7 @@ pub fn trim_end(value: &str) -> String {
 /// # Usage
 ///
 /// ```jinja2
-/// {{ regexMatch("hello123", "\\d+") }}  {# Output: True #}
+/// {{ regexMatch("hello123", "\\d+") }}  {# Output: true #}
 /// {{ regexMatch(email, "^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\\.[a-zA-Z]{2,}$") }}
 /// ```
 ///

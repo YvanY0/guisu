@@ -54,7 +54,7 @@ pub struct GuisuInfo {
 /// System information available to templates
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct SystemInfo {
-    /// Operating system (e.g., "linux", "macos", "windows")
+    /// Operating system (`"darwin"`, `"linux"`, `"windows"`, or `"unknown"`)
     pub os: String,
 
     /// Operating system family (e.g., "unix", "windows")

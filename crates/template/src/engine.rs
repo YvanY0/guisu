@@ -117,6 +117,20 @@ impl TemplateEngine {
         env.set_lstrip_blocks(true);
         env.set_keep_trailing_newline(true);
 
+        // Render booleans as lowercase `true`/`false` (valid in TOML and JSON)
+        // instead of minijinja 2.22+'s Python-style `True`/`False`. This keeps
+        // `{{ bool_expr }}` safe to embed in `.guisu.toml.j2` (whose output is
+        // parsed as TOML) and in dotfile configs. Everything else delegates to
+        // the default `escape_formatter`.
+        env.set_formatter(|out, state, value| {
+            let value = if value.kind() == minijinja::value::ValueKind::Bool {
+                minijinja::Value::from(if value.is_true() { "true" } else { "false" })
+            } else {
+                value.clone()
+            };
+            minijinja::escape_formatter(out, state, &value)
+        });
+
         // Register custom functions
         env.add_function("env", functions::env);
         env.add_function("os", functions::os);
@@ -608,6 +622,19 @@ mod tests {
     }
 
     #[test]
+    fn test_bool_renders_lowercase() {
+        // minijinja 2.22+ renders booleans Python-style ("True"/"False"),
+        // which is invalid in TOML/JSON output. The custom formatter must
+        // emit lowercase so `{{ bool }}` is safe in `.guisu.toml.j2`.
+        let engine = TemplateEngine::new();
+        let ctx = TemplateContext::new();
+        assert_eq!(engine.render_str("{{ true }}", &ctx).unwrap(), "true");
+        assert_eq!(engine.render_str("{{ false }}", &ctx).unwrap(), "false");
+        assert_eq!(engine.render_str("{{ 1 == 1 }}", &ctx).unwrap(), "true");
+        assert_eq!(engine.render_str("{{ 1 == 2 }}", &ctx).unwrap(), "false");
+    }
+
+    #[test]
     fn test_regex_functions() {
         let engine = TemplateEngine::new();
         let ctx = TemplateContext::new();
@@ -615,7 +642,7 @@ mod tests {
         // Test regexMatch
         let template = "{{ regexMatch('hello123', '\\\\d+') }}";
         let result = engine.render_str(template, &ctx).unwrap();
-        assert_eq!(result, "True");
+        assert_eq!(result, "true");
 
         // Test regexReplaceAll
         let template2 = "{{ regexReplaceAll('hello 123', '\\\\d+', 'X') }}";
