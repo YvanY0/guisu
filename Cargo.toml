@@ -84,7 +84,7 @@ libc = "0.2"
 chrono = "0.4"
 duct = "1.1"
 shell-words = "1.1"
-blake3 = "1.8"
+blake3 = { version = "1.8", features = ["rayon"] }
 hex = "0.4"
 
 tracing = "0.1"

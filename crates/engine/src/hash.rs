@@ -38,7 +38,9 @@ use std::path::Path;
 /// ```
 #[must_use]
 pub fn hash_content(content: &[u8]) -> [u8; 32] {
-    *blake3::hash(content).as_bytes()
+    let mut hasher = blake3::Hasher::new();
+    hasher.update_rayon(content);
+    *hasher.finalize().as_bytes()
 }
 
 /// Hash a large file with buffered reading
