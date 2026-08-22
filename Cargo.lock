@@ -1651,7 +1651,6 @@ version = "0.2.7"
 dependencies = [
  "anyhow",
  "git2",
- "indexmap",
  "serde",
  "serde_json",
  "tempfile",

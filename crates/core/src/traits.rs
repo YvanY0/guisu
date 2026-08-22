@@ -1,6 +1,6 @@
 //! Core behavioral traits for guisu components
 //!
-//! This module defines abstract interfaces that decouple high-level modules
+//! This module defines the abstract interfaces that decouple high-level modules
 //! from concrete implementations, following the Dependency Inversion Principle.
 //!
 //! By depending on these traits instead of concrete types, we achieve:
@@ -9,60 +9,6 @@
 //! - **Flexibility**: Can swap implementations at runtime if needed
 
 use crate::Result;
-use std::path::PathBuf;
-
-/// Configuration provider interface
-///
-/// Abstracts configuration access to decouple consumers from specific config formats
-/// or storage mechanisms.
-///
-/// # Examples
-///
-/// ```ignore
-/// fn process_files(config: &dyn ConfigProvider) -> Result<()> {
-///     let source = config.source_dir();
-///     let dest = config.dest_dir();
-///     // ... process files
-/// }
-/// ```
-pub trait ConfigProvider {
-    /// Get the source directory path
-    fn source_dir(&self) -> Option<&PathBuf>;
-
-    /// Get the destination directory path
-    fn dest_dir(&self) -> Option<&PathBuf>;
-
-    /// Get template variables as JSON values
-    fn variables(&self) -> &indexmap::IndexMap<String, serde_json::Value>;
-}
-
-/// Encryption provider interface
-///
-/// Abstracts encryption/decryption operations to allow different encryption
-/// backends (age, GPG, etc.) without changing consuming code.
-///
-/// # Examples
-///
-/// ```ignore
-/// fn encrypt_secret(provider: &dyn EncryptionProvider, secret: &str) -> Result<Vec<u8>> {
-///     provider.encrypt(secret.as_bytes())
-/// }
-/// ```
-pub trait EncryptionProvider {
-    /// Encrypt data
-    ///
-    /// # Errors
-    ///
-    /// Returns error if encryption fails
-    fn encrypt(&self, data: &[u8]) -> Result<Vec<u8>>;
-
-    /// Decrypt data
-    ///
-    /// # Errors
-    ///
-    /// Returns error if decryption fails or data is invalid
-    fn decrypt(&self, data: &[u8]) -> Result<Vec<u8>>;
-}
 
 /// Template renderer interface
 ///
@@ -126,33 +72,4 @@ pub trait TemplateRenderer {
         template: &str,
         context: &serde_json::Value,
     ) -> Result<String>;
-}
-
-/// Vault provider interface for password managers
-///
-/// Abstracts secret retrieval from various password managers
-/// (Bitwarden, 1Password, pass, etc.).
-pub trait VaultProvider {
-    /// Get the name of this vault provider (e.g., "bitwarden", "1password")
-    fn name(&self) -> &'static str;
-
-    /// Check if this vault provider is available (CLI installed and accessible)
-    fn is_available(&self) -> bool;
-
-    /// Check if this vault requires unlocking before use
-    fn requires_unlock(&self) -> bool;
-
-    /// Unlock the vault (e.g., login, get session token)
-    ///
-    /// # Errors
-    ///
-    /// Returns error if authentication fails or vault is unavailable
-    fn unlock(&mut self) -> Result<()>;
-
-    /// Get a secret value by key/identifier
-    ///
-    /// # Errors
-    ///
-    /// Returns error if secret is not found or vault access fails
-    fn get_secret(&self, key: &str) -> Result<String>;
 }

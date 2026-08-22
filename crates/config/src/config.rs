@@ -895,21 +895,6 @@ impl Config {
     }
 }
 
-// Implement ConfigProvider trait for Config
-impl guisu_core::ConfigProvider for Config {
-    fn source_dir(&self) -> Option<&PathBuf> {
-        self.general.src_dir.as_ref()
-    }
-
-    fn dest_dir(&self) -> Option<&PathBuf> {
-        self.general.dst_dir.as_ref()
-    }
-
-    fn variables(&self) -> &IndexMap<String, serde_json::Value> {
-        &self.variables
-    }
-}
-
 #[cfg(test)]
 mod tests {
     #![allow(clippy::unwrap_used, clippy::panic)]
@@ -1426,9 +1411,7 @@ identity = "./key.txt"
     }
 
     #[test]
-    fn test_config_provider_trait() {
-        use guisu_core::ConfigProvider;
-
+    fn test_config_fields_access() {
         let mut config = Config::default();
         config.general.src_dir = Some(PathBuf::from("/src"));
         config.general.dst_dir = Some(PathBuf::from("/dst"));
@@ -1436,10 +1419,9 @@ identity = "./key.txt"
             .variables
             .insert("key".to_string(), serde_json::json!("value"));
 
-        // Test trait methods
-        assert_eq!(config.source_dir(), Some(&PathBuf::from("/src")));
-        assert_eq!(config.dest_dir(), Some(&PathBuf::from("/dst")));
-        assert_eq!(config.variables().len(), 1);
+        assert_eq!(config.general.src_dir, Some(PathBuf::from("/src")));
+        assert_eq!(config.general.dst_dir, Some(PathBuf::from("/dst")));
+        assert_eq!(config.variables.len(), 1);
     }
 
     #[test]

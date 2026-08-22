@@ -37,55 +37,6 @@ pub fn identities_to_recipients(identities: &[Identity]) -> Vec<Recipient> {
     identities.iter().map(Identity::to_public).collect()
 }
 
-/// Age encryption provider that implements the `EncryptionProvider` trait
-///
-/// This struct wraps recipients and identities to provide encryption/decryption
-/// functionality through a trait-based interface.
-pub struct AgeEncryption {
-    recipients: Vec<Recipient>,
-    identities: Vec<Identity>,
-}
-
-impl AgeEncryption {
-    /// Create a new `AgeEncryption` instance with the given recipients and identities
-    #[must_use]
-    pub fn new(recipients: Vec<Recipient>, identities: Vec<Identity>) -> Self {
-        Self {
-            recipients,
-            identities,
-        }
-    }
-
-    /// Create an instance with only recipients (encryption-only)
-    #[must_use]
-    pub fn with_recipients(recipients: Vec<Recipient>) -> Self {
-        Self {
-            recipients,
-            identities: Vec::new(),
-        }
-    }
-
-    /// Create an instance with only identities (decryption-only)
-    #[must_use]
-    pub fn with_identities(identities: Vec<Identity>) -> Self {
-        Self {
-            recipients: Vec::new(),
-            identities,
-        }
-    }
-}
-
-// Implement EncryptionProvider trait for AgeEncryption
-impl guisu_core::EncryptionProvider for AgeEncryption {
-    fn encrypt(&self, data: &[u8]) -> guisu_core::Result<Vec<u8>> {
-        encrypt(data, &self.recipients)
-    }
-
-    fn decrypt(&self, data: &[u8]) -> guisu_core::Result<Vec<u8>> {
-        decrypt(data, &self.identities)
-    }
-}
-
 // Re-export guisu_core types for use in this crate and by consumers
 pub use guisu_core::Error;
 
@@ -98,47 +49,31 @@ mod tests {
     use super::*;
 
     #[test]
-    fn test_age_encryption_new() {
+    fn test_encrypt_decrypt_roundtrip() {
         let identity = Identity::generate();
         let recipient = identity.to_public();
+        let recipients = vec![recipient.clone()];
 
-        let age_enc = AgeEncryption::new(vec![recipient.clone()], vec![identity.clone()]);
+        let original = b"test data for roundtrip";
 
-        assert_eq!(age_enc.recipients.len(), 1);
-        assert_eq!(age_enc.identities.len(), 1);
+        // Encrypt
+        let encrypted = encrypt(original, &recipients).expect("Encryption should succeed");
+
+        // Decrypt
+        let identities = vec![identity];
+        let decrypted = decrypt(&encrypted, &identities).expect("Decryption should succeed");
+
+        assert_eq!(decrypted, original);
     }
 
     #[test]
-    fn test_age_encryption_with_recipients() {
+    fn test_encrypt_produces_different_output() {
         let identity = Identity::generate();
         let recipient = identity.to_public();
-
-        let age_enc = AgeEncryption::with_recipients(vec![recipient.clone()]);
-
-        assert_eq!(age_enc.recipients.len(), 1);
-        assert_eq!(age_enc.identities.len(), 0);
-    }
-
-    #[test]
-    fn test_age_encryption_with_identities() {
-        let identity = Identity::generate();
-
-        let age_enc = AgeEncryption::with_identities(vec![identity.clone()]);
-
-        assert_eq!(age_enc.recipients.len(), 0);
-        assert_eq!(age_enc.identities.len(), 1);
-    }
-
-    #[test]
-    fn test_encryption_provider_trait_encrypt() {
-        let identity = Identity::generate();
-        let recipient = identity.to_public();
-
-        let age_enc = AgeEncryption::with_recipients(vec![recipient]);
+        let recipients = vec![recipient];
 
         let data = b"secret message";
-        let encrypted = guisu_core::EncryptionProvider::encrypt(&age_enc, data)
-            .expect("Encryption should succeed");
+        let encrypted = encrypt(data, &recipients).expect("Encryption should succeed");
 
         // Encrypted data should be different from original
         assert_ne!(encrypted, data);
@@ -147,50 +82,26 @@ mod tests {
     }
 
     #[test]
-    fn test_encryption_provider_trait_decrypt() {
+    fn test_encrypt_decrypt_with_recipients_and_identities_split() {
         let identity = Identity::generate();
         let recipient = identity.to_public();
 
-        // Encrypt with recipient
-        let age_enc_encrypt = AgeEncryption::with_recipients(vec![recipient]);
+        // Encrypt with recipient only
         let data = b"secret message";
-        let encrypted = guisu_core::EncryptionProvider::encrypt(&age_enc_encrypt, data)
-            .expect("Encryption should succeed");
+        let encrypted = encrypt(data, &[recipient]).expect("Encryption should succeed");
 
-        // Decrypt with identity
-        let age_enc_decrypt = AgeEncryption::with_identities(vec![identity]);
-        let decrypted = guisu_core::EncryptionProvider::decrypt(&age_enc_decrypt, &encrypted)
-            .expect("Decryption should succeed");
+        // Decrypt with identity only
+        let decrypted = decrypt(&encrypted, &[identity]).expect("Decryption should succeed");
 
         assert_eq!(decrypted, data);
     }
 
     #[test]
-    fn test_encryption_provider_trait_roundtrip() {
-        let identity = Identity::generate();
-        let recipient = identity.to_public();
-
-        let age_enc = AgeEncryption::new(vec![recipient], vec![identity]);
-
-        let original = b"test data for roundtrip";
-
-        // Encrypt
-        let encrypted = guisu_core::EncryptionProvider::encrypt(&age_enc, original)
-            .expect("Encryption should succeed");
-
-        // Decrypt
-        let decrypted = guisu_core::EncryptionProvider::decrypt(&age_enc, &encrypted)
-            .expect("Decryption should succeed");
-
-        assert_eq!(decrypted, original);
-    }
-
-    #[test]
-    fn test_encryption_provider_no_recipients_error() {
-        let age_enc = AgeEncryption::with_recipients(vec![]);
+    fn test_encrypt_no_recipients_error() {
+        let recipients: Vec<Recipient> = vec![];
 
         let data = b"cannot encrypt this";
-        let result = guisu_core::EncryptionProvider::encrypt(&age_enc, data);
+        let result = encrypt(data, &recipients);
 
         assert!(result.is_err());
         let err = result.unwrap_err();
@@ -198,18 +109,15 @@ mod tests {
     }
 
     #[test]
-    fn test_encryption_provider_no_identities_error() {
+    fn test_decrypt_no_identities_error() {
         // Create some encrypted data first
         let identity = Identity::generate();
         let recipient = identity.to_public();
-
-        let age_enc_encrypt = AgeEncryption::with_recipients(vec![recipient]);
-        let encrypted = guisu_core::EncryptionProvider::encrypt(&age_enc_encrypt, b"data")
-            .expect("Encryption should succeed");
+        let encrypted = encrypt(b"data", &[recipient]).expect("Encryption should succeed");
 
         // Try to decrypt with no identities
-        let age_enc_decrypt = AgeEncryption::with_identities(vec![]);
-        let result = guisu_core::EncryptionProvider::decrypt(&age_enc_decrypt, &encrypted);
+        let identities: Vec<Identity> = vec![];
+        let result = decrypt(&encrypted, &identities);
 
         assert!(result.is_err());
         let err = result.unwrap_err();
@@ -217,19 +125,15 @@ mod tests {
     }
 
     #[test]
-    fn test_encryption_provider_wrong_identity() {
+    fn test_decrypt_wrong_identity_error() {
         // Encrypt with one identity's recipient
         let identity1 = Identity::generate();
         let recipient1 = identity1.to_public();
-
-        let age_enc_encrypt = AgeEncryption::with_recipients(vec![recipient1]);
-        let encrypted = guisu_core::EncryptionProvider::encrypt(&age_enc_encrypt, b"data")
-            .expect("Encryption should succeed");
+        let encrypted = encrypt(b"data", &[recipient1]).expect("Encryption should succeed");
 
         // Try to decrypt with a different identity
         let identity2 = Identity::generate();
-        let age_enc_decrypt = AgeEncryption::with_identities(vec![identity2]);
-        let result = guisu_core::EncryptionProvider::decrypt(&age_enc_decrypt, &encrypted);
+        let result = decrypt(&encrypted, &[identity2]);
 
         assert!(result.is_err());
     }

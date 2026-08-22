@@ -5,7 +5,7 @@
 //! - Path types (`AbsPath`, `RelPath`, `SourceRelPath`)
 //! - Base error types
 //! - Platform detection
-//! - Core behavioral traits (`ConfigProvider`, `EncryptionProvider`, etc.)
+//! - Core behavioral traits (e.g. `TemplateRenderer`)
 //! - Common type definitions
 //!
 //! This crate has no dependencies on other guisu crates.
@@ -16,4 +16,4 @@ pub mod platform;
 pub mod traits;
 
 pub use error::{Error, Result};
-pub use traits::{ConfigProvider, EncryptionProvider, TemplateRenderer, VaultProvider};
+pub use traits::TemplateRenderer;
