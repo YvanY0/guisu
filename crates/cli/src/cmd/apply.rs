@@ -187,13 +187,11 @@ pub(crate) fn setup_content_processor(
 
     let template_engine = crate::create_template_engine(source_dir, identities, config);
 
-    // Use Arc to share identity without cloning
-    let identity_arc = identities.first().map_or_else(
-        || Arc::new(guisu_crypto::Identity::generate()),
-        |id| Arc::new(id.clone()),
-    );
+    let identity = identities
+        .first()
+        .map_or_else(guisu_crypto::Identity::generate, std::clone::Clone::clone);
 
-    let decryptor = CryptoDecryptorAdapter::from_arc(identity_arc);
+    let decryptor = CryptoDecryptorAdapter::new(identity);
     let renderer = TemplateRendererAdapter::new(template_engine);
     ContentProcessor::new(decryptor, renderer)
 }

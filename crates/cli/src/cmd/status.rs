@@ -301,12 +301,10 @@ fn run_impl(
     let template_engine = crate::create_template_engine(source_dir, &identities, config);
 
     // Create content processor with real decryptor and renderer
-    // Use Arc to share identity without unnecessary cloning
-    let identity_arc = identities.first().map_or_else(
-        || Arc::new(guisu_crypto::Identity::generate()),
-        |id| Arc::new(id.clone()),
-    );
-    let decryptor = CryptoDecryptorAdapter::from_arc(identity_arc);
+    let identity = identities
+        .first()
+        .map_or_else(guisu_crypto::Identity::generate, std::clone::Clone::clone);
+    let decryptor = CryptoDecryptorAdapter::new(identity);
     let renderer = TemplateRendererAdapter::new(template_engine);
     let processor = ContentProcessor::new(decryptor, renderer);
 

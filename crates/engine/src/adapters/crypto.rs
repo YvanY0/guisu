@@ -3,23 +3,16 @@
 use crate::content::Decryptor;
 use guisu_core::{Error, Result};
 use guisu_crypto::Identity;
-use std::sync::Arc;
 
 /// Adapter that wraps crypto functions to implement `engine::content::Decryptor`
 pub struct CryptoDecryptorAdapter {
-    identity: Arc<Identity>,
+    identity: Identity,
 }
 
 impl CryptoDecryptorAdapter {
     /// Create a new crypto adapter with the given identity
     #[must_use]
     pub fn new(identity: Identity) -> Self {
-        Self::from_arc(Arc::new(identity))
-    }
-
-    /// Create a new crypto adapter from an Arc<Identity> (zero-copy)
-    #[must_use]
-    pub fn from_arc(identity: Arc<Identity>) -> Self {
         Self { identity }
     }
 
@@ -34,18 +27,18 @@ impl Decryptor for CryptoDecryptorAdapter {
     type Error = Error;
 
     fn decrypt(&self, encrypted: &[u8]) -> Result<Vec<u8>> {
-        guisu_crypto::decrypt(encrypted, &[self.identity.as_ref().clone()])
+        guisu_crypto::decrypt(encrypted, std::slice::from_ref(&self.identity))
     }
 
     fn decrypt_inline(&self, text: &str) -> Result<String> {
-        guisu_crypto::decrypt_inline(text, &[self.identity.as_ref().clone()])
+        guisu_crypto::decrypt_inline(text, std::slice::from_ref(&self.identity))
     }
 }
 
 impl Clone for CryptoDecryptorAdapter {
     fn clone(&self) -> Self {
         Self {
-            identity: Arc::clone(&self.identity),
+            identity: self.identity.clone(),
         }
     }
 }
@@ -63,17 +56,6 @@ mod tests {
         let adapter = CryptoDecryptorAdapter::new(identity.clone());
 
         // Verify identity is stored correctly
-        assert_eq!(adapter.identity().to_string(), identity.to_string());
-    }
-
-    #[test]
-    fn test_crypto_adapter_from_arc() {
-        let identity = Identity::generate();
-        let arc_identity = Arc::new(identity.clone());
-        let adapter = CryptoDecryptorAdapter::from_arc(Arc::clone(&arc_identity));
-
-        // Verify Arc is shared (same pointer)
-        assert_eq!(Arc::strong_count(&arc_identity), 2);
         assert_eq!(adapter.identity().to_string(), identity.to_string());
     }
 
