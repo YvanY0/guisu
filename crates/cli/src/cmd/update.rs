@@ -26,7 +26,7 @@ pub struct UpdateCommand {
 
 impl Command for UpdateCommand {
     type Output = ();
-    fn execute(&self, context: &RuntimeContext) -> crate::error::Result<()> {
+    fn execute(&mut self, context: &mut RuntimeContext) -> crate::error::Result<()> {
         run_impl(context, self.apply, self.rebase).map_err(Into::into)
     }
 }
@@ -234,8 +234,8 @@ fn handle_merge_scenarios(
 }
 
 /// Apply changes after update
-fn apply_changes_after_update(context: &RuntimeContext) -> Result<()> {
-    let apply_cmd = crate::cmd::apply::ApplyCommand {
+fn apply_changes_after_update(context: &mut RuntimeContext) -> Result<()> {
+    let mut apply_cmd = crate::cmd::apply::ApplyCommand {
         files: vec![],
         dry_run: false,
         force: false,
@@ -251,7 +251,7 @@ fn apply_changes_after_update(context: &RuntimeContext) -> Result<()> {
 /// Run the update command implementation
 ///
 /// Pulls the latest changes from the remote repository and optionally applies them.
-fn run_impl(context: &RuntimeContext, apply: bool, rebase: bool) -> Result<()> {
+fn run_impl(context: &mut RuntimeContext, apply: bool, rebase: bool) -> Result<()> {
     let source_dir = context.source_dir();
     let repo = validate_and_open_repository(source_dir)?;
 

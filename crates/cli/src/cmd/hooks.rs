@@ -29,7 +29,7 @@ use crate::utils::path::SourceDirExt;
 pub fn run_hooks(
     source_dir: &Path,
     config: &Config,
-    db: &RedbPersistentState,
+    db: &mut RedbPersistentState,
     skip_confirm: bool,
     hook_filter: Option<&str>,
 ) -> Result<()> {
@@ -145,10 +145,10 @@ fn confirm_run(skip_confirm: bool) -> Result<bool> {
 fn execute_and_persist(
     source_dir: &Path,
     config: &Config,
-    db: &RedbPersistentState,
+    db: &mut RedbPersistentState,
     collections: &guisu_engine::hooks::HookCollections,
 ) -> Result<()> {
-    let persistence = HookStatePersistence::new(db);
+    let mut persistence = HookStatePersistence::new(db);
     let mut state = persistence.load()?;
 
     let renderer = create_template_engine(source_dir, config)?;
@@ -307,7 +307,7 @@ pub fn run_list(source_dir: &Path, _config: &Config, format: &str) -> Result<()>
 pub fn run_check(
     source_dir: &Path,
     config: &Config,
-    db: &RedbPersistentState,
+    db: &mut RedbPersistentState,
     format: &str,
 ) -> Result<()> {
     let is_tty = std::io::stdout().is_terminal();
@@ -323,7 +323,7 @@ pub fn run_check(
     let collections = loader.load().context("Failed to load hooks")?;
 
     // Load state from database (using provided database)
-    let persistence = HookStatePersistence::new(db);
+    let mut persistence = HookStatePersistence::new(db);
     let state = persistence.load()?;
 
     let hooks_dir = source_dir.hooks_dir();
@@ -557,7 +557,7 @@ fn display_hook_not_found(hook_name: &str, use_nerd_fonts: bool) {
 pub fn handle_hooks_pre(
     source_dir: &Path,
     config: &Config,
-    db: &RedbPersistentState,
+    db: &mut RedbPersistentState,
 ) -> Result<()> {
     use guisu_engine::hooks::config::HookMode;
 
@@ -577,7 +577,7 @@ pub fn handle_hooks_pre(
     }
 
     // Load persistent state for hook execution tracking (using provided database)
-    let persistence = HookStatePersistence::new(db);
+    let mut persistence = HookStatePersistence::new(db);
     let mut state = persistence.load()?;
 
     // Show which hooks will run
@@ -647,7 +647,7 @@ pub fn handle_hooks_pre(
 pub fn handle_hooks_post(
     source_dir: &Path,
     config: &Config,
-    db: &RedbPersistentState,
+    db: &mut RedbPersistentState,
 ) -> Result<()> {
     use guisu_engine::hooks::config::HookMode;
 
@@ -667,7 +667,7 @@ pub fn handle_hooks_post(
     }
 
     // Load persistent state for hook execution tracking (using provided database)
-    let persistence = HookStatePersistence::new(db);
+    let mut persistence = HookStatePersistence::new(db);
     let mut state = persistence.load()?;
 
     // Show which hooks will run
@@ -1024,11 +1024,11 @@ mode = "once"
         .unwrap();
 
         let db_path = temp.path().join("state.redb");
-        let db = RedbPersistentState::new(&db_path).unwrap();
+        let mut db = RedbPersistentState::new(&db_path).unwrap();
 
-        run_hooks(source_dir, &config, &db, true, Some("noop")).unwrap();
+        run_hooks(source_dir, &config, &mut db, true, Some("noop")).unwrap();
 
-        let persistence = HookStatePersistence::new(&db);
+        let mut persistence = HookStatePersistence::new(&mut db);
         let state = persistence.load().unwrap();
 
         assert!(

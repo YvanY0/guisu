@@ -36,7 +36,7 @@ pub struct EditCommand {
 
 impl Command for EditCommand {
     type Output = ();
-    fn execute(&self, context: &RuntimeContext) -> crate::error::Result<()> {
+    fn execute(&mut self, context: &mut RuntimeContext) -> crate::error::Result<()> {
         // Determine whether to apply: command line flag takes precedence over config
         // If --apply is passed on command line, use it
         // Otherwise, use config.edit.apply as default
@@ -53,7 +53,7 @@ impl Command for EditCommand {
         // Apply only if requested AND file was modified
         if should_apply && modified {
             // Create ApplyCommand with target file
-            let apply_cmd = crate::cmd::apply::ApplyCommand {
+            let mut apply_cmd = crate::cmd::apply::ApplyCommand {
                 files: vec![self.target.clone()],
                 dry_run: false,
                 force: false,

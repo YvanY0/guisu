@@ -537,7 +537,7 @@ fn apply_entry_with_error_handling(
 /// Process entries sequentially (for interactive mode or dry run)
 #[allow(clippy::too_many_arguments, clippy::fn_params_excessive_bools)]
 fn process_entries_sequential(
-    db: &guisu_engine::state::RedbPersistentState,
+    db: &mut guisu_engine::state::RedbPersistentState,
     entries: Vec<&TargetEntry>,
     dest_abs: &AbsPath,
     identities: &[guisu_crypto::Identity],
@@ -616,13 +616,20 @@ fn process_entries_sequential(
 impl Command for ApplyCommand {
     type Output = ApplyStats;
     #[allow(clippy::too_many_lines)]
-    fn execute(&self, context: &RuntimeContext) -> crate::error::Result<ApplyStats> {
-        // Extract paths, config, and database from context
+    fn execute(&mut self, context: &mut RuntimeContext) -> crate::error::Result<ApplyStats> {
+        // Extract paths, config, and database from context.
+        // `config` is read by reference; every `config` use below happens
+        // before `context.database_mut()`, so the immutable borrow is
+        // released by the time we need exclusive access to the database.
+        // `database` is an `Arc<RedbPersistentState>` clone, kept under
+        // that name because `detect_config_drift(&database, ...)` is a
+        // gate pattern pinned by `test_named_target_gates_...`.
         let source_abs = context.dotfiles_dir();
         let dest_abs = context.dest_dir();
         let source_dir = context.source_dir();
         let config = &context.config;
-        let database = context.database();
+        let database = std::sync::Arc::clone(context.database());
+        let dest_abs = dest_abs.clone();
 
         // Load age identities for decryption
         let spinner = progress::create_spinner("Loading identities...");
@@ -653,7 +660,7 @@ impl Command for ApplyCommand {
         // Apply remove directives from .guisu/state.toml.
         apply_removed_paths(
             &metadata,
-            dest_abs,
+            &dest_abs,
             &guisu_engine::RealSystem,
             self.dry_run,
             &stats,
@@ -675,7 +682,7 @@ impl Command for ApplyCommand {
         let filter_paths = if self.files.is_empty() {
             None
         } else {
-            Some(crate::build_filter_paths(&self.files, dest_abs)?)
+            Some(crate::build_filter_paths(&self.files, &dest_abs)?)
         };
 
         // Read source state
@@ -692,7 +699,7 @@ impl Command for ApplyCommand {
             &source_state,
             &processor,
             source_abs,
-            dest_abs,
+            &dest_abs,
             &working_tree,
             config,
             all_variables,
@@ -705,7 +712,7 @@ impl Command for ApplyCommand {
             filter_paths.as_ref(),
             &ignore_matcher,
             &metadata,
-            dest_abs,
+            &dest_abs,
         );
 
         if entries_to_apply.is_empty() {
@@ -715,7 +722,7 @@ impl Command for ApplyCommand {
 
         // Check for configuration drift (files modified by user AND source updated)
         if !self.dry_run && !has_named_target {
-            let drift_warnings = detect_config_drift(database, &entries_to_apply, dest_abs);
+            let drift_warnings = detect_config_drift(&database, &entries_to_apply, &dest_abs);
             display_drift_warnings(&drift_warnings);
         }
 
@@ -735,9 +742,9 @@ impl Command for ApplyCommand {
         // produces non-deterministic print order — see "apply ordering" in
         // CHANGELOG if the regression needs revisiting.
         process_entries_sequential(
-            database,
+            context.database_mut(),
             entries_to_apply,
-            dest_abs,
+            &dest_abs,
             &identities,
             &mut conflict_handler,
             &stats,
@@ -1555,7 +1562,7 @@ mod tests {
             .find("create_spinner(\"Reading source state...\")")
             .expect("read-source spinner must exist");
         let drift_gate = src
-            .find("detect_config_drift(database, &entries_to_apply, dest_abs)")
+            .find("detect_config_drift(&database, &entries_to_apply, &dest_abs)")
             .expect("drift detection call must exist");
         let target_state_spinner = src
             .find("create_spinner(\n            \"Processing templates and encrypted files...\",\n        )")

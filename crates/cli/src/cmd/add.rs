@@ -75,7 +75,7 @@ struct AddParams<'a> {
 
 impl Command for AddCommand {
     type Output = ();
-    fn execute(&self, context: &RuntimeContext) -> crate::error::Result<()> {
+    fn execute(&mut self, context: &mut RuntimeContext) -> crate::error::Result<()> {
         let source_dir = context.source_dir();
         let source_abs = context.dotfiles_dir();
         let dest_abs = context.dest_dir();
@@ -1527,7 +1527,7 @@ mod tests {
 
         let config = test_config();
         let db_path = temp.path().join("test.db");
-        let context = crate::common::RuntimeContext::new_with_db_path(
+        let mut context = crate::common::RuntimeContext::new_with_db_path(
             config,
             &source_dir,
             &dest_dir,
@@ -1535,7 +1535,7 @@ mod tests {
         )
         .expect("Failed to create test RuntimeContext");
 
-        let cmd = AddCommand {
+        let mut cmd = AddCommand {
             files: vec![target],
             template: false,
             autotemplate: false,
@@ -1546,7 +1546,7 @@ mod tests {
         };
 
         let err = cmd
-            .execute(&context)
+            .execute(&mut context)
             .expect_err("adding an already-managed file must fail");
         let msg = format!("{err:#}");
 

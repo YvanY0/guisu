@@ -92,7 +92,7 @@ pub struct InfoCommand {
 
 impl Command for InfoCommand {
     type Output = ();
-    fn execute(&self, context: &RuntimeContext) -> crate::error::Result<()> {
+    fn execute(&mut self, context: &mut RuntimeContext) -> crate::error::Result<()> {
         run_impl(context.source_dir(), &context.config, self.all, self.json).map_err(Into::into)
     }
 }

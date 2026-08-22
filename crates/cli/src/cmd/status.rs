@@ -17,7 +17,6 @@ use std::collections::BTreeMap;
 use std::io::IsTerminal;
 use std::path::Path;
 use std::path::PathBuf;
-use std::sync::Arc;
 use tracing::debug;
 
 use crate::command::Command;
@@ -135,17 +134,25 @@ pub struct StatusCommand {
 
 impl Command for StatusCommand {
     type Output = ();
-    fn execute(&self, context: &RuntimeContext) -> crate::error::Result<()> {
+    fn execute(&mut self, context: &mut RuntimeContext) -> crate::error::Result<()> {
         let output_format = if self.tree {
             OutputFormat::Tree
         } else {
             OutputFormat::Simple
         };
+        // Snapshot immutable pieces from `context` so we can take exclusive
+        // `&mut` access to the database afterwards. `config` is cloned
+        // (Arc refcount bump) so the immutable borrow on `context.config`
+        // is released before `database_mut()` is called.
+        let source_dir = context.source_dir().to_path_buf();
+        let dest_dir = context.dest_dir().as_path().to_path_buf();
+        let config = context.config.clone();
+        let db = context.database_mut();
         run_impl(
-            context.database(),
-            context.source_dir(),
-            context.dest_dir().as_path(),
-            &context.config,
+            db,
+            &source_dir,
+            &dest_dir,
+            &config,
             &self.files,
             self.all,
             output_format,
@@ -245,7 +252,7 @@ fn build_status_target_state(
 /// Run the status command implementation
 #[allow(clippy::too_many_arguments)]
 fn run_impl(
-    database: &std::sync::Arc<guisu_engine::state::RedbPersistentState>,
+    database: &mut guisu_engine::state::RedbPersistentState,
     source_dir: &Path,
     dest_dir: &Path,
     config: &Config,
@@ -391,7 +398,7 @@ fn run_impl(
 
 /// Parameters for collecting file information
 struct CollectParams<'a> {
-    database: &'a std::sync::Arc<guisu_engine::state::RedbPersistentState>,
+    database: &'a mut guisu_engine::state::RedbPersistentState,
     source_state: &'a SourceState,
     target_state: &'a TargetState,
     dest_state: &'a mut DestinationState,
@@ -454,7 +461,7 @@ mod format_display_path_tests {
 
 /// Determine file status based on three-way comparison
 fn determine_entry_status(
-    database: &std::sync::Arc<guisu_engine::state::RedbPersistentState>,
+    database: &mut guisu_engine::state::RedbPersistentState,
     target_entry: &TargetEntry,
     dest_entry: &guisu_engine::entry::DestEntry,
     path_str: &str,
@@ -524,7 +531,7 @@ fn determine_entry_status(
 /// Process a single entry for status display
 #[allow(clippy::too_many_arguments)]
 fn process_entry_for_status(
-    database: &std::sync::Arc<guisu_engine::state::RedbPersistentState>,
+    database: &mut guisu_engine::state::RedbPersistentState,
     entry: &guisu_engine::entry::SourceEntry,
     dest_state_mutex: &std::sync::Mutex<&mut DestinationState>,
     target_state: &TargetState,
@@ -637,17 +644,21 @@ fn collect_file_info(params: CollectParams) -> Vec<FileInfo> {
         absolute_paths,
     } = params;
 
-    // Wrap dest_state in a Mutex for thread-safe access during parallel processing
-    // The cache mutations are serialized, but hash computation (CPU-intensive) is still parallel
+    // Wrap dest_state and database in Mutexes for thread-safe access during
+    // parallel processing. The cache mutations and database reads are
+    // serialized, but hash computation (CPU-intensive) is still parallel.
     let dest_state_mutex = Mutex::new(dest_state);
+    let database_mutex = Mutex::new(database);
 
     // Use parallel processing for file info collection
     let files: Vec<FileInfo> = source_state
         .entries()
         .par_bridge()
         .filter_map(|entry| {
+            // Lock the database briefly for each entry's read.
+            let mut database = database_mutex.lock().expect("database mutex poisoned");
             process_entry_for_status(
-                database,
+                &mut database,
                 entry,
                 &dest_state_mutex,
                 target_state,
@@ -1067,7 +1078,7 @@ fn render_script_content(
 /// Check and print hooks status
 fn print_hooks_status(
     source_dir: &Path,
-    db: &RedbPersistentState,
+    db: &mut RedbPersistentState,
     show_all: bool,
     config: &Config,
 ) {

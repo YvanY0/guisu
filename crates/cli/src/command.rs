@@ -48,6 +48,11 @@ pub trait Command {
 
     /// Execute the command with the given runtime context
     ///
+    /// The context is passed by `&mut` so commands can write to the
+    /// persistent state database (see [`RuntimeContext::database_mut`]).
+    /// Commands must not hold the database borrow across an `.await`
+    /// point or yield it back to a caller that would then need it again.
+    ///
     /// # Arguments
     ///
     /// * `context` - Runtime context containing configuration and resolved paths
@@ -60,7 +65,7 @@ pub trait Command {
     ///
     /// Returns a `CommandError` if the command fails to execute. Error messages should
     /// be descriptive enough for the user to understand what went wrong.
-    fn execute(&self, context: &RuntimeContext) -> Result<Self::Output>;
+    fn execute(&mut self, context: &mut RuntimeContext) -> Result<Self::Output>;
 
     /// Map the command's `Output` to a process exit code.
     ///

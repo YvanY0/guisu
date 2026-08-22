@@ -31,7 +31,7 @@ use super::path::SourceDirExt;
 #[must_use]
 pub fn load_hooks_and_state(
     source_dir: &Path,
-    db: &RedbPersistentState,
+    db: &mut RedbPersistentState,
 ) -> Option<(HookCollections, HookState)> {
     let hooks_dir = source_dir.hooks_dir();
 
@@ -49,7 +49,7 @@ pub fn load_hooks_and_state(
     }
 
     // Load state from database
-    let persistence = HookStatePersistence::new(db);
+    let mut persistence = HookStatePersistence::new(db);
     let state = persistence.load().ok()?;
 
     Some((collections, state))

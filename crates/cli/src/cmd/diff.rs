@@ -62,15 +62,23 @@ pub struct DiffCommand {
 
 impl Command for DiffCommand {
     type Output = ();
-    fn execute(&self, context: &RuntimeContext) -> crate::error::Result<()> {
+    fn execute(&mut self, context: &mut RuntimeContext) -> crate::error::Result<()> {
+        // Snapshot immutable pieces from `context` so we can take exclusive
+        // `&mut` access to the database afterwards. `config` is cloned
+        // (Arc refcount bump) so the immutable borrow on `context.config`
+        // is released before `database_mut()` is called.
+        let source_dir = context.source_dir().to_path_buf();
+        let dest_dir = context.dest_dir().as_path().to_path_buf();
+        let config = context.config.clone();
+        let db = context.database_mut();
         run_impl(
-            context.source_dir(),
-            context.dest_dir().as_path(),
+            &source_dir,
+            &dest_dir,
             &self.files,
             self.pager,
             self.interactive,
-            &context.config,
-            &context.database,
+            &config,
+            db,
         )
         .map_err(Into::into)
     }
@@ -380,7 +388,7 @@ fn display_diff_output(
     stats: &DiffStats,
     pager: bool,
     config: &Config,
-    db: &RedbPersistentState,
+    db: &mut RedbPersistentState,
 ) -> Result<()> {
     // Check and display hooks status first
     let hooks_displayed = print_hooks_status(source_dir, config, db);
@@ -416,7 +424,7 @@ fn run_impl(
     pager: bool,
     interactive: bool,
     config: &Config,
-    db: &RedbPersistentState,
+    db: &mut RedbPersistentState,
 ) -> Result<()> {
     // Resolve all paths (handles root_entry and canonicalization)
     let paths = crate::common::ResolvedPaths::resolve(source_dir, dest_dir, config)?;
@@ -1418,7 +1426,7 @@ pub fn compare_and_print_hooks(
 
 /// Check and print hooks status
 /// Returns true if any hooks were displayed
-fn print_hooks_status(source_dir: &Path, config: &Config, db: &RedbPersistentState) -> bool {
+fn print_hooks_status(source_dir: &Path, config: &Config, db: &mut RedbPersistentState) -> bool {
     // Load hooks and state using shared helper
     let Some((collections, state)) = crate::utils::hooks::load_hooks_and_state(source_dir, db)
     else {

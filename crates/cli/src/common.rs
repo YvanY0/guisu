@@ -171,6 +171,24 @@ impl RuntimeContext {
         &self.database
     }
 
+    /// Get a `&mut RedbPersistentState` for write operations
+    ///
+    /// This requires sole ownership of the `Arc` (i.e. no other strong
+    /// references in flight). All CLI commands are sequential and never
+    /// clone the Arc, so this is always safe at runtime. If a caller
+    /// introduces concurrent cloning, this will panic.
+    ///
+    /// # Panics
+    ///
+    /// Panics if another `Arc<RedbPersistentState>` reference exists.
+    /// This shouldn't happen in the CLI's sequential command flow, but
+    /// the panic surfaces a logic bug if it ever does.
+    #[inline]
+    pub fn database_mut(&mut self) -> &mut RedbPersistentState {
+        Arc::get_mut(&mut self.database)
+            .expect("RuntimeContext::database_mut called while another Arc reference exists")
+    }
+
     /// Load age identities (cached)
     ///
     /// # Errors
@@ -266,6 +284,7 @@ impl RuntimeContext {
 mod tests {
     #![allow(clippy::unwrap_used, clippy::panic)]
     use super::*;
+    use guisu_engine::state::{ENTRY_STATE_BUCKET, PersistentState};
     use tempfile::TempDir;
 
     // Helper to create test config
@@ -568,6 +587,36 @@ mod tests {
 
         let templates = context.templates_dir();
         assert!(templates.is_none());
+    }
+
+    #[test]
+    fn test_runtime_context_database_mut_write() {
+        // `database_mut()` should expose the underlying redb state so a
+        // round-trip write+read works without ever cloning the Arc.
+        let temp = TempDir::new().expect("Failed to create temp dir");
+        let temp_canon = std::fs::canonicalize(temp.path()).expect("Failed to canonicalize");
+        let source_dir = temp_canon.join("src");
+        let dest_dir = temp_canon.join("dst");
+        std::fs::create_dir_all(&source_dir).expect("Failed to create source dir");
+        std::fs::create_dir_all(&dest_dir).expect("Failed to create dest dir");
+
+        let config = test_config();
+        let temp_db = TempDir::new().expect("Failed to create temp db dir");
+        let mut context = test_runtime_context(config, &source_dir, &dest_dir, &temp_db);
+
+        {
+            let db = context.database_mut();
+            db.set(ENTRY_STATE_BUCKET, b"key", b"value")
+                .expect("database_mut write should succeed");
+        }
+
+        // Read through the shared `&database()` view to confirm the write
+        // is observable from another reference.
+        let value = context
+            .database()
+            .get(ENTRY_STATE_BUCKET, b"key")
+            .expect("database read should succeed");
+        assert_eq!(value, Some(b"value".to_vec()));
     }
 
     #[test]

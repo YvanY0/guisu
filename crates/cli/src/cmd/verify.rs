@@ -85,7 +85,7 @@ pub struct VerifyCommand {
 impl Command for VerifyCommand {
     type Output = bool;
 
-    fn execute(&self, context: &RuntimeContext) -> crate::error::Result<Self::Output> {
+    fn execute(&mut self, context: &mut RuntimeContext) -> crate::error::Result<Self::Output> {
         let metadata =
             Metadata::load(context.source_dir()).context("Failed to load source metadata")?;
 

@@ -17,6 +17,7 @@ use anyhow::{Context, Result};
 use clap::{Parser, Subcommand};
 use owo_colors::OwoColorize;
 use std::path::{Path, PathBuf};
+use std::sync::Arc;
 
 use command::Command;
 use common::RuntimeContext;
@@ -380,7 +381,7 @@ fn handle_init_command(
         let config = load_config_with_template_support(config_path, &source_path, None)?;
 
         // Create ApplyCommand with default options (all files)
-        let apply_cmd = cmd::apply::ApplyCommand {
+        let mut apply_cmd = cmd::apply::ApplyCommand {
             files: vec![],
             dry_run: false,
             force: false,
@@ -388,24 +389,29 @@ fn handle_init_command(
         };
 
         // Create RuntimeContext and execute
-        let context = RuntimeContext::new(config, &source_path, dest_dir)?;
-        apply_cmd.execute(&context)?;
+        let mut context = RuntimeContext::new(config, &source_path, dest_dir)?;
+        apply_cmd.execute(&mut context)?;
     }
     Ok(())
 }
 
 /// Handle apply command with pre and post hooks
 fn handle_apply_command(
-    apply_cmd: &cmd::apply::ApplyCommand,
-    context: &RuntimeContext,
+    apply_cmd: &mut cmd::apply::ApplyCommand,
+    context: &mut RuntimeContext,
 ) -> Result<()> {
     // Hooks should only run for global apply (no file arguments) and not in dry-run mode
     let should_run_hooks = !apply_cmd.dry_run && apply_cmd.files.is_empty();
 
+    // Clone the immutable config and snapshot source_dir so we can
+    // release the borrow on `context` and pass `&mut` access to the
+    // database for hooks.
+    let config = context.config.clone();
+    let source_dir = context.source_dir().to_path_buf();
+
     // Handle pre-apply hooks
     if should_run_hooks
-        && let Err(e) =
-            cmd::hooks::handle_hooks_pre(context.source_dir(), &context.config, &context.database)
+        && let Err(e) = cmd::hooks::handle_hooks_pre(&source_dir, &config, context.database_mut())
     {
         tracing::warn!("Pre-apply hooks failed: {}", e);
         println!(
@@ -418,14 +424,13 @@ fn handle_apply_command(
 
     // Execute apply command and get stats
     let dry_run = apply_cmd.dry_run;
-    let stats = apply_cmd.execute(context)?;
+    let stats = apply_cmd.execute(&mut *context)?;
 
     // Database will be automatically closed when RuntimeContext is dropped
 
     // Handle post-apply hooks
     if should_run_hooks
-        && let Err(e) =
-            cmd::hooks::handle_hooks_post(context.source_dir(), &context.config, &context.database)
+        && let Err(e) = cmd::hooks::handle_hooks_post(&source_dir, &config, context.database_mut())
     {
         tracing::warn!("Post-apply hooks failed: {}", e);
         println!(
@@ -453,14 +458,14 @@ fn handle_apply_command(
 /// into a process exit code via `Command::exit_code`. Errors propagate
 /// to the caller via `?`; successes call `std::process::exit(code)` and
 /// therefore never return.
-fn dispatch_leaf(cmd: &impl command::Command, context: &RuntimeContext) -> Result<()> {
+fn dispatch_leaf(cmd: &mut impl command::Command, context: &mut RuntimeContext) -> Result<()> {
     match cmd.execute(context) {
         Ok(output) => std::process::exit(cmd.exit_code(&output)),
         Err(e) => Err(anyhow::Error::from(e)),
     }
 }
 
-fn execute_command(command: Commands, context: &RuntimeContext) -> Result<()> {
+fn execute_command(command: Commands, context: &mut RuntimeContext) -> Result<()> {
     // Leaf commands are routed through `dispatch_leaf` which calls
     // `Command::exit_code` to translate the command's `Output` into a
     // process exit code. This separates "command ran successfully and
@@ -475,15 +480,15 @@ fn execute_command(command: Commands, context: &RuntimeContext) -> Result<()> {
         Commands::Completion(_) => {
             unreachable!("Completion command already handled above")
         }
-        Commands::Add(add_cmd) => dispatch_leaf(&add_cmd, context)?,
-        Commands::Apply(apply_cmd) => {
+        Commands::Add(mut add_cmd) => dispatch_leaf(&mut add_cmd, context)?,
+        Commands::Apply(mut apply_cmd) => {
             // Apply runs hooks before/after `execute` and prints a
             // summary, so it has its own wrapper rather than going
             // through `dispatch_leaf`. Its default `exit_code` (0) is
             // already what we want.
-            handle_apply_command(&apply_cmd, context)?;
+            handle_apply_command(&mut apply_cmd, &mut *context)?;
         }
-        Commands::Diff(diff_cmd) => dispatch_leaf(&diff_cmd, context)?,
+        Commands::Diff(mut diff_cmd) => dispatch_leaf(&mut diff_cmd, context)?,
         Commands::Age(age_cmd) => match age_cmd {
             AgeCommands::Generate { output } => {
                 cmd::age::generate(output)?;
@@ -516,9 +521,9 @@ fn execute_command(command: Commands, context: &RuntimeContext) -> Result<()> {
                 )?;
             }
         },
-        Commands::Status(status_cmd) => dispatch_leaf(&status_cmd, context)?,
-        Commands::Cat(cat_cmd) => dispatch_leaf(&cat_cmd, context)?,
-        Commands::Edit(edit_cmd) => dispatch_leaf(&edit_cmd, context)?,
+        Commands::Status(mut status_cmd) => dispatch_leaf(&mut status_cmd, context)?,
+        Commands::Cat(mut cat_cmd) => dispatch_leaf(&mut cat_cmd, context)?,
+        Commands::Edit(mut edit_cmd) => dispatch_leaf(&mut edit_cmd, context)?,
         Commands::Ignored(ignored_cmd) => match ignored_cmd {
             IgnoredCommands::List => {
                 cmd::ignored::run_list(context.source_dir(), &context.config)?;
@@ -540,15 +545,17 @@ fn execute_command(command: Commands, context: &RuntimeContext) -> Result<()> {
                 )?;
             }
         },
-        Commands::Update(update_cmd) => dispatch_leaf(&update_cmd, context)?,
-        Commands::Info(info_cmd) => dispatch_leaf(&info_cmd, context)?,
-        Commands::Variables(vars_cmd) => dispatch_leaf(&vars_cmd, context)?,
+        Commands::Update(mut update_cmd) => dispatch_leaf(&mut update_cmd, context)?,
+        Commands::Info(mut info_cmd) => dispatch_leaf(&mut info_cmd, context)?,
+        Commands::Variables(mut vars_cmd) => dispatch_leaf(&mut vars_cmd, context)?,
         Commands::Hooks(hooks_cmd) => match hooks_cmd {
             HooksCommands::Run { yes, hook } => {
+                let config = context.config.clone();
+                let source_dir = context.source_dir().to_path_buf();
                 cmd::hooks::run_hooks(
-                    context.source_dir(),
-                    &context.config,
-                    &context.database,
+                    &source_dir,
+                    &config,
+                    context.database_mut(),
                     yes,
                     hook.as_deref(),
                 )?;
@@ -560,7 +567,7 @@ fn execute_command(command: Commands, context: &RuntimeContext) -> Result<()> {
                 cmd::hooks::run_show(context.source_dir(), &context.config, &name)?;
             }
         },
-        Commands::Verify(verify_cmd) => dispatch_leaf(&verify_cmd, context)?,
+        Commands::Verify(mut verify_cmd) => dispatch_leaf(&mut verify_cmd, context)?,
     }
 
     Ok(())
@@ -616,25 +623,30 @@ pub fn run(cli: Cli) -> Result<()> {
 
     // For all other commands, create database first to enable config caching
     let db_path = guisu_engine::get_db_path().context("Failed to get database path")?;
-    let database = std::sync::Arc::new(
+    let mut database = std::sync::Arc::new(
         guisu_engine::state::RedbPersistentState::new(&db_path)
             .context("Failed to create database instance")?,
     );
 
-    // Load config with database caching enabled
-    let config =
-        load_config_with_template_support(cli.config.as_deref(), &source_dir, Some(&database))?;
+    // Load config with database caching enabled. We just constructed
+    // this Arc and only hold one reference, so unwrapping with
+    // `Arc::get_mut` is safe.
+    let config = load_config_with_template_support(
+        cli.config.as_deref(),
+        &source_dir,
+        Arc::get_mut(&mut database).map(|db| db as &mut _),
+    )?;
 
     // Create RuntimeContext for commands (reuses the database instance)
     let paths = crate::common::ResolvedPaths::resolve(&source_dir, &dest_dir, &config)?;
-    let context = crate::common::RuntimeContext::from_parts_with_db(
+    let mut context = crate::common::RuntimeContext::from_parts_with_db(
         std::sync::Arc::new(config),
         paths,
         database,
     );
 
     // Execute the command
-    execute_command(cli.command, &context)
+    execute_command(cli.command, &mut context)
 }
 
 // ============================================================================
@@ -756,7 +768,7 @@ fn resolve_absolute_path(path: &std::path::Path) -> Result<guisu_core::path::Abs
 pub(crate) fn load_config_with_template_support(
     _config_path: Option<&std::path::Path>,
     source_dir: &std::path::Path,
-    database: Option<&std::sync::Arc<guisu_engine::state::RedbPersistentState>>,
+    database: Option<&mut guisu_engine::state::RedbPersistentState>,
 ) -> Result<guisu_config::Config> {
     use std::fs;
 

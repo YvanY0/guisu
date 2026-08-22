@@ -13,7 +13,7 @@ use super::types::HookName;
 pub type HookEnvVars = IndexMap<String, String>;
 
 /// Collections of hooks for different stages
-#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
 pub struct HookCollections {
     /// Hooks to run before applying dotfiles
     #[serde(default)]
@@ -39,7 +39,7 @@ impl HookCollections {
 }
 
 /// A single hook definition
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Hook {
     /// Name of the hook (for logging and identification)
     pub name: HookName,
