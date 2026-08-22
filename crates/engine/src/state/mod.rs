@@ -1,23 +1,34 @@
 //! State management for dotfiles
 //!
 //! Provides state tracking for source, target, destination, and persistent states.
+//!
+//! The persistence layer (the [`PersistentState`] trait and the
+//! [`RedbPersistentState`](persistence::RedbPersistentState) implementation)
+//! lives in the [`persistence`] submodule.
+
+mod persistence;
 
 use crate::attr::FileAttributes;
 use crate::entry::{DestEntry, SourceEntry, TargetEntry};
-use crate::hash;
 use crate::processor::ContentProcessor;
 use crate::system::System;
 use guisu_core::path::{AbsPath, RelPath, SourceRelPath};
 use guisu_core::{Error, Result};
-use redb::{Database, ReadableDatabase, ReadableTable, TableDefinition};
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
 use std::collections::{HashMap, HashSet};
 use std::fs;
 use std::path::Path;
-use std::sync::{Arc, RwLock};
+use std::sync::Arc;
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 use subtle::ConstantTimeEq;
 use walkdir::WalkDir;
+
+// Re-exports so callers can keep addressing the persistence API at
+// `crate::state::*` without churning their imports.
+pub use persistence::{
+    CONFIG_METADATA_BUCKET, ENTRY_STATE_BUCKET, HOOK_STATE_BUCKET, PersistentState,
+    RedbPersistentState, hash_data,
+};
 
 /// Custom serde module for `SystemTime` serialization
 mod systemtime_serde {
@@ -53,7 +64,7 @@ mod systemtime_serde {
 }
 
 /// State tracking for hook execution
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct HookState {
     /// Last time hooks were executed
     #[serde(with = "systemtime_serde")]
@@ -248,8 +259,11 @@ impl HookState {
     ///
     /// Returns an error if serialization fails (e.g., encoding error)
     pub fn to_bytes(&self) -> Result<Vec<u8>> {
-        postcard::to_allocvec(self)
-            .map_err(|e| Error::State(format!("Failed to serialize HookState: {e}")))
+        postcard::to_allocvec(self).map_err(|e| Error::StateSerialization {
+            type_name: "HookState",
+            operation: "to_allocvec",
+            source: Box::new(e),
+        })
     }
 
     /// Deserialize from bytes
@@ -267,13 +281,13 @@ impl Default for HookState {
 
 /// Hook state persistence wrapper
 pub struct HookStatePersistence<'a, T: PersistentState> {
-    db: &'a T,
+    db: &'a mut T,
 }
 
 impl<'a, T: PersistentState> HookStatePersistence<'a, T> {
     /// Create new hook state persistence
     #[must_use]
-    pub fn new(db: &'a T) -> Self {
+    pub fn new(db: &'a mut T) -> Self {
         Self { db }
     }
 
@@ -285,7 +299,7 @@ impl<'a, T: PersistentState> HookStatePersistence<'a, T> {
     /// # Errors
     ///
     /// Returns an error if the state cannot be loaded from the database (e.g., database error)
-    pub fn load(&self) -> Result<HookState> {
+    pub fn load(&mut self) -> Result<HookState> {
         const HOOK_STATE_KEY: &[u8] = b"hooks";
 
         match self.db.get(HOOK_STATE_BUCKET, HOOK_STATE_KEY)? {
@@ -306,7 +320,7 @@ impl<'a, T: PersistentState> HookStatePersistence<'a, T> {
     /// # Errors
     ///
     /// Returns an error if the state cannot be serialized or saved (e.g., serialization error, database error)
-    pub fn save(&self, state: &HookState) -> Result<()> {
+    pub fn save(&mut self, state: &HookState) -> Result<()> {
         const HOOK_STATE_KEY: &[u8] = b"hooks";
 
         let bytes = state.to_bytes()?;
@@ -549,759 +563,6 @@ impl Metadata {
     /// Remove a file from the create-once list
     pub fn remove_create_once(&mut self, file_path: &str) -> bool {
         self.create_once.files.remove(file_path)
-    }
-}
-
-/// Database bucket name for entry state (tracks file content hashes and modes)
-pub const ENTRY_STATE_BUCKET: &str = "entryState";
-/// Database bucket name for hook state (tracks hook execution and hashes)
-pub const HOOK_STATE_BUCKET: &str = "hookState";
-/// Database bucket name for config metadata (tracks rendered config and template hash)
-pub const CONFIG_METADATA_BUCKET: &str = "configMetadata";
-
-/// Trait for persistent state storage
-pub trait PersistentState: Send + Sync {
-    /// Get a value from a bucket
-    ///
-    /// # Errors
-    ///
-    /// Returns an error if the value cannot be retrieved (e.g., database error, read failure)
-    fn get(&self, bucket: &str, key: &[u8]) -> Result<Option<Vec<u8>>>;
-
-    /// Set a value in a bucket
-    ///
-    /// # Errors
-    ///
-    /// Returns an error if the value cannot be stored (e.g., database error, write failure, transaction error)
-    fn set(&self, bucket: &str, key: &[u8], value: &[u8]) -> Result<()>;
-
-    /// Set multiple values in a bucket in a single transaction
-    ///
-    /// This is more efficient than calling `set()` multiple times as it batches
-    /// all writes into a single database transaction.
-    ///
-    /// # Errors
-    ///
-    /// Returns an error if the values cannot be stored (e.g., database error, write failure, transaction error)
-    fn set_batch(&self, bucket: &str, entries: &[(&[u8], &[u8])]) -> Result<()>;
-
-    /// Delete a key from a bucket
-    ///
-    /// # Errors
-    ///
-    /// Returns an error if the key cannot be deleted (e.g., database error, write failure, transaction error)
-    fn delete(&self, bucket: &str, key: &[u8]) -> Result<()>;
-
-    /// Delete an entire bucket
-    ///
-    /// # Errors
-    ///
-    /// Returns an error if the bucket cannot be deleted (e.g., database error, transaction error)
-    fn delete_bucket(&self, bucket: &str) -> Result<()>;
-
-    /// Iterate over all key-value pairs in a bucket
-    ///
-    /// # Errors
-    ///
-    /// Returns an error if iteration fails or the callback returns an error (e.g., database error, read failure, callback error)
-    fn for_each<F>(&self, bucket: &str, f: F) -> Result<()>
-    where
-        F: FnMut(&[u8], &[u8]) -> Result<()>;
-
-    /// Close the database
-    ///
-    /// # Errors
-    ///
-    /// Returns an error if the database cannot be closed properly (e.g., outstanding transactions, I/O error)
-    fn close(self) -> Result<()>;
-}
-
-/// Persistent state implementation using redb
-///
-/// # Thread Safety
-///
-/// While `RedbPersistentState` is `Send + Sync` and can be shared across threads,
-/// concurrent write operations are serialized internally by redb.
-///
-/// For application-level access control, use the singleton pattern in `database.rs`
-/// which wraps this in `Arc<Mutex<Option<RedbPersistentState>>>` to ensure
-/// exclusive access during operations.
-pub struct RedbPersistentState {
-    db: Database,
-}
-
-// Static assertions to ensure thread safety
-const _: () = {
-    const fn assert_send<T: Send>() {}
-    const fn assert_sync<T: Sync>() {}
-
-    let _ = assert_send::<RedbPersistentState>;
-    let _ = assert_sync::<RedbPersistentState>;
-};
-
-impl RedbPersistentState {
-    /// Create or open a persistent state database
-    ///
-    /// # Errors
-    ///
-    /// Returns an error if the database cannot be created or opened (e.g., permission denied, disk full, corrupted database)
-    pub fn new(path: impl AsRef<Path>) -> Result<Self> {
-        let db = Database::create(path)
-            .map_err(|e| crate::Error::State(format!("Failed to create database: {e}")))?;
-        Ok(Self { db })
-    }
-
-    /// Open in read-only mode
-    ///
-    /// # Errors
-    ///
-    /// Returns an error if the database cannot be opened (e.g., file not found, permission denied, corrupted database)
-    pub fn read_only(path: impl AsRef<Path>) -> Result<Self> {
-        let db = Database::open(path)
-            .map_err(|e| crate::Error::State(format!("Failed to open database: {e}")))?;
-        Ok(Self { db })
-    }
-
-    /// Create table definition for known bucket names
-    ///
-    /// # Panics
-    ///
-    /// Panics if called with an unknown bucket name. This is a programming error
-    /// that should be caught during development. Only `ENTRY_STATE_BUCKET`,
-    /// `HOOK_STATE_BUCKET`, and `CONFIG_METADATA_BUCKET` are valid bucket names.
-    #[inline]
-    fn table_def_with_storage(
-        bucket: &str,
-    ) -> TableDefinition<'static, &'static [u8], &'static [u8]> {
-        match bucket {
-            ENTRY_STATE_BUCKET => TableDefinition::new(ENTRY_STATE_BUCKET),
-            HOOK_STATE_BUCKET => TableDefinition::new(HOOK_STATE_BUCKET),
-            CONFIG_METADATA_BUCKET => TableDefinition::new(CONFIG_METADATA_BUCKET),
-            _ => panic!(
-                "Unknown bucket name: '{bucket}'. Only ENTRY_STATE_BUCKET, \
-                 HOOK_STATE_BUCKET, and CONFIG_METADATA_BUCKET are valid. This is a programming error."
-            ),
-        }
-    }
-}
-
-impl PersistentState for RedbPersistentState {
-    fn get(&self, bucket: &str, key: &[u8]) -> Result<Option<Vec<u8>>> {
-        let read_txn = self
-            .db
-            .begin_read()
-            .map_err(|e| crate::Error::State(format!("Failed to begin read transaction: {e}")))?;
-        let table_def = Self::table_def_with_storage(bucket);
-
-        // Table doesn't exist yet
-        let Ok(table) = read_txn.open_table(table_def) else {
-            return Ok(None);
-        };
-
-        match table.get(key) {
-            Ok(Some(value)) => Ok(Some(value.value().to_vec())),
-            Ok(None) => Ok(None),
-            Err(e) => Err(crate::Error::State(format!("Failed to get value: {e}"))),
-        }
-    }
-
-    fn set(&self, bucket: &str, key: &[u8], value: &[u8]) -> Result<()> {
-        let write_txn = self
-            .db
-            .begin_write()
-            .map_err(|e| crate::Error::State(format!("Failed to begin write transaction: {e}")))?;
-        {
-            let table_def = Self::table_def_with_storage(bucket);
-            let mut table = write_txn
-                .open_table(table_def)
-                .map_err(|e| crate::Error::State(format!("Failed to open table: {e}")))?;
-            table
-                .insert(key, value)
-                .map_err(|e| crate::Error::State(format!("Failed to insert value: {e}")))?;
-        }
-        write_txn
-            .commit()
-            .map_err(|e| crate::Error::State(format!("Failed to commit transaction: {e}")))?;
-        Ok(())
-    }
-
-    fn set_batch(&self, bucket: &str, entries: &[(&[u8], &[u8])]) -> Result<()> {
-        // Early return for empty batch
-        if entries.is_empty() {
-            return Ok(());
-        }
-
-        // Single transaction for all entries
-        let write_txn = self
-            .db
-            .begin_write()
-            .map_err(|e| crate::Error::State(format!("Failed to begin write transaction: {e}")))?;
-        {
-            let table_def = Self::table_def_with_storage(bucket);
-            let mut table = write_txn
-                .open_table(table_def)
-                .map_err(|e| crate::Error::State(format!("Failed to open table: {e}")))?;
-
-            // Insert all entries in the same transaction
-            for (key, value) in entries {
-                table.insert(*key, *value).map_err(|e| {
-                    crate::Error::State(format!("Failed to insert batch value: {e}"))
-                })?;
-            }
-        }
-        write_txn
-            .commit()
-            .map_err(|e| crate::Error::State(format!("Failed to commit batch transaction: {e}")))?;
-        Ok(())
-    }
-
-    fn delete(&self, bucket: &str, key: &[u8]) -> Result<()> {
-        let write_txn = self
-            .db
-            .begin_write()
-            .map_err(|e| crate::Error::State(format!("Failed to begin write transaction: {e}")))?;
-        {
-            let table_def = Self::table_def_with_storage(bucket);
-            let mut table = write_txn
-                .open_table(table_def)
-                .map_err(|e| crate::Error::State(format!("Failed to open table: {e}")))?;
-            table
-                .remove(key)
-                .map_err(|e| crate::Error::State(format!("Failed to remove value: {e}")))?;
-        }
-        write_txn
-            .commit()
-            .map_err(|e| crate::Error::State(format!("Failed to commit transaction: {e}")))?;
-        Ok(())
-    }
-
-    fn delete_bucket(&self, bucket: &str) -> Result<()> {
-        let write_txn = self
-            .db
-            .begin_write()
-            .map_err(|e| crate::Error::State(format!("Failed to begin write transaction: {e}")))?;
-        let table_def = Self::table_def_with_storage(bucket);
-        write_txn
-            .delete_table(table_def)
-            .map_err(|e| crate::Error::State(format!("Failed to delete table: {e}")))?;
-        write_txn
-            .commit()
-            .map_err(|e| crate::Error::State(format!("Failed to commit transaction: {e}")))?;
-        Ok(())
-    }
-
-    fn for_each<F>(&self, bucket: &str, mut f: F) -> Result<()>
-    where
-        F: FnMut(&[u8], &[u8]) -> Result<()>,
-    {
-        let read_txn = self
-            .db
-            .begin_read()
-            .map_err(|e| crate::Error::State(format!("Failed to begin read transaction: {e}")))?;
-        let table_def = Self::table_def_with_storage(bucket);
-
-        // No bucket yet
-        let Ok(table) = read_txn.open_table(table_def) else {
-            return Ok(());
-        };
-
-        let iter = table
-            .iter()
-            .map_err(|e| crate::Error::State(format!("Failed to iterate table: {e}")))?;
-
-        for item in iter {
-            let (key, value) =
-                item.map_err(|e| crate::Error::State(format!("Failed to read item: {e}")))?;
-            f(key.value(), value.value())?;
-        }
-
-        Ok(())
-    }
-
-    fn close(self) -> Result<()> {
-        // redb closes automatically when dropped
-        drop(self.db);
-        Ok(())
-    }
-}
-
-/// Compute blake3 hash of data
-#[inline]
-#[must_use]
-pub fn hash_data(data: &[u8]) -> [u8; 32] {
-    hash::hash_content(data)
-}
-
-/// Entry state - tracks file state
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-pub struct EntryState {
-    /// blake3 hash of the file content (fixed 32-byte array)
-    pub content_hash: [u8; 32],
-    /// File mode/permissions (Unix only)
-    pub mode: Option<u32>,
-}
-
-impl EntryState {
-    /// Create a new entry state from content and mode
-    #[must_use]
-    pub fn new(content: &[u8], mode: Option<u32>) -> Self {
-        Self {
-            content_hash: hash_data(content),
-            mode,
-        }
-    }
-
-    /// Serialize to bytes
-    ///
-    /// # Errors
-    ///
-    /// Returns an error if serialization fails (e.g., encoding error)
-    pub fn to_bytes(&self) -> Result<Vec<u8>> {
-        postcard::to_allocvec(self)
-            .map_err(|e| Error::State(format!("Failed to serialize EntryState: {e}")))
-    }
-
-    /// Deserialize from bytes
-    #[must_use]
-    pub fn from_bytes(bytes: &[u8]) -> Option<Self> {
-        postcard::from_bytes(bytes).ok()
-    }
-}
-
-/// Script state - tracks script execution
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-pub struct ScriptState {
-    /// blake3 hash of the script content (fixed 32-byte array)
-    pub content_hash: [u8; 32],
-}
-
-impl ScriptState {
-    /// Create a new script state from content
-    #[must_use]
-    pub fn new(content: &[u8]) -> Self {
-        Self {
-            content_hash: hash_data(content),
-        }
-    }
-
-    /// Serialize to bytes
-    ///
-    /// # Errors
-    ///
-    /// Returns an error if serialization fails (e.g., encoding error)
-    pub fn to_bytes(&self) -> Result<Vec<u8>> {
-        postcard::to_allocvec(self)
-            .map_err(|e| Error::State(format!("Failed to serialize ScriptState: {e}")))
-    }
-
-    /// Deserialize from bytes
-    #[must_use]
-    pub fn from_bytes(bytes: &[u8]) -> Option<Self> {
-        postcard::from_bytes(bytes).ok()
-    }
-}
-
-/// Config metadata - tracks rendered configuration state
-///
-/// Stores the rendered configuration file content along with a hash of the template source.
-/// This enables caching: if the template hasn't changed, we can use the cached rendered config.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-pub struct ConfigMetadata {
-    /// blake3 hash of the config template source file (fixed 32-byte array)
-    /// Used to detect changes in .guisu.toml.j2
-    pub template_hash: [u8; 32],
-    /// Rendered TOML configuration string
-    /// Result of processing the template with full context
-    pub rendered_config: String,
-}
-
-impl ConfigMetadata {
-    /// Create new config metadata from template source and rendered output
-    #[must_use]
-    pub fn new(template_source: &str, rendered_config: String) -> Self {
-        Self {
-            template_hash: hash_data(template_source.as_bytes()),
-            rendered_config,
-        }
-    }
-
-    /// Serialize to bytes
-    ///
-    /// # Errors
-    ///
-    /// Returns an error if serialization fails (e.g., encoding error)
-    pub fn to_bytes(&self) -> Result<Vec<u8>> {
-        postcard::to_allocvec(self)
-            .map_err(|e| Error::State(format!("Failed to serialize ConfigMetadata: {e}")))
-    }
-
-    /// Deserialize from bytes
-    #[must_use]
-    pub fn from_bytes(bytes: &[u8]) -> Option<ConfigMetadata> {
-        postcard::from_bytes(bytes).ok()
-    }
-
-    /// Check if template source matches stored hash (for cache validation)
-    #[must_use]
-    pub fn template_matches(&self, template_source: &str) -> bool {
-        let current_hash = hash_data(template_source.as_bytes());
-        bool::from(self.template_hash.ct_eq(&current_hash))
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    #![allow(clippy::unwrap_used, clippy::panic)]
-
-    use super::*;
-    use std::time::{Duration, UNIX_EPOCH};
-
-    /// Wrapper to test the custom `systemtime_serde` module via `#[serde(with)]`
-    #[derive(Serialize, Deserialize)]
-    struct SystemTimeWrapper {
-        #[serde(with = "systemtime_serde")]
-        time: Option<SystemTime>,
-    }
-
-    #[test]
-    fn systemtime_serde_roundtrip_some() {
-        let time = UNIX_EPOCH + Duration::from_secs(1_700_000_000);
-        let wrapper = SystemTimeWrapper { time: Some(time) };
-
-        let json = serde_json::to_string(&wrapper).unwrap();
-        assert_eq!(json, r#"{"time":1700000000}"#);
-
-        let restored: SystemTimeWrapper = serde_json::from_str(&json).unwrap();
-        assert_eq!(restored.time, Some(time));
-    }
-
-    #[test]
-    fn systemtime_serde_roundtrip_none() {
-        let wrapper = SystemTimeWrapper { time: None };
-        let json = serde_json::to_string(&wrapper).unwrap();
-        assert_eq!(json, r#"{"time":null}"#);
-
-        let restored: SystemTimeWrapper = serde_json::from_str(&json).unwrap();
-        assert!(restored.time.is_none());
-    }
-
-    #[test]
-    fn systemtime_serde_epoch_zero() {
-        let wrapper = SystemTimeWrapper {
-            time: Some(UNIX_EPOCH),
-        };
-        let json = serde_json::to_string(&wrapper).unwrap();
-        assert_eq!(json, r#"{"time":0}"#);
-
-        let restored: SystemTimeWrapper = serde_json::from_str(&json).unwrap();
-        assert_eq!(restored.time, Some(UNIX_EPOCH));
-    }
-
-    #[test]
-    fn entry_state_serde_roundtrip() {
-        let content = b"test content";
-        let state = EntryState::new(content, Some(0o644));
-
-        let bytes = state.to_bytes().unwrap();
-        let restored = EntryState::from_bytes(&bytes).unwrap();
-
-        assert_eq!(state, restored);
-    }
-
-    #[test]
-    fn entry_state_serde_roundtrip_no_mode() {
-        let content = b"another test";
-        let state = EntryState::new(content, None);
-
-        let bytes = state.to_bytes().unwrap();
-        let restored = EntryState::from_bytes(&bytes).unwrap();
-
-        assert_eq!(state, restored);
-    }
-
-    #[test]
-    fn hook_state_construction() {
-        let state = HookState::new();
-
-        assert!(state.last_executed.is_none());
-        assert!(state.content_hash.is_none());
-        assert!(state.once_executed.is_empty());
-        assert!(state.onchange_hashes.is_empty());
-    }
-
-    #[test]
-    fn hook_state_default_is_new() {
-        let new = HookState::new();
-        let default = HookState::default();
-
-        assert_eq!(new.last_executed, default.last_executed);
-        assert_eq!(new.content_hash, default.content_hash);
-        assert!(default.once_executed.is_empty());
-    }
-
-    #[test]
-    fn hook_state_once_tracking() {
-        let mut state = HookState::new();
-
-        assert!(!state.has_executed_once("my-hook"));
-        state.mark_executed_once("my-hook".to_string());
-        assert!(state.has_executed_once("my-hook"));
-        assert!(!state.has_executed_once("other-hook"));
-    }
-
-    #[test]
-    fn hook_state_onchange_tracking() {
-        let mut state = HookState::new();
-
-        let hash = [42u8; 32];
-        assert!(state.hook_content_changed("hook-a", &hash));
-        state.update_onchange_hash("hook-a".to_string(), hash);
-        assert!(!state.hook_content_changed("hook-a", &hash));
-
-        let different_hash = [99u8; 32];
-        assert!(state.hook_content_changed("hook-a", &different_hash));
-    }
-
-    #[test]
-    fn hook_state_serde_roundtrip() {
-        let mut state = HookState::new();
-        state.last_executed = Some(UNIX_EPOCH + Duration::from_secs(100));
-        state.content_hash = Some([7u8; 32]);
-        state.once_executed.insert("hook-1".to_string());
-        state.once_executed.insert("hook-2".to_string());
-        state
-            .onchange_hashes
-            .insert("hook-3".to_string(), [3u8; 32]);
-
-        let bytes = state.to_bytes().unwrap();
-        let restored = HookState::from_bytes(&bytes).unwrap();
-
-        assert_eq!(state.last_executed, restored.last_executed);
-        assert_eq!(state.content_hash, restored.content_hash);
-        assert_eq!(state.once_executed, restored.once_executed);
-        assert_eq!(state.onchange_hashes, restored.onchange_hashes);
-    }
-
-    #[test]
-    fn config_metadata_serde_roundtrip() {
-        let metadata = ConfigMetadata::new("template source", "rendered output".to_string());
-
-        let bytes = metadata.to_bytes().unwrap();
-        let restored = ConfigMetadata::from_bytes(&bytes).unwrap();
-
-        assert_eq!(metadata, restored);
-    }
-
-    /// Regression: `HookState::update_with_collections` must produce bytes that
-    /// `HookState::from_bytes` can decode. The previous on-disk layout silently
-    /// became unreadable when `last_collections` was set (because `Hook` carried
-    /// `#[serde(skip_serializing_if = "Option::is_none")]` on `cmd`/`script`,
-    /// which postcard cannot honor — its encoder skipped the field but the
-    /// decoder still tried to read it). The silent `unwrap_or_else` in
-    /// `HookState::from_bytes` then dropped the data, so `guisu status` showed
-    /// every hook as Latent after `guisu hooks run`.
-    #[test]
-    fn hook_state_with_collections_serde_roundtrip() {
-        use crate::hooks::config::{Hook, HookCollections, HookMode};
-        use crate::hooks::types::HookName;
-        use indexmap::IndexMap;
-
-        // Build a collection that exercises both `cmd: None` and `script: None` —
-        // the exact shape that triggered the original skip_serializing_if bug.
-        let mut collections = HookCollections::default();
-        collections.pre.push(Hook {
-            name: HookName::new("cmd-only").unwrap(),
-            order: 5,
-            platforms: vec![],
-            cmd: Some("true".to_string()),
-            script: None,
-            script_content: None,
-            env: IndexMap::new(),
-            failfast: true,
-            mode: HookMode::Once,
-            timeout: 0,
-        });
-        collections.pre.push(Hook {
-            name: HookName::new("script-only").unwrap(),
-            order: 10,
-            platforms: vec![],
-            cmd: None,
-            script: Some("install.sh".to_string()),
-            script_content: None,
-            env: IndexMap::new(),
-            failfast: true,
-            mode: HookMode::OnChange,
-            timeout: 0,
-        });
-        collections.post.push(Hook {
-            name: HookName::new("empty").unwrap(),
-            order: 100,
-            platforms: vec![],
-            cmd: None,
-            script: None,
-            script_content: None,
-            env: IndexMap::new(),
-            failfast: false,
-            mode: HookMode::Always,
-            timeout: 0,
-        });
-
-        let mut state = HookState::new();
-        state.content_hash = Some([7u8; 32]);
-        state.last_executed = Some(UNIX_EPOCH + Duration::from_secs(1_700_000_000));
-        state.once_executed.insert("cmd-only".to_string());
-        state
-            .onchange_hashes
-            .insert("script-only".to_string(), [9u8; 32]);
-        state
-            .onchange_rendered
-            .insert("script-only".to_string(), "rendered payload".to_string());
-        state.last_collections = Some(collections);
-
-        let bytes = state.to_bytes().unwrap();
-        let restored = HookState::from_bytes(&bytes)
-            .expect("HookState with last_collections must round-trip via postcard");
-
-        assert_eq!(state.content_hash, restored.content_hash);
-        assert_eq!(state.last_executed, restored.last_executed);
-        assert_eq!(state.once_executed, restored.once_executed);
-        assert_eq!(state.onchange_hashes, restored.onchange_hashes);
-        assert_eq!(state.onchange_rendered, restored.onchange_rendered);
-        let lc = restored
-            .last_collections
-            .expect("last_collections round-trips");
-        assert_eq!(lc.pre.len(), 2);
-        assert_eq!(lc.post.len(), 1);
-        assert_eq!(lc.pre[0].name.as_str(), "cmd-only");
-        assert_eq!(lc.pre[0].cmd.as_deref(), Some("true"));
-        assert_eq!(lc.pre[0].script, None);
-        assert_eq!(lc.pre[1].name.as_str(), "script-only");
-        assert_eq!(lc.pre[1].cmd, None);
-        assert_eq!(lc.pre[1].script.as_deref(), Some("install.sh"));
-        assert_eq!(lc.post[0].name.as_str(), "empty");
-        assert_eq!(lc.post[0].cmd, None);
-        assert_eq!(lc.post[0].script, None);
-    }
-
-    #[test]
-    fn config_metadata_template_matches() {
-        let metadata = ConfigMetadata::new("my template", "rendered".to_string());
-
-        assert!(metadata.template_matches("my template"));
-        assert!(!metadata.template_matches("different template"));
-    }
-
-    #[test]
-    fn config_metadata_different_content_different_hash() {
-        let m1 = ConfigMetadata::new("template A", "output A".to_string());
-        let m2 = ConfigMetadata::new("template B", "output B".to_string());
-
-        assert_ne!(m1.template_hash, m2.template_hash);
-    }
-}
-
-/// Type aliases for mock state data structure
-/// Inner map: key-value pairs within a bucket
-type BucketData = HashMap<Vec<u8>, Vec<u8>>;
-/// Outer map: bucket name -> bucket data
-type StateData = HashMap<String, BucketData>;
-
-/// Mock persistent state for testing
-pub struct MockPersistentState {
-    data: RwLock<StateData>,
-}
-
-impl MockPersistentState {
-    /// Create a new mock persistent state
-    #[must_use]
-    pub fn new() -> Self {
-        Self {
-            data: RwLock::new(HashMap::new()),
-        }
-    }
-}
-
-impl Default for MockPersistentState {
-    fn default() -> Self {
-        Self::new()
-    }
-}
-
-impl PersistentState for MockPersistentState {
-    fn get(&self, bucket: &str, key: &[u8]) -> Result<Option<Vec<u8>>> {
-        let data = self
-            .data
-            .read()
-            .expect("MockPersistentState lock should not be poisoned");
-        Ok(data.get(bucket).and_then(|b| b.get(key).cloned()))
-    }
-
-    fn set(&self, bucket: &str, key: &[u8], value: &[u8]) -> Result<()> {
-        let mut data = self
-            .data
-            .write()
-            .expect("MockPersistentState lock should not be poisoned");
-        data.entry(bucket.to_string())
-            .or_default()
-            .insert(key.to_vec(), value.to_vec());
-        Ok(())
-    }
-
-    fn set_batch(&self, bucket: &str, entries: &[(&[u8], &[u8])]) -> Result<()> {
-        if entries.is_empty() {
-            return Ok(());
-        }
-
-        let mut data = self
-            .data
-            .write()
-            .expect("MockPersistentState lock should not be poisoned");
-        let bucket_data = data.entry(bucket.to_string()).or_default();
-
-        for (key, value) in entries {
-            bucket_data.insert(key.to_vec(), value.to_vec());
-        }
-        Ok(())
-    }
-
-    fn delete(&self, bucket: &str, key: &[u8]) -> Result<()> {
-        let mut data = self
-            .data
-            .write()
-            .expect("MockPersistentState lock should not be poisoned");
-        if let Some(bucket_data) = data.get_mut(bucket) {
-            bucket_data.remove(key);
-        }
-        Ok(())
-    }
-
-    fn delete_bucket(&self, bucket: &str) -> Result<()> {
-        let mut data = self
-            .data
-            .write()
-            .expect("MockPersistentState lock should not be poisoned");
-        data.remove(bucket);
-        Ok(())
-    }
-
-    fn for_each<F>(&self, bucket: &str, mut f: F) -> Result<()>
-    where
-        F: FnMut(&[u8], &[u8]) -> Result<()>,
-    {
-        let data = self
-            .data
-            .read()
-            .expect("MockPersistentState lock should not be poisoned");
-        if let Some(bucket_data) = data.get(bucket) {
-            for (k, v) in bucket_data {
-                f(k, v)?;
-            }
-        }
-        Ok(())
-    }
-
-    fn close(self) -> Result<()> {
-        Ok(())
     }
 }
 
@@ -1735,5 +996,133 @@ files = ["~/.config/once.txt"]
         let collected: Vec<&str> = m.remove.iter().collect();
         assert!(collected.contains(&"~/.cache/foo"));
         assert!(collected.contains(&"~/.config/dead"));
+    }
+}
+
+// === Data types ===
+
+/// Entry state - tracks file state
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct EntryState {
+    /// blake3 hash of the file content (fixed 32-byte array)
+    pub content_hash: [u8; 32],
+    /// File mode/permissions (Unix only)
+    pub mode: Option<u32>,
+}
+
+impl EntryState {
+    /// Create a new entry state from content and mode
+    #[must_use]
+    pub fn new(content: &[u8], mode: Option<u32>) -> Self {
+        Self {
+            content_hash: hash_data(content),
+            mode,
+        }
+    }
+
+    /// Serialize to bytes
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if serialization fails (e.g., encoding error)
+    pub fn to_bytes(&self) -> Result<Vec<u8>> {
+        postcard::to_allocvec(self).map_err(|e| Error::StateSerialization {
+            type_name: "EntryState",
+            operation: "to_allocvec",
+            source: Box::new(e),
+        })
+    }
+
+    /// Deserialize from bytes
+    #[must_use]
+    pub fn from_bytes(bytes: &[u8]) -> Option<Self> {
+        postcard::from_bytes(bytes).ok()
+    }
+}
+
+/// Script state - tracks script execution
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ScriptState {
+    /// blake3 hash of the script content (fixed 32-byte array)
+    pub content_hash: [u8; 32],
+}
+
+impl ScriptState {
+    /// Create a new script state from content
+    #[must_use]
+    pub fn new(content: &[u8]) -> Self {
+        Self {
+            content_hash: hash_data(content),
+        }
+    }
+
+    /// Serialize to bytes
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if serialization fails (e.g., encoding error)
+    pub fn to_bytes(&self) -> Result<Vec<u8>> {
+        postcard::to_allocvec(self).map_err(|e| Error::StateSerialization {
+            type_name: "ScriptState",
+            operation: "to_allocvec",
+            source: Box::new(e),
+        })
+    }
+
+    /// Deserialize from bytes
+    #[must_use]
+    pub fn from_bytes(bytes: &[u8]) -> Option<Self> {
+        postcard::from_bytes(bytes).ok()
+    }
+}
+
+/// Config metadata - tracks rendered configuration state
+///
+/// Stores the rendered configuration file content along with a hash of the template source.
+/// This enables caching: if the template hasn't changed, we can use the cached rendered config.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ConfigMetadata {
+    /// blake3 hash of the config template source file (fixed 32-byte array)
+    /// Used to detect changes in .guisu.toml.j2
+    pub template_hash: [u8; 32],
+    /// Rendered TOML configuration string
+    /// Result of processing the template with full context
+    pub rendered_config: String,
+}
+
+impl ConfigMetadata {
+    /// Create new config metadata from template source and rendered output
+    #[must_use]
+    pub fn new(template_source: &str, rendered_config: String) -> Self {
+        Self {
+            template_hash: hash_data(template_source.as_bytes()),
+            rendered_config,
+        }
+    }
+
+    /// Serialize to bytes
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if serialization fails (e.g., encoding error)
+    pub fn to_bytes(&self) -> Result<Vec<u8>> {
+        postcard::to_allocvec(self).map_err(|e| Error::StateSerialization {
+            type_name: "ConfigMetadata",
+            operation: "to_allocvec",
+            source: Box::new(e),
+        })
+    }
+
+    /// Deserialize from bytes
+    #[must_use]
+    pub fn from_bytes(bytes: &[u8]) -> Option<ConfigMetadata> {
+        postcard::from_bytes(bytes).ok()
+    }
+
+    /// Check if template source matches stored hash (for cache validation)
+    #[must_use]
+    pub fn template_matches(&self, template_source: &str) -> bool {
+        let current_hash = hash_data(template_source.as_bytes());
+        bool::from(self.template_hash.ct_eq(&current_hash))
     }
 }
