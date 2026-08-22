@@ -367,12 +367,133 @@ pub enum Error {
 
     // ========== State Persistence Errors ==========
     /// State persistence error
+    ///
+    /// Generic state error carrying a free-form message. Prefer the
+    /// structured [`Error::Database`], [`Error::StateSerialization`],
+    /// [`Error::StateDeserialize`], [`Error::BucketOperation`] variants
+    /// when the failure mode is known.
     #[error("State error: {0}")]
     State(String),
 
-    /// Database operation error
+    /// Database error
+    ///
+    /// Generic database error carrying a free-form message. Prefer
+    /// [`Error::BucketOperation`] when the failing bucket and operation
+    /// are known.
     #[error("Database error: {0}")]
     Database(String),
+
+    /// A typed operation against a state-persistence database table failed
+    ///
+    /// Replaces `Error::State("Failed to ... {e}")` patterns that previously
+    /// lost the redb cause chain. The `#[source]` field preserves the
+    /// underlying `redb::Error` for `miette` rendering and `source()` chains.
+    #[error("Database {operation} on bucket '{bucket}' failed: {source}")]
+    BucketOperation {
+        /// What we were trying to do (e.g. `get`, `set`, `begin_write_txn`)
+        operation: &'static str,
+        /// Which bucket/table was being touched (e.g. `ENTRY_STATE_BUCKET`).
+        /// Owned `String` because `bucket` parameters arrive as `&str` from
+        /// the public `PersistentState` API — making this `&'static` would
+        /// force every caller to pass string literals.
+        bucket: String,
+        /// The underlying redb error
+        #[source]
+        source: Box<dyn std::error::Error + Send + Sync>,
+    },
+
+    /// A typed operation against a state-persistence database transaction failed
+    ///
+    /// Variant of [`Error::BucketOperation`] for operations not tied to a
+    /// specific bucket (begin/commit transactions, table open, etc.).
+    #[error("Database {operation} failed: {source}")]
+    DatabaseTransaction {
+        /// What we were trying to do (e.g. `begin_write`, `commit`, `open_table`)
+        operation: &'static str,
+        /// The underlying redb error
+        #[source]
+        source: Box<dyn std::error::Error + Send + Sync>,
+    },
+
+    /// Failed to serialize a struct into the persistence format (bincode)
+    #[error("Failed to serialize {type_name} for {operation}: {source}")]
+    StateSerialization {
+        /// The struct type being serialized (e.g. `EntryState`, `HookState`)
+        type_name: &'static str,
+        /// What we were trying to do (e.g. `save`, `build_entry`)
+        operation: &'static str,
+        /// The underlying bincode/serde error
+        #[source]
+        source: Box<dyn std::error::Error + Send + Sync>,
+    },
+
+    /// Failed to deserialize a struct from the persistence format (bincode)
+    #[error("Failed to deserialize {type_name} from state: {source}")]
+    StateDeserialize {
+        /// The struct type being deserialized
+        type_name: &'static str,
+        /// The underlying bincode/serde error
+        #[source]
+        source: Box<dyn std::error::Error + Send + Sync>,
+    },
+
+    /// Unknown bucket name passed to a state persistence operation
+    ///
+    /// Returned when `PersistentState::get/set/delete/...` is called with a bucket
+    /// name that is not registered in the persistence layer. The valid bucket
+    /// names are defined by each `PersistentState` implementation.
+    #[error("Unknown bucket name: '{name}'. {context}")]
+    InvalidBucket {
+        /// The invalid bucket name
+        name: String,
+        /// Context explaining which buckets are valid
+        context: String,
+    },
+
+    /// Failed to look up the state directory location (XDG / platform)
+    #[error("Failed to locate state directory")]
+    StateDirectory,
+
+    // ========== Git Errors ==========
+    /// A git operation failed
+    ///
+    /// Wraps a `git2::Error` with a label describing the operation we were
+    /// attempting, replacing `Error::Message(format!("Git error: {e}"))`
+    /// patterns that lost the operation context.
+    #[error("Git {operation} failed: {source}")]
+    GitOp {
+        /// The git operation being attempted (e.g. "clone", "fetch", "merge")
+        operation: &'static str,
+        /// The underlying git2 error
+        #[source]
+        source: git2::Error,
+    },
+
+    // ========== Content Processing Errors ==========
+    /// Content decryption failed inside the engine pipeline
+    #[error("Decryption failed: {source}")]
+    DecryptionPipeline {
+        /// The underlying decryptor error
+        #[source]
+        source: Box<dyn std::error::Error + Send + Sync>,
+    },
+
+    /// Content rendering failed inside the engine pipeline
+    #[error("Rendering failed: {source}")]
+    RenderingPipeline {
+        /// The underlying renderer error
+        #[source]
+        source: Box<dyn std::error::Error + Send + Sync>,
+    },
+
+    // ========== Vault Errors ==========
+    /// Failed to deserialize a cached vault secret from JSON
+    #[error("Failed to deserialize cached vault secret: {source}")]
+    VaultCacheDeserialize {
+        /// The underlying `serde_json` error
+        #[source]
+        source: serde_json::Error,
+    },
 
     // ========== CLI Command Errors ==========
     /// Path not under destination directory
@@ -432,13 +553,64 @@ impl Error {
     }
 }
 
+// Newtype wrapper that adapts `anyhow::Error` to `std::error::Error`.
+//
+// `anyhow::Error` deliberately does not implement `std::error::Error` directly
+// (dtolnay's design choice — preserves type erasure across the anyhow boundary).
+// But it *does* provide:
+//
+//   impl From<Error> for Box<dyn StdError + Send + Sync + 'static>
+//   impl AsRef<dyn StdError + Send + Sync> for Error
+//   fn source(&self) -> Option<&(dyn StdError + 'static)>   (on ErrorImpl)
+//
+// So we can store an `anyhow::Error` and delegate both `Display` and
+// `source()` to it — preserving the full cause chain (including any
+// `.context(...)` segments the caller added in CLI code) when the typed
+// `Error` is later displayed by miette.
+#[cfg(feature = "anyhow")]
+struct AnyhowErrorAdapter(anyhow::Error);
+
+#[cfg(feature = "anyhow")]
+impl std::fmt::Debug for AnyhowErrorAdapter {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        std::fmt::Debug::fmt(&self.0, f)
+    }
+}
+
+#[cfg(feature = "anyhow")]
+impl std::fmt::Display for AnyhowErrorAdapter {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        // `anyhow::Error`'s own Display only shows the outermost context frame
+        // (each `ErrorImpl` knows only its own message). Walk the full chain
+        // with Debug formatting so callers see every context layer plus the
+        // underlying cause — the same output `anyhow!` would produce via
+        // `format!("{:?}", err)`.
+        write!(f, "{:?}", self.0)
+    }
+}
+
+#[cfg(feature = "anyhow")]
+impl std::error::Error for AnyhowErrorAdapter {
+    fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
+        // anyhow exposes its chain via AsRef<dyn StdError>. Walk through
+        // it so callers iterating `std::error::Error::source()` see the
+        // same frames they would have seen from the original anyhow error.
+        Some(self.0.as_ref())
+    }
+}
+
 // Implement From<anyhow::Error> for CLI compatibility
 #[cfg(feature = "anyhow")]
 impl From<anyhow::Error> for Error {
     fn from(err: anyhow::Error) -> Self {
-        // Convert anyhow::Error to a string message
-        // We can't box it directly because anyhow::Error doesn't implement std::error::Error
-        Error::Message(err.to_string())
+        // Wrap in `Other` so the full anyhow cause chain is preserved through
+        // the typed enum rather than flattened to a single string. `Display`
+        // shows the anyhow-rendered chain (including `.context(...)` segments);
+        // `source()` exposes the underlying concrete error when present.
+        Error::Other {
+            context: "converted from anyhow::Error".to_string(),
+            source: Box::new(AnyhowErrorAdapter(err)),
+        }
     }
 }
 
@@ -467,5 +639,46 @@ mod tests {
 
         let error_string = error.to_string();
         assert!(error_string.contains("level 2"));
+    }
+}
+
+#[cfg(feature = "anyhow")]
+mod anyhow_tests {
+    #[test]
+    fn conversion_preserves_context_chain() {
+        // `anyhow::Error::context` is an inherent method (not a trait method),
+        // so no `use anyhow::Context` is required.
+        let inner = std::io::Error::new(std::io::ErrorKind::NotFound, "file missing");
+        let anyhow_err: anyhow::Error = anyhow::Error::new(inner)
+            .context("opening config")
+            .context("loading guisu source");
+
+        let typed: crate::Error = anyhow_err.into();
+
+        // Display must surface both context layers and the underlying message.
+        let rendered = typed.to_string();
+        assert!(
+            rendered.contains("loading guisu source"),
+            "outer context missing from Display: {rendered}"
+        );
+        assert!(
+            rendered.contains("opening config"),
+            "inner context missing from Display: {rendered}"
+        );
+        assert!(
+            rendered.contains("file missing"),
+            "underlying io::Error message missing: {rendered}"
+        );
+
+        // source() chain must walk through to a std::error::Error so callers
+        // iterating `std::error::Error::source()` see the underlying cause.
+        let mut current: Option<&(dyn std::error::Error + 'static)> = Some(&typed);
+        let mut depth = 0;
+        while let Some(e) = current {
+            depth += 1;
+            assert!(depth < 16, "source chain looped or was absurdly deep");
+            current = e.source();
+        }
+        assert!(depth >= 2, "expected at least 2 frames, got {depth}");
     }
 }
