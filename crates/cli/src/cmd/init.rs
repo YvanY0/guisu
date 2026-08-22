@@ -19,11 +19,6 @@ use tracing::{debug, info, warn};
 /// - The target directory cannot be determined
 /// - Git cloning fails
 /// - Local directory initialization fails
-///
-/// # Panics
-///
-/// Panics if `path_or_repo` is `None` when `is_clone` is `true`.
-/// This should never happen due to the logic in `determine_init_target`.
 pub fn run(
     path_or_repo: Option<&str>,
     custom_source: Option<&Path>,
@@ -36,7 +31,11 @@ pub fn run(
     debug!(path = %target_path.display(), is_clone, "Initializing guisu");
 
     if is_clone {
-        let repo_url = path_or_repo.expect("path_or_repo is Some when is_clone is true");
+        // SAFETY: when `is_clone` is true, `path_or_repo` is `Some` per
+        // `determine_init_target`. The `ok_or_else` makes that contract explicit
+        // instead of relying on `.expect()` at runtime.
+        let repo_url = path_or_repo
+            .ok_or_else(|| anyhow!("internal: is_clone=true but path_or_repo is None"))?;
         clone_from_github(
             repo_url,
             &target_path,
@@ -166,16 +165,17 @@ fn clone_from_github(
     info!("Cloning repository from {}", repo_url);
 
     let progress_bar = ProgressBar::new(100);
-    progress_bar.set_style(
-        ProgressStyle::default_bar()
-            .template("  {spinner:.cyan} {bar:50.cyan/black} {pos:>3}% {msg:.white.dim}")
-            .expect("Invalid progress bar template")
-            .progress_chars("━━╸ "),
-    );
+    let progress_style = ProgressStyle::default_bar()
+        .template("  {spinner:.cyan} {bar:50.cyan/black} {pos:>3}% {msg:.white.dim}")
+        .context("Failed to build progress bar template (this is a compile-time constant)")?
+        .progress_chars("━━╸ ");
+    progress_bar.set_style(progress_style);
 
     let mut callbacks = RemoteCallbacks::new();
+    // Try the user's git config first; fall back to an in-memory empty config
+    // so we don't panic on minimal environments (containers, fresh installs).
     let git_config = git2::Config::open_default()
-        .unwrap_or_else(|_| git2::Config::new().expect("Failed to create git config"));
+        .unwrap_or_else(|_| git2::Config::new().expect("Failed to create in-memory git2::Config"));
     let mut credential_handler = git2_credentials::CredentialHandler::new(git_config);
 
     callbacks.transfer_progress(|stats| {
@@ -271,8 +271,9 @@ fn init_submodules_recursive(repo: &Repository, repo_path: &Path) -> Result<()> 
         // Set up fetch options with credentials
         let mut fetch_options = FetchOptions::new();
         let mut callbacks = RemoteCallbacks::new();
-        let git_config = git2::Config::open_default()
-            .unwrap_or_else(|_| git2::Config::new().expect("Failed to create git config"));
+        let git_config = git2::Config::open_default().unwrap_or_else(|_| {
+            git2::Config::new().expect("Failed to create in-memory git2::Config")
+        });
         let mut credential_handler = git2_credentials::CredentialHandler::new(git_config);
 
         callbacks.transfer_progress(|_| true);
