@@ -18,7 +18,7 @@ The arrows below are read as "depends on". The table lists every cross-crate dep
 
 Read row-by-row:
 
-- `core` has no dependencies (only `std`).
+- `core` has no first-party dependencies (only `std`, plus `git2`/`serde`/`serde_json`/`thiserror` for `Error` enum variants).
 - `crypto` and `vault` depend only on `core`.
 - `template` depends on `core`, `crypto`, `vault` (so it can call encryption and vault lookups during rendering).
 - `config` depends on `core` and `crypto` only. It does **not** depend on `template` — when it finds a `.guisu.toml.j2`, it emits a helpful error and lets the CLI layer do the rendering (see `Config::load_from_source` in `crates/config/src/config.rs`). The CLI renders the template, caches the result keyed by template hash in the state DB, then feeds the rendered TOML back to `Config::from_toml_str`.

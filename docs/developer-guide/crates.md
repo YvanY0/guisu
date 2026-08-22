@@ -4,7 +4,7 @@ Detailed per-crate reference. The seven crates form a strict DAG; see [Architect
 
 ## `guisu-core`
 
-Foundation types shared by every other crate. Zero non-`std` dependencies.
+Foundation types shared by every other crate. The only non-`std` dependencies are `git2` (used by `Error::Git(#[from] git2::Error)`), `serde` / `serde_json` (for derive + JSON in a few enum variants), and `thiserror` (the `#[derive(Error)]` macro); everything else uses `std` types directly.
 
 | Module | Types |
 | --- | --- |
