@@ -124,7 +124,7 @@ impl StateValidator {
     ///
     /// # Returns
     /// Number of entries repaired
-    pub fn repair(db: &RedbPersistentState) -> Result<usize> {
+    pub fn repair(db: &mut RedbPersistentState) -> Result<usize> {
         let report = Self::validate(db)?;
         let mut repaired = 0;
 

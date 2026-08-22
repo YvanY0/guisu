@@ -67,9 +67,8 @@ impl BitwardenCache {
         {
             // Deserialize from exposed secret
             let json_str = cached_secret.expose_secret();
-            return serde_json::from_str(json_str).map_err(|e| {
-                guisu_vault::Error::Message(format!("Failed to deserialize cached secret: {e}"))
-            });
+            return serde_json::from_str(json_str)
+                .map_err(|e| guisu_vault::Error::VaultCacheDeserialize { source: e });
         }
 
         // Fetch from provider

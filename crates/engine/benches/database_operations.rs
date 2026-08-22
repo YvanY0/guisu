@@ -27,13 +27,13 @@ fn bench_save_operations(c: &mut Criterion) {
 
     // Benchmark single entry save
     group.bench_function("single_entry_save", |b| {
-        let (_temp_dir, db) = create_temp_db();
+        let (_temp_dir, mut db) = create_temp_db();
         let content = b"test content";
         let mut counter = 0;
         b.iter(|| {
             let path = format!("file_{counter}.txt");
             counter += 1;
-            save_entry_state(&db, &path, content, Some(0o644)).expect("failed to save entry");
+            save_entry_state(&mut db, &path, content, Some(0o644)).expect("failed to save entry");
             std::hint::black_box(());
         });
     });
@@ -45,13 +45,13 @@ fn bench_save_operations(c: &mut Criterion) {
             BenchmarkId::new("batch_save", batch_size),
             &batch_size,
             |b, &size| {
-                let (_temp_dir, db) = create_temp_db();
+                let (_temp_dir, mut db) = create_temp_db();
                 let content = b"test content";
                 b.iter(|| {
                     let entries: Vec<_> = (0..size)
                         .map(|i| (format!("file_{i}.txt"), content.to_vec(), Some(0o644)))
                         .collect();
-                    save_entry_states_batch(&db, &entries).expect("failed to save batch");
+                    save_entry_states_batch(&mut db, &entries).expect("failed to save batch");
                     std::hint::black_box(());
                 });
             },
@@ -66,12 +66,12 @@ fn bench_read_operations(c: &mut Criterion) {
     let mut group = c.benchmark_group("read_operations");
 
     // Setup: create database with 1000 entries
-    let (_temp_dir, db) = create_temp_db();
+    let (_temp_dir, mut db) = create_temp_db();
     let content = b"test content";
     let entries: Vec<_> = (0..1000)
         .map(|i| (format!("file_{i}.txt"), content.to_vec(), Some(0o644)))
         .collect();
-    save_entry_states_batch(&db, &entries).expect("failed to save batch");
+    save_entry_states_batch(&mut db, &entries).expect("failed to save batch");
 
     // Benchmark single entry read
     group.bench_function("single_entry_read", |b| {
@@ -100,7 +100,7 @@ fn bench_mixed_workload(c: &mut Criterion) {
     let mut group = c.benchmark_group("mixed_workload");
 
     group.bench_function("read_write_mixed", |b| {
-        let (_temp_dir, db) = create_temp_db();
+        let (_temp_dir, mut db) = create_temp_db();
         let content = b"test content";
         let mut counter = 0;
 
@@ -112,7 +112,7 @@ fn bench_mixed_workload(c: &mut Criterion) {
                     (format!("file_{idx}.txt"), content.to_vec(), Some(0o644))
                 })
                 .collect();
-            save_entry_states_batch(&db, &entries).expect("failed to save batch");
+            save_entry_states_batch(&mut db, &entries).expect("failed to save batch");
 
             // Read 5 entries
             for i in 0..5 {

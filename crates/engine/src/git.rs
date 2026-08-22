@@ -14,7 +14,10 @@ use std::path::Path;
 #[inline]
 #[allow(clippy::needless_pass_by_value)]
 fn git_err(e: git2::Error) -> guisu_core::Error {
-    guisu_core::Error::Message(format!("Git error: {e}"))
+    guisu_core::Error::GitOp {
+        operation: "unspecified",
+        source: e,
+    }
 }
 
 /// Git provider trait defining all git operations needed by guisu
@@ -163,12 +166,12 @@ impl GitProvider for Git2Provider {
             builder.branch(b);
         }
 
-        let repo = builder.clone(url, target)
-            .map_err(|e| guisu_core::Error::Message(
-                format!(
-                    "Failed to clone repository from {url}. Check the URL and your network connection. Error: {e}"
-                )
-            ))?;
+        let repo = builder
+            .clone(url, target)
+            .map_err(|e| guisu_core::Error::GitOp {
+                operation: "clone",
+                source: e,
+            })?;
 
         // Initialize submodules if requested
         if recurse_submodules {
@@ -436,8 +439,8 @@ mod tests {
 
         let msg = format!("{guisu_err}");
         assert!(
-            msg.contains("Git error") && msg.contains("test error message"),
-            "Error should contain 'Git error' and original message, got: {msg}"
+            msg.contains("Git") && msg.contains("test error message"),
+            "Error should contain 'Git' and original message, got: {msg}"
         );
     }
 }

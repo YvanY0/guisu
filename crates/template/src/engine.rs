@@ -360,7 +360,10 @@ impl guisu_core::TemplateRenderer for TemplateEngine {
     ) -> guisu_core::Result<String> {
         self.env
             .render_str(template, context)
-            .map_err(|e| guisu_core::Error::Message(crate::convert_minijinja_error(&e).to_string()))
+            .map_err(|e| guisu_core::Error::TemplateRender {
+                path: "<inline>".to_string(),
+                source: Box::new(crate::convert_minijinja_error(&e)),
+            })
     }
 
     fn render_named_str(
@@ -371,7 +374,10 @@ impl guisu_core::TemplateRenderer for TemplateEngine {
     ) -> guisu_core::Result<String> {
         self.env
             .render_named_str(name, template, context)
-            .map_err(|e| guisu_core::Error::Message(crate::convert_minijinja_error(&e).to_string()))
+            .map_err(|e| guisu_core::Error::TemplateRender {
+                path: name.to_string(),
+                source: Box::new(crate::convert_minijinja_error(&e)),
+            })
     }
 }
 

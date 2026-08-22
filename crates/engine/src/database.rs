@@ -17,16 +17,12 @@ use std::path::PathBuf;
 ///
 /// Returns an error if the state directory cannot be determined or created
 pub fn get_db_path() -> Result<PathBuf> {
-    let state_dir = dirs::state_dir()
-        .ok_or_else(|| Error::State("Failed to get state directory".to_string()))?;
+    let state_dir = dirs::state_dir().ok_or(Error::StateDirectory)?;
 
     // Ensure state directory exists
-    std::fs::create_dir_all(&state_dir).map_err(|e| {
-        Error::State(format!(
-            "Failed to create state directory {}: {}",
-            state_dir.display(),
-            e
-        ))
+    std::fs::create_dir_all(&state_dir).map_err(|e| Error::DatabaseTransaction {
+        operation: "create_dir_all",
+        source: Box::new(e),
     })?;
 
     Ok(state_dir.join("state.db"))
@@ -38,14 +34,18 @@ pub fn get_db_path() -> Result<PathBuf> {
 ///
 /// Returns an error if the state cannot be saved (e.g., serialization failure, write error)
 pub fn save_entry_state(
-    db: &RedbPersistentState,
+    db: &mut RedbPersistentState,
     path: &str,
     content: &[u8],
     mode: Option<u32>,
 ) -> Result<()> {
     let state = EntryState::new(content, mode);
     db.set(ENTRY_STATE_BUCKET, path.as_bytes(), &state.to_bytes()?)
-        .map_err(|e| Error::State(format!("Failed to save state for {path}: {e}")))?;
+        .map_err(|e| Error::BucketOperation {
+            operation: "set",
+            bucket: ENTRY_STATE_BUCKET.to_string(),
+            source: Box::new(e),
+        })?;
     Ok(())
 }
 
@@ -58,7 +58,7 @@ pub fn save_entry_state(
 ///
 /// Returns an error if any state cannot be saved (e.g., serialization failure, write error)
 pub fn save_entry_states_batch(
-    db: &RedbPersistentState,
+    db: &mut RedbPersistentState,
     entries: &[(String, Vec<u8>, Option<u32>)],
 ) -> Result<()> {
     if entries.is_empty() {
@@ -84,7 +84,11 @@ pub fn save_entry_states_batch(
     }
 
     db.set_batch(ENTRY_STATE_BUCKET, &batch_entries)
-        .map_err(|e| Error::State(format!("Failed to save batch entries: {e}")))?;
+        .map_err(|e| Error::BucketOperation {
+            operation: "set_batch",
+            bucket: ENTRY_STATE_BUCKET.to_string(),
+            source: Box::new(e),
+        })?;
 
     Ok(())
 }
@@ -95,9 +99,13 @@ pub fn save_entry_states_batch(
 ///
 /// Returns an error if the state cannot be retrieved (e.g., deserialization failure, read error)
 pub fn get_entry_state(db: &RedbPersistentState, path: &str) -> Result<Option<EntryState>> {
-    let bytes = db
-        .get(ENTRY_STATE_BUCKET, path.as_bytes())
-        .map_err(|e| Error::State(format!("Failed to get state for {path}: {e}")))?;
+    let bytes =
+        db.get(ENTRY_STATE_BUCKET, path.as_bytes())
+            .map_err(|e| Error::BucketOperation {
+                operation: "get",
+                bucket: ENTRY_STATE_BUCKET.to_string(),
+                source: Box::new(e),
+            })?;
 
     Ok(bytes.and_then(|b| EntryState::from_bytes(&b)))
 }
@@ -107,9 +115,13 @@ pub fn get_entry_state(db: &RedbPersistentState, path: &str) -> Result<Option<En
 /// # Errors
 ///
 /// Returns an error if the state cannot be deleted (e.g., write error)
-pub fn delete_entry_state(db: &RedbPersistentState, path: &str) -> Result<()> {
+pub fn delete_entry_state(db: &mut RedbPersistentState, path: &str) -> Result<()> {
     db.delete(ENTRY_STATE_BUCKET, path.as_bytes())
-        .map_err(|e| Error::State(format!("Failed to delete state for {path}: {e}")))?;
+        .map_err(|e| Error::BucketOperation {
+            operation: "delete",
+            bucket: ENTRY_STATE_BUCKET.to_string(),
+            source: Box::new(e),
+        })?;
     Ok(())
 }
 
@@ -149,13 +161,17 @@ pub fn get_all_entry_states(
 ///
 /// Returns an error if the metadata cannot be saved (e.g., serialization failure, write error)
 pub fn save_config_metadata(
-    db: &RedbPersistentState,
+    db: &mut RedbPersistentState,
     template_source: &str,
     rendered_config: String,
 ) -> Result<()> {
     let metadata = ConfigMetadata::new(template_source, rendered_config);
     db.set(CONFIG_METADATA_BUCKET, b"config", &metadata.to_bytes()?)
-        .map_err(|e| Error::State(format!("Failed to save config metadata: {e}")))?;
+        .map_err(|e| Error::BucketOperation {
+            operation: "set",
+            bucket: CONFIG_METADATA_BUCKET.to_string(),
+            source: Box::new(e),
+        })?;
     Ok(())
 }
 
@@ -170,7 +186,11 @@ pub fn save_config_metadata(
 pub fn get_config_metadata(db: &RedbPersistentState) -> Result<Option<ConfigMetadata>> {
     let bytes = db
         .get(CONFIG_METADATA_BUCKET, b"config")
-        .map_err(|e| Error::State(format!("Failed to get config metadata: {e}")))?;
+        .map_err(|e| Error::BucketOperation {
+            operation: "get",
+            bucket: CONFIG_METADATA_BUCKET.to_string(),
+            source: Box::new(e),
+        })?;
 
     Ok(bytes.and_then(|b| ConfigMetadata::from_bytes(&b)))
 }
@@ -182,9 +202,13 @@ pub fn get_config_metadata(db: &RedbPersistentState) -> Result<Option<ConfigMeta
 /// # Errors
 ///
 /// Returns an error if the metadata cannot be deleted (e.g., write error)
-pub fn delete_config_metadata(db: &RedbPersistentState) -> Result<()> {
+pub fn delete_config_metadata(db: &mut RedbPersistentState) -> Result<()> {
     db.delete(CONFIG_METADATA_BUCKET, b"config")
-        .map_err(|e| Error::State(format!("Failed to delete config metadata: {e}")))?;
+        .map_err(|e| Error::BucketOperation {
+            operation: "delete",
+            bucket: CONFIG_METADATA_BUCKET.to_string(),
+            source: Box::new(e),
+        })?;
     Ok(())
 }
 
@@ -216,7 +240,7 @@ mod tests {
 
     #[test]
     fn test_save_and_get_entry_state() {
-        let (_temp, db) = test_db_setup();
+        let (mut _temp, mut db) = test_db_setup();
 
         // Save entry
         let content = b"test content";
@@ -240,7 +264,7 @@ mod tests {
 
     #[test]
     fn test_save_without_mode() {
-        let (_temp, db) = test_db_setup();
+        let (mut _temp, mut db) = test_db_setup();
 
         let content = b"content";
         let state = EntryState::new(content, None);
@@ -258,7 +282,7 @@ mod tests {
 
     #[test]
     fn test_get_nonexistent_entry() {
-        let (_temp, db) = test_db_setup();
+        let (mut _temp, db) = test_db_setup();
 
         let result = db
             .get(ENTRY_STATE_BUCKET, b"nonexistent/file")
@@ -269,7 +293,7 @@ mod tests {
 
     #[test]
     fn test_delete_entry_state() {
-        let (_temp, db) = test_db_setup();
+        let (mut _temp, mut db) = test_db_setup();
 
         // Save entry
         let state = EntryState::new(b"content", None);
@@ -301,7 +325,7 @@ mod tests {
 
     #[test]
     fn test_delete_nonexistent_entry() {
-        let (_temp, db) = test_db_setup();
+        let (mut _temp, mut db) = test_db_setup();
 
         // Deleting non-existent entry should not error
         let result = db.delete(ENTRY_STATE_BUCKET, b"nonexistent");
@@ -310,7 +334,7 @@ mod tests {
 
     #[test]
     fn test_multiple_saves_same_path() {
-        let (_temp, db) = test_db_setup();
+        let (mut _temp, mut db) = test_db_setup();
 
         // Save first version
         let state1 = EntryState::new(b"version 1", Some(0o644));
@@ -334,7 +358,7 @@ mod tests {
 
     #[test]
     fn test_save_multiple_entries() {
-        let (_temp, db) = test_db_setup();
+        let (mut _temp, mut db) = test_db_setup();
 
         // Save multiple entries
         for i in 0..10 {
@@ -364,7 +388,7 @@ mod tests {
 
     #[test]
     fn test_path_with_special_characters() {
-        let (_temp, db) = test_db_setup();
+        let (mut _temp, mut db) = test_db_setup();
 
         let paths = vec![
             "file with spaces.txt",
@@ -392,7 +416,7 @@ mod tests {
 
     #[test]
     fn test_content_hash_changes() {
-        let (_temp, db) = test_db_setup();
+        let (mut _temp, mut db) = test_db_setup();
 
         // Save with content A
         let state_a = EntryState::new(b"content A", None);
@@ -432,7 +456,7 @@ mod tests {
 
     #[test]
     fn test_empty_content() {
-        let (_temp, db) = test_db_setup();
+        let (mut _temp, mut db) = test_db_setup();
 
         // Save empty content
         let state = EntryState::new(b"", Some(0o644));
@@ -452,7 +476,7 @@ mod tests {
 
     #[test]
     fn test_large_content() {
-        let (_temp, db) = test_db_setup();
+        let (mut _temp, mut db) = test_db_setup();
 
         // Create large content (1MB)
         let large_content = vec![b'X'; 1024 * 1024];
@@ -477,7 +501,7 @@ mod tests {
 
     #[test]
     fn test_multiple_paths() {
-        let (_temp, db) = test_db_setup();
+        let (mut _temp, mut db) = test_db_setup();
 
         let test_paths = vec!["file1.txt", "file2.txt"];
 
@@ -499,7 +523,7 @@ mod tests {
 
     #[test]
     fn test_delete_and_recreate() {
-        let (_temp, db) = test_db_setup();
+        let (mut _temp, mut db) = test_db_setup();
 
         // Save, delete, and recreate entry
         let state1 = EntryState::new(b"version 1", Some(0o644));
@@ -525,7 +549,7 @@ mod tests {
 
     #[test]
     fn test_binary_content() {
-        let (_temp, db) = test_db_setup();
+        let (mut _temp, mut db) = test_db_setup();
 
         // Binary content with all byte values
         let binary: Vec<u8> = (0u8..=255).collect();
@@ -547,7 +571,7 @@ mod tests {
 
     #[test]
     fn test_same_content_same_hash() {
-        let (_temp, db) = test_db_setup();
+        let (mut _temp, mut db) = test_db_setup();
 
         // Save same content twice with different paths
         let content = b"identical content";
@@ -590,7 +614,7 @@ mod tests {
 
     #[test]
     fn test_mode_values() {
-        let (_temp, db) = test_db_setup();
+        let (mut _temp, mut db) = test_db_setup();
 
         let mode_values = [
             0o000, // No permissions
@@ -634,7 +658,7 @@ mod tests {
 
     #[test]
     fn test_save_get_delete_cycle() {
-        let (_temp, db) = test_db_setup();
+        let (mut _temp, mut db) = test_db_setup();
 
         let path = b"cycle.txt";
 
@@ -679,7 +703,7 @@ mod tests {
 
     #[test]
     fn test_very_long_path() {
-        let (_temp, db) = test_db_setup();
+        let (mut _temp, mut db) = test_db_setup();
 
         // Create a very long path (but not exceeding filesystem limits)
         let long_path = "a/".repeat(100) + "file.txt";
@@ -700,7 +724,7 @@ mod tests {
 
     #[test]
     fn test_path_with_dots() {
-        let (_temp, db) = test_db_setup();
+        let (mut _temp, mut db) = test_db_setup();
 
         let paths = vec![
             ".hidden",
@@ -728,7 +752,7 @@ mod tests {
 
     #[test]
     fn test_overwrite_with_different_mode() {
-        let (_temp, db) = test_db_setup();
+        let (mut _temp, mut db) = test_db_setup();
 
         let path = b"file.txt";
 
@@ -759,7 +783,7 @@ mod tests {
 
     #[test]
     fn test_overwrite_with_none_mode() {
-        let (_temp, db) = test_db_setup();
+        let (mut _temp, mut db) = test_db_setup();
 
         let path = b"file.txt";
 
@@ -783,7 +807,7 @@ mod tests {
 
     #[test]
     fn test_multiple_deletes_same_path() {
-        let (_temp, db) = test_db_setup();
+        let (mut _temp, mut db) = test_db_setup();
 
         let path = b"file.txt";
 
@@ -812,7 +836,7 @@ mod tests {
 
     #[test]
     fn test_save_many_entries() {
-        let (_temp, db) = test_db_setup();
+        let (mut _temp, mut db) = test_db_setup();
 
         // Save 100 entries
         for i in 0..100 {
@@ -839,7 +863,7 @@ mod tests {
 
     #[test]
     fn test_hash_changes_on_content_change_only() {
-        let (_temp, db) = test_db_setup();
+        let (mut _temp, mut db) = test_db_setup();
 
         let path = b"file.txt";
 

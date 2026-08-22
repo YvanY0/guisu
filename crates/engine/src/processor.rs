@@ -193,7 +193,9 @@ mod tests {
         fn decrypt(&self, _content: &[u8]) -> std::result::Result<Vec<u8>, Self::Error> {
             *self.decrypt_called.lock().unwrap() = true;
             if self.should_fail {
-                Err(Error::Message("Decryption failed".to_string()))
+                Err(Error::DecryptionPipeline {
+                    source: Box::new(std::io::Error::other("mock decryption failure")),
+                })
             } else {
                 Ok(self.result_data.clone())
             }
@@ -201,7 +203,9 @@ mod tests {
 
         fn decrypt_inline(&self, _text: &str) -> std::result::Result<String, Self::Error> {
             if self.should_fail {
-                Err(Error::Message("Decryption failed".to_string()))
+                Err(Error::DecryptionPipeline {
+                    source: Box::new(std::io::Error::other("mock inline decryption failure")),
+                })
             } else {
                 Ok(String::new())
             }
@@ -247,7 +251,9 @@ mod tests {
         ) -> std::result::Result<String, Self::Error> {
             *self.render_called.lock().unwrap() = true;
             if self.should_fail {
-                Err(Error::Message("Rendering failed".to_string()))
+                Err(Error::RenderingPipeline {
+                    source: Box::new(std::io::Error::other("mock rendering failure")),
+                })
             } else {
                 Ok(self.result_data.clone())
             }

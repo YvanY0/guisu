@@ -53,12 +53,9 @@ impl HookConfigState {
     ///
     /// Returns an error if the config file cannot be read (e.g., file not found, permission denied, I/O error)
     pub fn compute_config_hash(config_path: &Path) -> Result<[u8; 32]> {
-        let content = fs::read(config_path).map_err(|e| {
-            Error::State(format!(
-                "Failed to read config file {}: {}",
-                config_path.display(),
-                e
-            ))
+        let content = fs::read(config_path).map_err(|e| Error::FileRead {
+            path: config_path.to_path_buf(),
+            source: e,
         })?;
 
         Ok(hash::hash_content(&content))
@@ -123,7 +120,7 @@ mod tests {
         let result = HookConfigState::new(Path::new("/nonexistent/file.txt"));
         assert!(result.is_err());
         let err_msg = result.unwrap_err().to_string();
-        assert!(err_msg.contains("Failed to read config file"));
+        assert!(err_msg.contains("Failed to read file") || err_msg.contains("FileRead"));
     }
 
     #[test]
