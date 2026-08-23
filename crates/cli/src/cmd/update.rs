@@ -26,7 +26,7 @@ pub struct UpdateCommand {
 
 impl Command for UpdateCommand {
     type Output = ();
-    fn execute(&mut self, context: &mut RuntimeContext) -> crate::error::Result<()> {
+    fn execute(&self, context: &mut RuntimeContext) -> crate::error::Result<()> {
         run_impl(context, self.apply, self.rebase).map_err(Into::into)
     }
 }
@@ -235,7 +235,7 @@ fn handle_merge_scenarios(
 
 /// Apply changes after update
 fn apply_changes_after_update(context: &mut RuntimeContext) -> Result<()> {
-    let mut apply_cmd = crate::cmd::apply::ApplyCommand {
+    let apply_cmd = crate::cmd::apply::ApplyCommand {
         files: vec![],
         dry_run: false,
         force: false,

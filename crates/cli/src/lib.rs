@@ -381,7 +381,7 @@ fn handle_init_command(
         let config = load_config_with_template_support(config_path, &source_path, None)?;
 
         // Create ApplyCommand with default options (all files)
-        let mut apply_cmd = cmd::apply::ApplyCommand {
+        let apply_cmd = cmd::apply::ApplyCommand {
             files: vec![],
             dry_run: false,
             force: false,
@@ -458,7 +458,7 @@ fn handle_apply_command(
 /// into a process exit code via `Command::exit_code`. Errors propagate
 /// to the caller via `?`; successes call `std::process::exit(code)` and
 /// therefore never return.
-fn dispatch_leaf(cmd: &mut impl command::Command, context: &mut RuntimeContext) -> Result<()> {
+fn dispatch_leaf(cmd: &impl command::Command, context: &mut RuntimeContext) -> Result<()> {
     match cmd.execute(context) {
         Ok(output) => std::process::exit(cmd.exit_code(&output)),
         Err(e) => Err(anyhow::Error::from(e)),
@@ -480,7 +480,7 @@ fn execute_command(command: Commands, context: &mut RuntimeContext) -> Result<()
         Commands::Completion(_) => {
             unreachable!("Completion command already handled above")
         }
-        Commands::Add(mut add_cmd) => dispatch_leaf(&mut add_cmd, context)?,
+        Commands::Add(add_cmd) => dispatch_leaf(&add_cmd, context)?,
         Commands::Apply(mut apply_cmd) => {
             // Apply runs hooks before/after `execute` and prints a
             // summary, so it has its own wrapper rather than going
@@ -488,7 +488,7 @@ fn execute_command(command: Commands, context: &mut RuntimeContext) -> Result<()
             // already what we want.
             handle_apply_command(&mut apply_cmd, &mut *context)?;
         }
-        Commands::Diff(mut diff_cmd) => dispatch_leaf(&mut diff_cmd, context)?,
+        Commands::Diff(diff_cmd) => dispatch_leaf(&diff_cmd, context)?,
         Commands::Age(age_cmd) => match age_cmd {
             AgeCommands::Generate { output } => {
                 cmd::age::generate(output)?;
@@ -521,9 +521,9 @@ fn execute_command(command: Commands, context: &mut RuntimeContext) -> Result<()
                 )?;
             }
         },
-        Commands::Status(mut status_cmd) => dispatch_leaf(&mut status_cmd, context)?,
-        Commands::Cat(mut cat_cmd) => dispatch_leaf(&mut cat_cmd, context)?,
-        Commands::Edit(mut edit_cmd) => dispatch_leaf(&mut edit_cmd, context)?,
+        Commands::Status(status_cmd) => dispatch_leaf(&status_cmd, context)?,
+        Commands::Cat(cat_cmd) => dispatch_leaf(&cat_cmd, context)?,
+        Commands::Edit(edit_cmd) => dispatch_leaf(&edit_cmd, context)?,
         Commands::Ignored(ignored_cmd) => match ignored_cmd {
             IgnoredCommands::List => {
                 cmd::ignored::run_list(context.source_dir(), &context.config)?;
@@ -545,9 +545,9 @@ fn execute_command(command: Commands, context: &mut RuntimeContext) -> Result<()
                 )?;
             }
         },
-        Commands::Update(mut update_cmd) => dispatch_leaf(&mut update_cmd, context)?,
-        Commands::Info(mut info_cmd) => dispatch_leaf(&mut info_cmd, context)?,
-        Commands::Variables(mut vars_cmd) => dispatch_leaf(&mut vars_cmd, context)?,
+        Commands::Update(update_cmd) => dispatch_leaf(&update_cmd, context)?,
+        Commands::Info(info_cmd) => dispatch_leaf(&info_cmd, context)?,
+        Commands::Variables(vars_cmd) => dispatch_leaf(&vars_cmd, context)?,
         Commands::Hooks(hooks_cmd) => match hooks_cmd {
             HooksCommands::Run { yes, hook } => {
                 let config = context.config.clone();
@@ -567,7 +567,7 @@ fn execute_command(command: Commands, context: &mut RuntimeContext) -> Result<()
                 cmd::hooks::run_show(context.source_dir(), &context.config, &name)?;
             }
         },
-        Commands::Verify(mut verify_cmd) => dispatch_leaf(&mut verify_cmd, context)?,
+        Commands::Verify(verify_cmd) => dispatch_leaf(&verify_cmd, context)?,
     }
 
     Ok(())

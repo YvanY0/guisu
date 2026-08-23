@@ -24,7 +24,7 @@ pub struct CatCommand {
 
 impl Command for CatCommand {
     type Output = ();
-    fn execute(&mut self, context: &mut RuntimeContext) -> crate::error::Result<()> {
+    fn execute(&self, context: &mut RuntimeContext) -> crate::error::Result<()> {
         run_impl(
             context.source_dir(),
             context.dest_dir().as_path(),

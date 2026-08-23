@@ -34,7 +34,7 @@ pub struct VariablesCommand {
 
 impl Command for VariablesCommand {
     type Output = ();
-    fn execute(&mut self, context: &mut RuntimeContext) -> crate::error::Result<()> {
+    fn execute(&self, context: &mut RuntimeContext) -> crate::error::Result<()> {
         // Determine filter based on flags
         let filter = match (self.builtin, self.user) {
             (true, false) => VariableFilter::BuiltinOnly,

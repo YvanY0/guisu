@@ -75,7 +75,7 @@ struct AddParams<'a> {
 
 impl Command for AddCommand {
     type Output = ();
-    fn execute(&mut self, context: &mut RuntimeContext) -> crate::error::Result<()> {
+    fn execute(&self, context: &mut RuntimeContext) -> crate::error::Result<()> {
         let source_dir = context.source_dir();
         let source_abs = context.dotfiles_dir();
         let dest_abs = context.dest_dir();
@@ -1535,7 +1535,7 @@ mod tests {
         )
         .expect("Failed to create test RuntimeContext");
 
-        let mut cmd = AddCommand {
+        let cmd = AddCommand {
             files: vec![target],
             template: false,
             autotemplate: false,

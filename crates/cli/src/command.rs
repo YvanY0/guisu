@@ -65,7 +65,7 @@ pub trait Command {
     ///
     /// Returns a `CommandError` if the command fails to execute. Error messages should
     /// be descriptive enough for the user to understand what went wrong.
-    fn execute(&mut self, context: &mut RuntimeContext) -> Result<Self::Output>;
+    fn execute(&self, context: &mut RuntimeContext) -> Result<Self::Output>;
 
     /// Map the command's `Output` to a process exit code.
     ///

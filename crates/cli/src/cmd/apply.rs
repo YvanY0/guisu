@@ -616,7 +616,7 @@ fn process_entries_sequential(
 impl Command for ApplyCommand {
     type Output = ApplyStats;
     #[allow(clippy::too_many_lines)]
-    fn execute(&mut self, context: &mut RuntimeContext) -> crate::error::Result<ApplyStats> {
+    fn execute(&self, context: &mut RuntimeContext) -> crate::error::Result<ApplyStats> {
         // Extract paths, config, and database from context.
         // `config` is read by reference; every `config` use below happens
         // before `context.database_mut()`, so the immutable borrow is
