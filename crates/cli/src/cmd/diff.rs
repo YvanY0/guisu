@@ -452,10 +452,10 @@ fn run_impl(
     }
 
     // Load age identities for decryption
-    let identities = std::sync::Arc::new(config.age_identities().unwrap_or_default());
+    let identities = Arc::new(config.age_identities().unwrap_or_default());
 
     // Track if we've already shown a decryption error message
-    let shown_decryption_error = std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false));
+    let shown_decryption_error = Arc::new(std::sync::atomic::AtomicBool::new(false));
 
     // Load variables from .guisu/variables/ directory
     let guisu_variables = if guisu_dir.exists() {

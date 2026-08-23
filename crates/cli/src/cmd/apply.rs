@@ -633,7 +633,7 @@ impl Command for ApplyCommand {
 
         // Load age identities for decryption
         let spinner = progress::create_spinner("Loading identities...");
-        let identities = std::sync::Arc::new(config.age_identities().unwrap_or_default());
+        let identities = Arc::new(config.age_identities().unwrap_or_default());
         spinner.finish_and_clear();
 
         // Detect if output is to a terminal for icon auto mode

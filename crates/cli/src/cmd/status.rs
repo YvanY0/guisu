@@ -17,6 +17,7 @@ use std::collections::BTreeMap;
 use std::io::IsTerminal;
 use std::path::Path;
 use std::path::PathBuf;
+use std::sync::Arc;
 use tracing::debug;
 
 use crate::command::Command;
@@ -287,7 +288,7 @@ fn run_impl(
     }
 
     // Load age identities for decryption
-    let identities = std::sync::Arc::new(config.age_identities().unwrap_or_default());
+    let identities = Arc::new(config.age_identities().unwrap_or_default());
 
     // Load variables from .guisu/variables/ directory
     let guisu_dir = source_dir.guisu_dir();
