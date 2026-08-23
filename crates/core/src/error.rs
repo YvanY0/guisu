@@ -366,28 +366,10 @@ pub enum Error {
     Variables(String),
 
     // ========== State Persistence Errors ==========
-    /// State persistence error
-    ///
-    /// Generic state error carrying a free-form message. Prefer the
-    /// structured [`Error::Database`], [`Error::StateSerialization`],
-    /// [`Error::StateDeserialize`], [`Error::BucketOperation`] variants
-    /// when the failure mode is known.
-    #[error("State error: {0}")]
-    State(String),
-
-    /// Database error
-    ///
-    /// Generic database error carrying a free-form message. Prefer
-    /// [`Error::BucketOperation`] when the failing bucket and operation
-    /// are known.
-    #[error("Database error: {0}")]
-    Database(String),
-
     /// A typed operation against a state-persistence database table failed
     ///
-    /// Replaces `Error::State("Failed to ... {e}")` patterns that previously
-    /// lost the redb cause chain. The `#[source]` field preserves the
-    /// underlying `redb::Error` for `miette` rendering and `source()` chains.
+    /// The `#[source]` field preserves the underlying `redb::Error` for
+    /// `miette` rendering and `source()` chains.
     #[error("Database {operation} on bucket '{bucket}' failed: {source}")]
     BucketOperation {
         /// What we were trying to do (e.g. `get`, `set`, `begin_write_txn`)
