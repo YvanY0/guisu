@@ -625,11 +625,10 @@ impl Command for ApplyCommand {
         // that name because `detect_config_drift(&database, ...)` is a
         // gate pattern pinned by `test_named_target_gates_...`.
         let source_abs = context.dotfiles_dir();
-        let dest_abs = context.dest_dir();
+        let dest_abs = context.dest_dir().clone();
         let source_dir = context.source_dir();
         let config = &context.config;
         let database = std::sync::Arc::clone(context.database());
-        let dest_abs = dest_abs.clone();
 
         // Load age identities for decryption
         let spinner = progress::create_spinner("Loading identities...");
@@ -729,8 +728,8 @@ impl Command for ApplyCommand {
         // Create conflict handler for interactive mode
         let mut conflict_handler = if self.interactive && !self.dry_run {
             Some(ConflictHandler::new(
-                Arc::clone(config),
-                Arc::clone(&identities),
+                config.clone(),
+                identities.clone(),
             ))
         } else {
             None
