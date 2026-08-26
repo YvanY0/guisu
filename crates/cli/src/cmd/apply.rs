@@ -730,10 +730,7 @@ impl Command for ApplyCommand {
 
         // Create conflict handler for interactive mode
         let mut conflict_handler = if self.interactive && !self.dry_run {
-            Some(ConflictHandler::new(
-                config.clone(),
-                identities.clone(),
-            ))
+            Some(ConflictHandler::new(config.clone(), identities.clone()))
         } else {
             None
         };
