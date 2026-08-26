@@ -617,18 +617,16 @@ impl Command for ApplyCommand {
     type Output = ApplyStats;
     #[allow(clippy::too_many_lines)]
     fn execute(&self, context: &mut RuntimeContext) -> crate::error::Result<ApplyStats> {
-        // Extract paths, config, and database from context.
-        // `config` is read by reference; every `config` use below happens
-        // before `context.database_mut()`, so the immutable borrow is
-        // released by the time we need exclusive access to the database.
-        // `database` is an `Arc<RedbPersistentState>` clone, kept under
-        // that name because `detect_config_drift(&database, ...)` is a
-        // gate pattern pinned by `test_named_target_gates_...`.
+        // Extract paths and config from context. Every `config` use below
+        // happens before `context.database_mut()`, so the immutable borrow
+        // is released by the time we need exclusive access to the database.
+        // The database itself is not cloned here — drift detection takes
+        // an Arc clone inside its own scope and lets it drop before the
+        // mutable database borrow further down.
         let source_abs = context.dotfiles_dir();
         let dest_abs = context.dest_dir().clone();
         let source_dir = context.source_dir();
         let config = &context.config;
-        let database = std::sync::Arc::clone(context.database());
 
         // Load age identities for decryption
         let spinner = progress::create_spinner("Loading identities...");
@@ -719,9 +717,14 @@ impl Command for ApplyCommand {
             return Ok(ApplyStats::new());
         }
 
-        // Check for configuration drift (files modified by user AND source updated)
+        // Check for configuration drift (files modified by user AND source updated).
+        // Scope the Arc clone so it drops before we take &mut on the database below;
+        // otherwise Arc::get_mut would observe the extra strong reference and panic.
         if !self.dry_run && !has_named_target {
-            let drift_warnings = detect_config_drift(&database, &entries_to_apply, &dest_abs);
+            let drift_warnings = {
+                let database = Arc::clone(context.database());
+                detect_config_drift(&database, &entries_to_apply, &dest_abs)
+            };
             display_drift_warnings(&drift_warnings);
         }
 
