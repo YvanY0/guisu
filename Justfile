@@ -12,15 +12,6 @@ clippy:
 test:
     cargo test --workspace
 
-# Analyze binary size (requires: cargo install cargo-bloat)
-bloat:
-    cargo bloat --release -n 10
-    cargo bloat --release --crates
-
-# Check for unused dependencies (requires: cargo install cargo-udeps --locked)
-udeps:
-    cargo +nightly udeps --workspace
-
 # Build release binary
 build:
     cargo build --release
@@ -42,29 +33,9 @@ fmt-check:
 check:
     cargo check --workspace --all-targets --all-features
 
-# Release a patch version (0.2.1 -> 0.2.2).
-# Bumps workspace.version, commits, pushes main, tags and pushes tag.
-# The tag push triggers .github/workflows/release.yml (cargo-dist) which
-# builds artifacts, publishes the GitHub Release, and updates the
-# homebrew tap formula. See Cargo.toml [workspace.metadata.release].
-release-patch:
-    cargo release patch --execute --no-confirm
-
-# Release a minor version (0.2.1 -> 0.3.0).
-release-minor:
-    cargo release minor --execute --no-confirm
-
-# Release a major version (0.2.1 -> 1.0.0).
-release-major:
-    cargo release major --execute --no-confirm
-
-# Install Zensical system-wide (optional; uvx runs without this).
-docs-install:
-	uv tool install -r requirements.txt
-
 # Build the docs site into site/ (strict mode catches broken links).
-# `uvx zensical` always pulls the latest version matching requirements.txt
-# (no pin — you asked for latest); CI pins `zensical` in the workflow too.
+# `uvx zensical` always pulls the latest matching version; CI pins
+# `zensical` in the workflow.
 docs-build:
 	uvx --from zensical zensical build --strict
 
@@ -72,7 +43,3 @@ docs-build:
 # Zensical 0.0.47 renamed `-p` to `-a <IP:PORT>` (default localhost:8000).
 docs-serve:
 	uvx --from zensical zensical serve -a 127.0.0.1:3000
-
-# Strict build acts as the link/internal-link check (alias of docs-build).
-docs-check:
-	uvx --from zensical zensical build --strict
