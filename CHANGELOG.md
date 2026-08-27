@@ -7,6 +7,31 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.2.8](https://github.com/YvanY0/guisu/compare/v0.2.7...v0.2.8) - 2026-08-27
+
+### Fixed
+
+- *(cli)* drop database Arc clone before database_mut in apply
+- *(init)* drop runtime panics in favor of anyhow errors
+- *(init)* hint GUISU_SOURCE_DIR when initing to a non-default path
+- *(template)* unify os() to darwin and render booleans lowercase
+
+### Other
+
+- collapse ConflictHandler::new call to one line (rustfmt 1.98)
+- *(cli)* minor cleanups in apply.rs
+- *(cli)* use unqualified Arc::new in cmd files
+- *(cli)* make Command::execute take &self instead of &mut self
+- *(cli)* let Command::execute take &mut self, &mut RuntimeContext
+- *(engine,cli)* simplify crypto adapter identity ownership
+- *(core)* drop ConfigProvider, EncryptionProvider, VaultProvider traits
+- *(core)* remove legacy State and Database error variants
+- *(core)* introduce structured error variants
+- migrate state, db, git, template, vault errors to typed variants
+- *(engine)* split monolithic state.rs into state module
+- *(deps)* enable blake3 rayon feature for parallel hashing
+- rewrite AI entry docs and fix stale reference content
+
 ## [0.2.7](https://github.com/YvanY0/guisu/compare/v0.2.6...v0.2.7) - 2026-08-10
 
 ### Fixed
