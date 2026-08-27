@@ -54,7 +54,7 @@ Tip: in `~/.gitconfig`, set `[commit] gpgsign = true` and `signoff = true` so gi
 
 ## Docs site tooling
 
-**Zensical 0.0.47** (Python, Material-fork `material` theme variant). Configured via `zensical.toml` at the repo root — the `nav` block there is the source of truth for site navigation. Version pinned in `requirements.txt`. Local dev via `uvx` (no global install) or `uv tool install -r requirements.txt` (one-time). Justfile recipes: `docs-install`, `docs-build`, `docs-serve`, `docs-check`.
+**Zensical** (Python, Material-fork `material` theme variant). No version pin — both `.github/workflows/docs.yml` and the `docs-build`/`docs-serve` Justfile recipes invoke zensical via `uvx --from zensical`, so the docs always build against the latest upstream release. `--strict` surfaces upstream breakage at the next CI run.
 
 ## Pull request process
 
