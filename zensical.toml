@@ -20,7 +20,7 @@ site_dir = "site"
 # The CSS overrides Material's CSS tokens via data-md-color-scheme selectors.
 extra_css = ["stylesheets/extra.css"]
 
-# Use the default modern theme variant (matches zensical.org demo since 0.0.47).
+# Use the default modern theme variant (matches zensical.org's current demo).
 # Modern variant renders the "lifted" sidebar style — no need to set `variant`.
 
 # Recommended feature set, matching zensical.org's own demo.
@@ -92,7 +92,7 @@ name = "material"
 
 # Feature toggles — matched against zensical.org docs site's own config
 # (https://github.com/zensical/docs/blob/master/mkdocs.yml), which is the
-# canonical reference for "what modern Zensical UI looks like in 0.0.47".
+# canonical reference for what the current Zensical UI looks like.
 features = [
   "announce.dismiss",
   "content.action.edit",
@@ -112,7 +112,7 @@ features = [
 # implicit in navigation.sections); search.suggest, search.share
 # (the demo doesn't enable them); navigation.instant + .prefetch +
 # .progress, navigation.tracking, navigation.side (the `material` variant
-# in Zensical 0.0.47 is the MkDocs Material template and uses its own
+# in Zensical is the MkDocs Material template and uses its own
 # navigation defaults — instant features are off in the upstream demo).
 
 # 3-palette system with system-preference detection (matches zensical.org demo).
