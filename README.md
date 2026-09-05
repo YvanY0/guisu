@@ -11,39 +11,25 @@
 **Early development**: Guisu is pre-1.0. APIs and features are subject to change;
 production use is not recommended yet.
 
-The full pitch, feature list, install guide, command reference, architecture
-deep-dive, and roadmap live in the
-[**project documentation**](https://yvany0.github.io/guisu/).
-
-## Quick install (from source)
+## Quick start
 
 ```bash
-git clone https://github.com/YvanY0/guisu.git
-cd guisu
+git clone https://github.com/YvanY0/guisu.git && cd guisu
 cargo install --path crates/cli
+# binary at ~/.cargo/bin/guisu — add to $PATH if needed
+guisu info       # verify the binary resolves your source dir
 ```
 
 Pre-built binaries are linked from the
 [releases page](https://github.com/YvanY0/guisu/releases) once they ship.
 
-## Shell completion
-
-```sh
-eval "$(guisu completion zsh)"   # zsh / bash / fish
-```
-
-See [Shell completion](https://yvany0.github.io/guisu/installation.html#shell-completion)
-in the docs for making it permanent.
-
 ## Documentation
 
-<https://yvany0.github.io/guisu/> — [User Guide](https://yvany0.github.io/guisu/user-guide/file-attributes.html),
-[Reference](https://yvany0.github.io/guisu/reference/commands.html),
-[Developer Guide](https://yvany0.github.io/guisu/developer-guide/architecture.html).
-
-## Contributing
-
-See the [Contributing guide](https://yvany0.github.io/guisu/developer-guide/contributing.html).
+- [Installation](https://yvany0.github.io/guisu/installation.html)
+- [User guide](https://yvany0.github.io/guisu/user-guide/file-attributes.html)
+- [Command reference](https://yvany0.github.io/guisu/reference/commands.html)
+- [Developer guide](https://yvany0.github.io/guisu/developer-guide/architecture.html)
+- [Contributing](https://yvany0.github.io/guisu/developer-guide/contributing.html)
 
 ## License
 

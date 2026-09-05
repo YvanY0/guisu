@@ -52,10 +52,6 @@ Recommended tools:
 
 Tip: in `~/.gitconfig`, set `[commit] gpgsign = true` and `signoff = true` so git injects `-s` and `-S` automatically on every commit.
 
-## Docs site tooling
-
-**Zensical** (Python, Material-fork `material` theme variant). No version pin — both `.github/workflows/docs.yml` and the `docs-build`/`docs-serve` Justfile recipes invoke zensical via `uvx --from zensical`, so the docs always build against the latest upstream release. `--strict` surfaces upstream breakage at the next CI run.
-
 ## Pull request process
 
 1. Branch from `main`. Use a short descriptive prefix: `feat/...`, `fix/...`, `docs/...`, `refactor/...`.

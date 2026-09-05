@@ -34,12 +34,9 @@ check:
     cargo check --workspace --all-targets --all-features
 
 # Build the docs site into site/ (strict mode catches broken links).
-# No version pin anywhere — both the docs workflow and these recipes
-# invoke zensical via `uvx --from zensical` to track the latest release.
 docs-build:
 	uvx --from zensical zensical build --strict
 
 # Serve the docs site at http://localhost:3000 with live reload.
-# `-a <IP:PORT>` is the address flag.
 docs-serve:
 	uvx --from zensical zensical serve -a 127.0.0.1:3000

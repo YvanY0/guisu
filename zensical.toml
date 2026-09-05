@@ -1,11 +1,8 @@
 [project]
 site_name = "Guisu"
 site_description = "Documentation for the Guisu dotfile manager"
-# site_url drives canonical links and "View on GitHub" anchors. Left
-# empty so local `serve` (no base-path strip) and GitHub Pages deploys
-# (where Pages prepends /guisu/) both work without URL rewriting. Set
-# this to "https://YvanY0.github.io/guisu/" only before producing the
-# production Pages build (it impacts canonical <link> tags only).
+# Empty by default so local serve and GH Pages deploys both work
+# without URL rewriting. Set to the Pages URL before a production build.
 site_url = ""
 site_language = "en"
 
@@ -16,14 +13,9 @@ edit_uri = "edit/main/docs"
 docs_dir = "docs"
 site_dir = "site"
 
-# Nord dark palette + readability tweaks. Path is relative to docs_dir.
-# The CSS overrides Material's CSS tokens via data-md-color-scheme selectors.
+# Overrides Zensical's Material theme tokens. See stylesheets/extra.css.
 extra_css = ["stylesheets/extra.css"]
 
-# Use the default modern theme variant (matches zensical.org's current demo).
-# Modern variant renders the "lifted" sidebar style — no need to set `variant`.
-
-# Recommended feature set, matching zensical.org's own demo.
 features = [
   "announce.dismiss",
   "content.action.edit",
@@ -81,39 +73,8 @@ nav = [
 
 [project.theme]
 language = "en"
-# `name: material` is the third theme variant in Zensical (alongside
-# `modern` and `classic`); it is the closest match to zensical.org's own
-# demo site (https://zensical.org/docs/get-started/) and inherits the
-# Material for MkDocs look-and-feel. We render the nav as **sidebar-only**
-# (no `navigation.tabs`) to match the layout used by j178/prek, which has a
-# comparable page count and benefits more from a single, scannable column
-# than from the top-bar section tabs zensical.org uses.
+# `material` is the MkDocs Material-fork variant (sidebar-only nav).
 name = "material"
-
-# Feature toggles — matched against zensical.org docs site's own config
-# (https://github.com/zensical/docs/blob/master/mkdocs.yml), which is the
-# canonical reference for what the current Zensical UI looks like.
-features = [
-  "announce.dismiss",
-  "content.action.edit",
-  "content.code.annotate",
-  "content.code.copy",
-  "content.footnote.tooltips",
-  "content.tabs.link",
-  "content.tooltips",
-  "navigation.footer",
-  "navigation.indexes",
-  "navigation.path",
-  "navigation.sections",
-  "navigation.top",
-  "search.highlight",
-] # Skipped from the demo: content.action.view, content.code.select (both
-# add buttons most code blocks don't need); navigation.expand (already
-# implicit in navigation.sections); search.suggest, search.share
-# (the demo doesn't enable them); navigation.instant + .prefetch +
-# .progress, navigation.tracking, navigation.side (the `material` variant
-# in Zensical is the MkDocs Material template and uses its own
-# navigation defaults — instant features are off in the upstream demo).
 
 # 3-palette system with system-preference detection (matches zensical.org demo).
 [[project.theme.palette]]
