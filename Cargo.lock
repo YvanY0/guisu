@@ -1110,6 +1110,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "dirs"
+version = "7.0.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "8d57d423b3c82e89b9a24ca3091fee61f456a26edbd28d26c65906f4bc1dcd8f"
+dependencies = [
+ "dirs-sys",
+]
+
+[[package]]
 name = "dirs-sys"
 version = "0.5.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1153,9 +1162,9 @@ dependencies = [
 
 [[package]]
 name = "duct"
-version = "1.1.1"
+version = "1.1.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "7e66e9c0c03d094e1a0ba1be130b849034aa80c3a2ab8ee94316bc809f3fa684"
+checksum = "61b9e2a29ff01e8bb526a571ad06c10ed72aae80d5999ed204f7971f99f19974"
 dependencies = [
  "libc",
  "os_pipe",
@@ -1545,7 +1554,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "09d9eedcb32d1389500ca2ac94a34939b89dacc3235b872e2cb4a36f24fcb191"
 dependencies = [
  "dialoguer",
- "dirs",
+ "dirs 6.0.0",
  "git2",
  "pest",
  "pest_derive",
@@ -1588,7 +1597,7 @@ dependencies = [
  "comfy-table",
  "crossterm",
  "dialoguer",
- "dirs",
+ "dirs 7.0.0",
  "git2",
  "git2_credentials",
  "guisu-config",
@@ -1631,7 +1640,7 @@ dependencies = [
 name = "guisu-config"
 version = "0.2.9"
 dependencies = [
- "dirs",
+ "dirs 7.0.0",
  "guisu-core",
  "guisu-crypto",
  "ignore",
@@ -1680,7 +1689,7 @@ dependencies = [
  "blake3",
  "chrono",
  "criterion",
- "dirs",
+ "dirs 7.0.0",
  "duct",
  "git2",
  "guisu-config",
@@ -1713,7 +1722,7 @@ dependencies = [
  "blake3",
  "chrono",
  "criterion",
- "dirs",
+ "dirs 7.0.0",
  "guisu-config",
  "guisu-core",
  "guisu-crypto",
