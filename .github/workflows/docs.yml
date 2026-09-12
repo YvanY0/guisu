@@ -21,6 +21,14 @@ jobs:
           python-version: '3.12'
       - name: Build
         run: uvx --from zensical zensical build --strict
+
+      # Generate llms.txt + llms-full.txt from the built site so LLM
+      # tools (Claude/Cursor/...) can pull guisu docs as plain markdown
+      # instead of scraping HTML. Output lands in site/ and ships with
+      # the GH Pages artifact.
+      - name: Generate llms.txt
+        run: uvx --from llmstxt-standalone llmstxt-standalone build --site-dir site/
+
       - name: Upload artifact
         uses: actions/upload-pages-artifact@v5
         with:

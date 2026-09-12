@@ -1,0 +1,114 @@
+site_name: Guisu
+site_description: Documentation for the Guisu dotfile manager
+# Empty by default so local serve and GH Pages deploys both work
+# without URL rewriting. Set to the Pages URL before a production build.
+site_url: ""
+site_language: en
+
+repo_url: https://github.com/YvanY0/guisu
+repo_name: guisu
+edit_uri: edit/main/docs
+
+docs_dir: docs
+site_dir: site
+
+# Overrides Zensical's Material theme tokens. See stylesheets/extra.css.
+extra_css:
+  - stylesheets/extra.css
+
+theme:
+  language: en
+  # `material` is the MkDocs Material-fork variant (sidebar-only nav).
+  name: material
+  features:
+    - announce.dismiss
+    - content.action.edit
+    - content.code.copy
+    - content.code.annotate
+    - content.tabs.link
+    - content.tooltips
+    - content.footnote.tooltips
+    - navigation.tabs
+    - navigation.sections
+    - navigation.indexes
+    - navigation.top
+    - navigation.footer
+    - navigation.path
+    - navigation.tracking
+    - navigation.expand
+    - navigation.instant
+    - navigation.instant.prefetch
+    - navigation.instant.progress
+    - search.suggest
+    - search.highlight
+    - search.share
+  # 3-palette system with system-preference detection (matches zensical.org demo).
+  palette:
+    - media: "(prefers-color-scheme)"
+      toggle:
+        icon: lucide/sun-moon
+        name: Switch to light mode
+    - media: "(prefers-color-scheme: light)"
+      scheme: default
+      primary: indigo
+      accent: indigo
+      toggle:
+        icon: lucide/sun
+        name: Switch to dark mode
+    - media: "(prefers-color-scheme: dark)"
+      scheme: slate
+      primary: indigo
+      accent: orange
+      toggle:
+        icon: lucide/moon-star
+        name: Switch to system preference
+  font:
+    text: Inter
+    code: JetBrains Mono
+
+nav:
+  - Introduction: index.md
+  - Installation: installation.md
+  - Getting Started:
+      - init: getting-started/init.md
+      - add: getting-started/add.md
+      - apply: getting-started/apply.md
+  - User Guide:
+      - File Attributes: user-guide/file-attributes.md
+      - Templates: user-guide/templates.md
+      - Encryption: user-guide/encryption.md
+      - Vault: user-guide/vault.md
+      - Hooks: user-guide/hooks.md
+      - Configuration: user-guide/config.md
+  - Reference:
+      - Commands: reference/commands.md
+      - Template Functions: reference/template-functions.md
+      - Configuration Reference: reference/configuration.md
+  - Developer Guide:
+      - Architecture: developer-guide/architecture.md
+      - Three-State Model: developer-guide/three-state-model.md
+      - Data Flow: developer-guide/data-flow.md
+      - Crates: developer-guide/crates.md
+      - Error Handling: developer-guide/error-handling.md
+      - Contributing: developer-guide/contributing.md
+
+markdown_extensions:
+  - admonition
+  - attr_list
+  - def_list
+  - footnotes
+  - md_in_html
+  - meta
+  - tables
+  - toc:
+      permalink: true
+  - pymdownx.details
+  - pymdownx.superfences
+  - pymdownx.tabbed:
+      alternate_style: true
+      combine_header_slug: true
+  - pymdownx.inlinehilite
+  - pymdownx.highlight:
+      anchor_linenums: true
+      line_spans: __span
+      pygments_lang_class: true
