@@ -39,7 +39,6 @@ guisu-config = { path = "crates/config", version = "0.2.9" }
 guisu-vault = { path = "crates/vault", version = "0.2.9" }
 guisu-template = { path = "crates/template", version = "0.2.9" }
 guisu-engine = { path = "crates/engine", version = "0.2.9" }
-guisu = { path = "crates/cli", version = "0.2.9" }
 
 clap = { version = "4.6", features = ["derive", "cargo", "env"] }
 clap_complete = "4.6"
@@ -59,7 +58,6 @@ postcard = { version = "1.1", default-features = false, features = ["alloc"] }
 
 age = { version = "0.12.1", features = ["ssh", "armor"] }
 secrecy = "0.10"
-sha2 = "0.11"
 subtle = "2.6"
 base64 = "0.23"
 
@@ -73,7 +71,6 @@ minijinja = { version = "2.20", features = ["builtins", "loader"] }
 regex = "1.12"
 
 indexmap = { version = "2.14", features = ["serde"] }
-bitflags = "2.13"
 
 rayon = "1.12"
 
@@ -82,7 +79,6 @@ git2 = "0.21"
 git2_credentials = "0.16"
 similar = "3.1"
 os_info = "3.15"
-libc = "0.2"
 chrono = "0.4"
 duct = "1.1"
 shell-words = "1.1"
@@ -95,16 +91,11 @@ tracing-subscriber = { version = "0.3", features = [
   "fmt",
   "ansi",
 ] }
-
-vergen = { version = "10.0", features = ["build", "rustc"] }
 vergen-git2 = { version = "10.0", features = ["build"] }
 
 assert_cmd = "2.2"
-assert_fs = "1.1"
-predicates = "3.1"
 pretty_assertions = "1.4"
 serial_test = "4.0"
-temp-env = "0.3"
 
 criterion = { version = "0.8", features = ["html_reports"] }
 
@@ -113,7 +104,6 @@ hostname = "0.4"
 lru = "0.18.0"
 rustix = { version = "1.1", features = ["process", "system"] }
 uzers = "0.12"
-comfy-table = "8.0"
 dialoguer = "0.12"
 lscolors = "0.21"
 nu-ansi-term = "0.50"
