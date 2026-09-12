@@ -35,15 +35,12 @@ jobs:
           components: rustfmt, clippy
 
       - name: Cache cargo
-        uses: actions/cache@v6
+        uses: Swatinem/rust-cache@v2
         with:
-          path: |
-            ~/.cargo/registry
-            ~/.cargo/git
-            target
-          key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}
-          restore-keys: |
-            ${{ runner.os }}-cargo-
+          # Only persist the cache on main-branch pushes; PRs (including
+          # dependabot forks) still restore from it but never write back,
+          # which prevents a flood of stale keys from poisoning the namespace.
+          save-if: ${{ github.event_name == 'push' && github.ref == 'refs/heads/main' }}
 
       - name: Install cargo-deny
         uses: taiki-e/install-action@v2.87.1
@@ -62,7 +59,7 @@ jobs:
         run: cargo check --workspace --all-targets
 
       - name: Clippy
-        run: cargo clippy --workspace --all-targets -- -D warnings
+        run: cargo clippy --workspace --all-targets --all-features --locked -- -D warnings
 
       - name: Test
         run: cargo test --workspace --all-features

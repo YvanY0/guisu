@@ -6,7 +6,7 @@ default:
 
 # Run clippy with pedantic lints
 clippy:
-    cargo clippy --workspace --all-targets --all-features -- -D warnings
+    cargo clippy --workspace --all-targets --all-features --locked -- -D warnings
 
 # Run tests
 test:
