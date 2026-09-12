@@ -69,6 +69,7 @@ workspace = true
 [dev-dependencies]
 assert_cmd.workspace = true
 predicates.workspace = true
+pretty_assertions.workspace = true
 serial_test.workspace = true
 tempfile.workspace = true
 

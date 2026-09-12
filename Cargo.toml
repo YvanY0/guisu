@@ -8,7 +8,7 @@ members = [
   "crates/template",
   "crates/vault",
 ]
-resolver = "2"
+resolver = "3"
 
 [workspace.package]
 version = "0.2.9"
@@ -102,6 +102,7 @@ vergen-git2 = { version = "10.0", features = ["build"] }
 assert_cmd = "2.2"
 assert_fs = "1.1"
 predicates = "3.1"
+pretty_assertions = "1.4"
 serial_test = "4.0"
 temp-env = "0.3"
 
@@ -129,6 +130,24 @@ strip = true
 [profile.dist]
 inherits = "release"
 lto = "thin"
+
+# Faster CI builds: skip debug info, single codegen unit, light LTO.
+# Used by Rust CI when the assertion is "this compiles + tests pass",
+# not "produce a shippable artifact" (that's what `dist` + `release` are for).
+[profile.no-debug]
+inherits = "dev"
+opt-level = 1
+debug = 0
+strip = "debuginfo"
+
+# Profiling builds: keep symbols, disable LTO so flamegraphs / perf / cargo-bloat
+# see real call stacks. Used by `cargo bench` and ad-hoc perf investigations.
+[profile.profiling]
+inherits = "release"
+strip = false
+debug = "full"
+lto = false
+codegen-units = 16
 
 # cargo-release configuration (https://github.com/crate-ci/cargo-release)
 # Tag-driven; cargo-dist workflow picks up the pushed tag and runs the
