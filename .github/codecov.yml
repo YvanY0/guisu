@@ -1,0 +1,19 @@
+# Codecov configuration for guisu
+# Docs: https://docs.codecov.com/docs/codecov-yaml
+
+# Don't block CI on coverage thresholds — keep this informational so
+# a coverage dip doesn't gate merges. The badge on the README / PR is
+# still useful for spotting trends.
+coverage:
+  status:
+    project:
+      default:
+        informational: true
+    patch:
+      default:
+        informational: true
+
+# Don't fail the upload step if the run had test failures; we still
+# want a partial lcov report and the trend line.
+github_checks:
+  annotations: false

@@ -66,6 +66,29 @@ jobs:
       - name: Test
         run: cargo test --workspace --all-features
 
+      - name: Install cargo-llvm-cov
+        uses: taiki-e/install-action@v2.87.1
+        with:
+          tool: cargo-llvm-cov
+
+      # LCOV report: runs the test suite through cargo-llvm-cov which
+      # instruments at the LLVM level (no source changes, faster than
+      # coverage runs that go through cargo test directly).
+      - name: Coverage (lcov)
+        run: cargo llvm-cov test --lcov --output-path lcov.info --locked --all-features --workspace
+
+      # Codecov is informational — failure here does NOT block CI. The
+      # token is optional; without it the upload is silently skipped and
+      # the lcov.info artifact is still produced for local inspection.
+      - name: Upload coverage
+        if: ${{ github.event_name == 'push' && github.ref == 'refs/heads/main' }}
+        uses: codecov/codecov-action@v5
+        with:
+          files: lcov.info
+          token: ${{ secrets.CODECOV_TOKEN }}
+          fail_ci_if_error: false
+          verbose: false
+
       - name: Deny (advisories, licenses, bans, sources)
         run: cargo deny check advisories licenses bans sources
 
