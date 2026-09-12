@@ -98,7 +98,7 @@ jobs:
           tool: cargo-shear
 
       - name: Shear (unused deps)
-        run: cargo shear
+        run: cargo shear --all-features
 
       - name: Outdated
         run: cargo outdated --root-deps-only --workspace
