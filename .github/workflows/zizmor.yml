@@ -1,0 +1,38 @@
+name: zizmor
+
+# Scans .github/workflows/*.yml for unsafe GH Actions patterns
+# (unpinned actions, script injections, excessive permissions, ...).
+# Runs on any PR or push that touches the workflow directory.
+
+on:
+  pull_request:
+    paths:
+      - ".github/workflows/**"
+      - ".github/zizmor.yml"
+  push:
+    branches: [main]
+    paths:
+      - ".github/workflows/**"
+      - ".github/zizmor.yml"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: zizmor-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  scan:
+    name: zizmor security audit
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+
+      - uses: woodruffw/zizmor-action@v1
+        with:
+          # Scan every workflow in the repo; fail the job on any finding
+          # at or above the 'medium' severity threshold.
+          level: medium

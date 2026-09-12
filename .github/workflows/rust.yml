@@ -18,6 +18,8 @@ permissions:
 
 env:
   CARGO_TERM_COLOR: always
+  CARGO_INCREMENTAL: 0
+  CARGO_NET_RETRY: 10
   RUSTFLAGS: -Dwarnings
 
 jobs:
@@ -66,6 +68,14 @@ jobs:
 
       - name: Deny (advisories, licenses, bans, sources)
         run: cargo deny check advisories licenses bans sources
+
+      - name: Install cargo-shear
+        uses: taiki-e/install-action@v2.87.1
+        with:
+          tool: cargo-shear
+
+      - name: Shear (unused deps)
+        run: cargo shear --workspace
 
       - name: Outdated
         run: cargo outdated --root-deps-only --workspace
