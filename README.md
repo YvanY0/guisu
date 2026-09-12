@@ -25,11 +25,12 @@ Pre-built binaries are linked from the
 
 ## Documentation
 
-- [Installation](https://yvany0.github.io/guisu/installation.html)
-- [User guide](https://yvany0.github.io/guisu/user-guide/file-attributes.html)
-- [Command reference](https://yvany0.github.io/guisu/reference/commands.html)
-- [Developer guide](https://yvany0.github.io/guisu/developer-guide/architecture.html)
-- [Contributing](https://yvany0.github.io/guisu/developer-guide/contributing.html)
+- [Installation](https://yvany0.github.io/guisu/installation/)
+- [User guide](https://yvany0.github.io/guisu/user-guide/file-attributes/)
+- [Command reference](https://yvany0.github.io/guisu/reference/commands/)
+- [Developer guide](https://yvany0.github.io/guisu/developer-guide/architecture/)
+- [Contributing](https://yvany0.github.io/guisu/developer-guide/contributing/)
+- [llms.txt (LLM-friendly)](https://yvany0.github.io/guisu/llms.txt) — for Claude/Cursor/Continue.dev context
 
 ## License
 

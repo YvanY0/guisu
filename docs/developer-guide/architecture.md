@@ -22,6 +22,7 @@ Read row-by-row:
 - `crypto` and `vault` depend only on `core`.
 - `template` depends on `core`, `crypto`, `vault` (so it can call encryption and vault lookups during rendering).
 - `config` depends on `core` and `crypto` only. It does **not** depend on `template` — when it finds a `.guisu.toml.j2`, it emits a helpful error and lets the CLI layer do the rendering (see `Config::load_from_source` in `crates/config/src/config.rs`). The CLI renders the template, caches the result keyed by template hash in the state DB, then feeds the rendered TOML back to `Config::from_toml_str`.
+- `config` also owns `Env` (see [`crates/config/src/env.rs`](../../crates/config/src/env.rs)) — every crate reads process environment through it; raw `std::env::var*` is banned by `disallowed-methods` in `.clippy.toml`.
 - `engine` depends on all of `core`, `crypto`, `vault`, `template`, `config` (it orchestrates the apply pipeline).
 - `cli` depends on every other crate (it is the user-facing binary).
 

@@ -23,7 +23,6 @@ default = ["bw", "bws"]
 # CLI-based providers (no additional dependencies)
 bw = []  # Bitwarden CLI (bw.rs)
 bws = [] # Bitwarden Secrets Manager (bws.rs)
-rbw = [] # Unofficial Bitwarden CLI (rbw.rs)
 # Future: Native SDK support (requires tokio runtime)
 # bw-sdk = ["tokio"]  # Disabled: not implemented yet
 

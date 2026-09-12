@@ -6,10 +6,11 @@ Rust dotfile manager. Three-state model: **Source → Target → Destination**
 ## Build & verify
 
 ```bash
-cargo check --workspace && cargo test --workspace && cargo clippy --workspace -- -D warnings && cargo fmt -- --check
+cargo check --workspace --all-targets --all-features --locked && cargo test --workspace --all-features --locked && cargo clippy --workspace --all-targets --all-features --locked -- -D warnings && cargo fmt --all -- --check
 ```
 
-`just` aliases: `just clippy`, `just test`, `just build`, `just fmt`.
+`just` aliases: `just clippy`, `just test`, `just build`, `just fmt`,
+`just docs-build`, `just docs-serve`. They mirror the CI commands above.
 Docs-only changes may skip the cargo checks.
 
 ## Where things live
@@ -30,11 +31,21 @@ Read the per-crate `AGENTS.md` before editing that crate.
 - Newtype paths: `AbsPath`/`RelPath`, never raw `PathBuf`.
 - Add context to errors with `anyhow::Context`.
 - Look for existing utilities before adding new ones.
+- Environment variables: route through `guisu_config::Env`, not raw
+  `std::env::var`. The `disallowed-methods` lint in `.clippy.toml`
+  enforces this; the `Env` type itself is the one allowed caller.
 
 ## Tests
 
 Complex logic → write `#[test]` first. Bug fix → test first, then fix.
 Simple change → tests not required.
+
+For binary-output / structured-text assertions, prefer
+`pretty_assertions::assert_eq` over the std macro — failure messages
+include a coloured side-by-side diff that makes regressions obvious. New
+integration tests go under `crates/*/tests/` (one file per surface).
+Coverage is uploaded to Codecov from the main-branch CI run; the badge
+is informational and never gates merges.
 
 ## Scope — ask first
 
@@ -55,8 +66,9 @@ for you. Details: [contributing](docs/developer-guide/contributing.md).
 
 ## When done
 
-Before claiming complete: `cargo fmt -- --check`,
-`cargo clippy --workspace -- -D warnings`, `cargo test --workspace`
+Before claiming complete: `cargo fmt --all -- --check`,
+`cargo clippy --workspace --all-targets --all-features --locked -- -D warnings`,
+`cargo test --workspace --all-features --locked`
 (skip for docs-only). Don't `#[ignore]` a test or `#[allow]` a lint to
 make checks pass — fix the cause. User-facing changes also satisfy the
 [contributing "Documentation" checklist](docs/developer-guide/contributing.md).

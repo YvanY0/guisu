@@ -45,7 +45,7 @@ pub trait SecretProvider: Send + Sync {
 
 | File | Provider |
 | --- | --- |
-| `bw.rs` | `BwCli` (Bitwarden CLI) and `RbwCli` (unofficial Rust Bitwarden CLI). |
+| `bw.rs` | `BwCli` (Bitwarden CLI). |
 | `bws.rs` | `BwsCli` (Bitwarden Secrets). |
 
 The cache lives in `guisu-template` (process-lifetime singleton — one `apply` is one process), not here.
@@ -72,11 +72,14 @@ let rendered = engine.render_str(template, &context)?;
 ## `guisu-config`
 
 Loads and merges `.guisu.toml` plus platform-specific variable files.
+Also owns the single entry point for environment-variable reads across
+the workspace.
 
 | Module | What it contains |
 | --- | --- |
 | `config.rs` | The `Config` struct and sub-configs (`GeneralConfig`, `AgeConfig`, `BitwardenConfig`, `UiConfig`, `IgnoreConfig`, `EditConfig`). |
 | `dirs.rs` | XDG-compliant directory helpers: `data_dir`, `state_dir`, `default_source_dir`, `default_age_identity`. |
+| `env.rs` | `Env` — typed read-only view of the process environment. Production code uses `Env::system()`; tests use `Env::with_overrides` to inject deterministic values without `unsafe`. Includes themed accessors (`editor`, `pager`, `username`) that bake the `VISUAL→EDITOR` and `USER→USERNAME` fallback chains into one place. `.clippy.toml`'s `disallowed-methods` lint bans raw `std::env::var*` calls in every other crate. |
 | `ignores.rs` | `IgnoresConfig` and the loader for the single `.guisu/ignores.toml` file (with `global` / `darwin` / `linux` / `windows` arrays). |
 | `patterns.rs` | `IgnoreMatcher` — gitignore-style pattern compilation. |
 | `variables.rs` | Per-platform variable loading (`.guisu/variables/*.toml` and `.guisu/variables/<os>/*.toml`). |
@@ -84,6 +87,10 @@ Loads and merges `.guisu.toml` plus platform-specific variable files.
 ```rust
 let config = Config::load_from_source(source_dir)?;
 let patterns = config.platform_ignore_patterns();
+
+// Env: the only sanctioned way to read env vars outside guisu_config itself.
+use guisu_config::Env;
+let editor = Env::system().editor(); // VISUAL → EDITOR
 ```
 
 ## `guisu-engine`

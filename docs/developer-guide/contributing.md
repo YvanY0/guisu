@@ -36,15 +36,16 @@ cargo fmt -- --check
 
 Recommended tools:
 
-- `mise` — Rust toolchain + project tasks (see `rust-toolchain.toml`).
-- `pre-commit` — see `.pre-commit-config.yaml`. Install once with `pre-commit install`.
-- `cargo-nextest` — faster test runner (`cargo nextest run`).
+- `pre-commit` (or `prek`) — see `.pre-commit-config.yaml`. Install once with `pre-commit install`.
+- `cargo-shear` — installed by `rust.yml`; also runs locally via `cargo install cargo-shear --locked`.
+- `cargo-llvm-cov` — installed by `rust.yml`; produces `lcov.info` for Codecov uploads.
+- `cargo-dist` — installed by `release.yml`; `dist plan` / `dist build` simulate the release pipeline locally without pushing a tag.
 
 ## CI & local hooks
 
-- `.github/workflows/rust.yml` runs `cargo fmt`/`check`/`clippy`/`test`/`deny`/`outdated`. It auto-skips on PRs that don't touch Rust files.
-- `.pre-commit-config.yaml` runs local lint hooks (taplo, gitleaks, typos, commitlint) on the `pre-commit` stage and cargo `fmt`/`clippy`/`check`/`test`/`deny` on the `pre-push` stage. Run from a terminal via `prek` or `pre-commit`.
-- `.claude/settings.json` has a PostToolUse hook (on `Edit`/`Write` to `*.rs`) that runs `rustfmt` to auto-format saved files.
+- `.github/workflows/rust.yml` runs `cargo fmt` / `check` / `clippy --all-features --locked` / `test --all-features` / `deny check` / `outdated` / `shear`. It auto-skips on PRs that don't touch Rust files. Cache uses `Swatinem/rust-cache@v2` with a `save-if` so PR forks don't write back to the shared cache namespace.
+- `.github/workflows/zizmor.yml` audits every `.github/workflows/*.yml` for unsafe GH Actions patterns (unpinned actions, script-injection sinks, excessive permissions). It only runs when the workflow directory itself changes.
+- `.pre-commit-config.yaml` runs local lint hooks (taplo, gitleaks, typos, commitlint) on the `pre-commit` stage and cargo `fmt` / `clippy` / `check` / `test` / `deny` on the `pre-push` stage. Run from a terminal via `prek` or `pre-commit`.
 
 ## Signing commits
 
@@ -82,9 +83,9 @@ How was this tested?
 
 ## Checklist
 - [ ] Tests added/updated
-- [ ] `cargo fmt -- --check` passes
-- [ ] `cargo clippy --workspace -- -D warnings` passes
-- [ ] `cargo test --workspace` passes
+- [ ] `cargo fmt --all -- --check` passes
+- [ ] `cargo clippy --workspace --all-targets --all-features --locked -- -D warnings` passes
+- [ ] `cargo test --workspace --all-features --locked` passes
 - [ ] Commit signed (`-s -S`)
 ```
 
