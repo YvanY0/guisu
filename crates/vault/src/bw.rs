@@ -24,12 +24,38 @@
 //! This is a limitation of the official `bw` CLI tool and cannot be fully mitigated
 //! at the application level without modifications to the `bw` tool itself.
 
-use crate::{Error, Result, SecretProvider};
+use crate::{Error, Result, SecretProvider, VaultCommand};
 use guisu_config::Env;
 use serde_json::Value as JsonValue;
 use std::process::{Command, Stdio};
 use std::sync::Mutex;
 use tracing::info;
+
+/// Translate a [`VaultCommand`] into the `bw` CLI's argument vector.
+///
+/// Provider implementations centralise this so callers don't need to
+/// know the bw CLI's per-command syntax.
+fn bw_args_for(cmd: VaultCommand<'_>) -> Vec<&str> {
+    match cmd {
+        VaultCommand::GetItem { name } => vec!["get", "item", name],
+        VaultCommand::GetAttachment { item_id, filename } => {
+            vec!["get", "attachment", filename, "--itemid", item_id, "--raw"]
+        }
+    }
+}
+
+/// Translate a [`VaultCommand`] into the `rbw` CLI's argument vector.
+///
+/// rbw has a flatter CLI shape: `rbw get [--raw] <name>` — `--raw`
+/// is added because we always parse the output as JSON.
+fn rbw_args_for(cmd: VaultCommand<'_>) -> Vec<&str> {
+    match cmd {
+        VaultCommand::GetItem { name } => vec!["get", "--raw", name],
+        VaultCommand::GetAttachment { .. } => {
+            unreachable!("RbwCli::execute should reject GetAttachment")
+        }
+    }
+}
 
 /// Official Bitwarden CLI provider (`bw`)
 ///
@@ -150,7 +176,9 @@ impl BwCli {
     }
 
     /// Execute bw command with auto-unlock
-    fn execute_with_unlock(&self, args: &[&str]) -> Result<JsonValue> {
+    fn execute_with_unlock(&self, cmd: VaultCommand<'_>) -> Result<JsonValue> {
+        let args = bw_args_for(cmd);
+
         // Check vault status first using `bw status`
         let is_unlocked = Self::check_vault_status()?;
 
@@ -214,14 +242,11 @@ impl SecretProvider for BwCli {
         "bw"
     }
 
-    fn execute(&self, args: &[&str]) -> Result<JsonValue> {
-        if args.is_empty() {
-            return Err(Error::VaultInvalidArguments(
-                "At least one argument required".to_string(),
-            ));
+    fn execute(&self, cmd: VaultCommand<'_>) -> Result<JsonValue> {
+        if matches!(cmd, VaultCommand::GetAttachment { .. }) {
+            // bw `get attachment` is supported natively; nothing to translate.
         }
-
-        self.execute_with_unlock(args)
+        self.execute_with_unlock(cmd)
     }
 
     fn is_available(&self) -> bool {
@@ -351,10 +376,12 @@ impl RbwCli {
     /// - SSH private keys: rbw does not return `private_key` field for SSH items.
     ///   Only `public_key` and `fingerprint` are available. Use bw CLI if you need
     ///   to access SSH private keys in templates.
-    fn execute_rbw(args: &[&str]) -> Result<JsonValue> {
+    fn execute_rbw(cmd: VaultCommand<'_>) -> Result<JsonValue> {
+        let args = rbw_args_for(cmd);
+
         // Execute rbw - it handles daemon startup and unlocking automatically
         let output = Command::new("rbw")
-            .args(args)
+            .args(&args)
             .stdin(Stdio::inherit()) // Allow rbw to prompt for password if needed
             .stdout(Stdio::piped())
             .stderr(Stdio::piped())
@@ -415,14 +442,14 @@ impl SecretProvider for RbwCli {
         "rbw"
     }
 
-    fn execute(&self, args: &[&str]) -> Result<JsonValue> {
-        if args.is_empty() {
-            return Err(Error::VaultInvalidArguments(
-                "At least one argument required".to_string(),
+    fn execute(&self, cmd: VaultCommand<'_>) -> Result<JsonValue> {
+        if matches!(cmd, VaultCommand::GetAttachment { .. }) {
+            return Err(Error::VaultExecutionFailed(
+                "rbw does not support attachments; use bw for {{ bitwardenAttachment(...) }}"
+                    .to_string(),
             ));
         }
-
-        Self::execute_rbw(args)
+        Self::execute_rbw(cmd)
     }
 
     fn is_available(&self) -> bool {

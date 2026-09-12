@@ -5,7 +5,7 @@
 //!
 //! Template function: `bitwardenSecrets()`
 
-use crate::{Error, Result, SecretProvider};
+use crate::{Error, Result, SecretProvider, VaultCommand};
 use guisu_config::Env;
 use serde_json::Value as JsonValue;
 use std::process::Command;
@@ -47,19 +47,23 @@ impl SecretProvider for BwsCli {
         "bws"
     }
 
-    fn execute(&self, args: &[&str]) -> Result<JsonValue> {
-        if args.is_empty() {
+    fn execute(&self, cmd: VaultCommand<'_>) -> Result<JsonValue> {
+        if matches!(cmd, VaultCommand::GetAttachment { .. }) {
             return Err(Error::VaultInvalidArguments(
-                "At least one argument required".to_string(),
+                "bws does not support attachments; use {{ bitwardenSecrets(...) }} instead"
+                    .to_string(),
             ));
         }
+        let VaultCommand::GetItem { name } = cmd else {
+            return Err(Error::VaultInvalidArguments(
+                "bws only supports GetItem".to_string(),
+            ));
+        };
 
         Self::check_access_token()?;
 
-        // Build command with --output json flag
-        let mut cmd_args: Vec<&str> = args.to_vec();
-        cmd_args.push("--output");
-        cmd_args.push("json");
+        // `bws get <secret-id> --output json`
+        let cmd_args: Vec<&str> = vec!["get", name, "--output", "json"];
 
         let output = Command::new("bws")
             .args(&cmd_args)
