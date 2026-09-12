@@ -31,7 +31,7 @@ jobs:
         with:
           persist-credentials: false
 
-      - uses: woodruffw/zizmor-action@v1
+      - uses: zizmorcore/zizmor-action@@v0.6.4
         with:
           # Scan every workflow in the repo; fail the job on any finding
           # at or above the 'medium' severity threshold.
