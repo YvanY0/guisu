@@ -2,9 +2,9 @@
 //!
 //! Provides functions for accessing secrets from password managers like Bitwarden.
 
-use guisu_vault::SecretProvider;
 #[cfg(feature = "bws")]
 use guisu_vault::{CachedSecretProvider, bws::BwsCli};
+use guisu_vault::{SecretProvider, VaultCommand};
 use indexmap::IndexMap;
 use minijinja::Value;
 use secrecy::{ExposeSecret, SecretString};
@@ -27,20 +27,26 @@ impl BitwardenCache {
         })
     }
 
-    /// Create Bitwarden provider based on configuration
+    /// Create Bitwarden provider based on configuration.
     ///
-    /// This is application-layer logic that chooses which provider implementation
-    /// to use based on user configuration.
+    /// Both `bw` and `rbw` are routed here; the [`VaultCommand`] returned
+    /// by each provider is translated by the provider itself, so this
+    /// template layer never has to know CLI-specific argument syntax.
     fn create_provider(provider_name: &str) -> Result<Box<dyn SecretProvider>, guisu_vault::Error> {
         match provider_name {
             #[cfg(feature = "bw")]
             "bw" => Ok(Box::new(guisu_vault::bw::BwCli::new())),
+
+            #[cfg(feature = "bw")]
+            "rbw" => Ok(Box::new(guisu_vault::bw::RbwCli::new())),
 
             _ => {
                 // Build list of available providers based on enabled features
                 let providers = [
                     #[cfg(feature = "bw")]
                     "bw",
+                    #[cfg(feature = "bw")]
+                    "rbw",
                 ];
 
                 Err(guisu_vault::Error::VaultProviderNotAvailable(format!(
@@ -52,21 +58,20 @@ impl BitwardenCache {
         }
     }
 
-    fn get_or_fetch(&self, cmd_args: &[&str]) -> Result<JsonValue, guisu_vault::Error> {
-        let cache_key = cmd_args.join("|");
+    fn get_or_fetch(&self, cmd: VaultCommand<'_>) -> Result<JsonValue, guisu_vault::Error> {
+        let cache_key = cmd.cache_key();
 
         // Quick read-only check - deserialize from Secret<String>
         if let Ok(cache) = self.cache.lock()
             && let Some(cached_secret) = cache.get(&cache_key)
         {
-            // Deserialize from exposed secret
             let json_str = cached_secret.expose_secret();
             return serde_json::from_str(json_str)
                 .map_err(|e| guisu_vault::Error::VaultCacheDeserialize { source: e });
         }
 
         // Fetch from provider
-        let result = self.provider.execute(cmd_args)?;
+        let result = self.provider.execute(cmd)?;
 
         // Serialize to string and wrap in SecretString for automatic zeroization
         if let Ok(mut cache) = self.cache.lock()
@@ -79,9 +84,8 @@ impl BitwardenCache {
     }
 }
 
-// Single Bitwarden cache: only one provider ("bw") is supported, so no
-// per-provider keying is needed. `OnceLock` handles the lazy init and
-// gives us thread-safe shared ownership without an extra Mutex.
+// Single Bitwarden cache: OnceLock gives thread-safe shared ownership
+// without an extra Mutex.
 static BITWARDEN_CACHE: OnceLock<Arc<BitwardenCache>> = OnceLock::new();
 
 // Cache for Bitwarden Secrets Manager CLI calls
@@ -108,6 +112,18 @@ fn convert_error(e: guisu_vault::Error) -> minijinja::Error {
     }
 }
 
+/// Look up (or lazily init) the shared Bitwarden cache for the given
+/// provider. Init failures panic — the template engine can't run if the
+/// vault provider can't be constructed, so it's a startup-time failure
+/// rather than something to surface per-render.
+fn shared_cache(provider_name: &str) -> Arc<BitwardenCache> {
+    BITWARDEN_CACHE
+        .get_or_init(|| {
+            Arc::new(BitwardenCache::new(provider_name).expect("Bitwarden provider init failed"))
+        })
+        .clone()
+}
+
 /// Access Bitwarden Vault items
 ///
 /// Retrieves a Bitwarden vault item (password, note, identity, etc.) by its name or UUID.
@@ -124,7 +140,7 @@ fn convert_error(e: guisu_vault::Error) -> minijinja::Error {
 /// # Arguments
 ///
 /// - `item_id`: The name or UUID of the Bitwarden item
-/// - `provider_name`: Reserved for future provider selection; currently always `"bw"`.
+/// - `provider_name`: `"bw"` or `"rbw"`
 ///
 /// # Returns
 ///
@@ -132,12 +148,14 @@ fn convert_error(e: guisu_vault::Error) -> minijinja::Error {
 ///
 /// # Environment
 ///
-/// Requires the `bw` CLI to be installed and authenticated.
+/// Requires the chosen Bitwarden CLI (`bw` or `rbw`) to be installed and unlocked.
 ///
 /// # Errors
 ///
-/// Returns error if Bitwarden provider is not available or item retrieval fails
-pub fn bitwarden(args: &[Value], _provider_name: &str) -> Result<Value, minijinja::Error> {
+/// Returns error if the Bitwarden provider is not available or item
+/// retrieval fails.
+#[allow(clippy::missing_errors_doc)]
+pub fn bitwarden(args: &[Value], provider_name: &str) -> Result<Value, minijinja::Error> {
     if args.is_empty() {
         return Err(minijinja::Error::new(
             minijinja::ErrorKind::InvalidOperation,
@@ -152,27 +170,10 @@ pub fn bitwarden(args: &[Value], _provider_name: &str) -> Result<Value, minijinj
         )
     })?;
 
-    // Return the raw item directly
-    bitwarden_get_raw("item", item_id)
-}
-
-/// Internal function to get raw Bitwarden item
-#[cfg(feature = "bw")]
-fn bitwarden_get_raw(item_type: &str, item_id: &str) -> Result<Value, minijinja::Error> {
-    // bw uses: bw get <type> <name>
-    let cmd_args = vec!["get", item_type, item_id];
-
-    // Lazy-init the shared cache once; subsequent calls reuse the same Arc.
-    let cache =
-        BITWARDEN_CACHE
-            .get_or_init(|| {
-                Arc::new(BitwardenCache::new("bw").expect(
-                    "create_provider only fails on unknown provider names; 'bw' is hard-coded",
-                ))
-            })
-            .clone();
-
-    let result = cache.get_or_fetch(&cmd_args).map_err(convert_error)?;
+    let cache = shared_cache(provider_name);
+    let result = cache
+        .get_or_fetch(VaultCommand::GetItem { name: item_id })
+        .map_err(convert_error)?;
     Ok(Value::from_serialize(&result))
 }
 
@@ -195,7 +196,7 @@ fn bitwarden_get_raw(item_type: &str, item_id: &str) -> Result<Value, minijinja:
 ///
 /// - `filename`: The name of the attachment file
 /// - `item_id`: The name or UUID of the item containing the attachment
-/// - `provider_name`: Reserved for future provider selection; currently always `"bw"`.
+/// - `provider_name`: `"bw"` (rbw does not support attachments)
 ///
 /// # Command executed
 ///
@@ -218,10 +219,9 @@ fn bitwarden_get_raw(item_type: &str, item_id: &str) -> Result<Value, minijinja:
 /// # Errors
 ///
 /// Returns error if Bitwarden CLI is not available or attachment retrieval fails
-#[cfg(feature = "bw")]
 pub fn bitwarden_attachment(
     args: &[Value],
-    _provider_name: &str,
+    provider_name: &str,
 ) -> Result<String, minijinja::Error> {
     if args.len() < 2 {
         return Err(minijinja::Error::new(
@@ -244,19 +244,10 @@ pub fn bitwarden_attachment(
         )
     })?;
 
-    // Build command: bw get attachment <filename> --itemid <itemid> --raw
-    let cmd_args = vec!["get", "attachment", filename, "--itemid", item_id, "--raw"];
-
-    let cache =
-        BITWARDEN_CACHE
-            .get_or_init(|| {
-                Arc::new(BitwardenCache::new("bw").expect(
-                    "create_provider only fails on unknown provider names; 'bw' is hard-coded",
-                ))
-            })
-            .clone();
-
-    let result = cache.get_or_fetch(&cmd_args).map_err(convert_error)?;
+    let cache = shared_cache(provider_name);
+    let result = cache
+        .get_or_fetch(VaultCommand::GetAttachment { item_id, filename })
+        .map_err(convert_error)?;
 
     // Extract string content from result
     let content = if let Some(s) = result.as_str() {
@@ -290,7 +281,7 @@ pub fn bitwarden_attachment(
 ///
 /// - `item_id`: The name or UUID of the item
 /// - `field_name`: The name of the field to extract from the fields array
-/// - `provider_name`: Reserved for future provider selection; currently always `"bw"`.
+/// - `provider_name`: `"bw"` or `"rbw"`
 ///
 /// # Note
 ///
@@ -299,12 +290,12 @@ pub fn bitwarden_attachment(
 ///
 /// # Environment
 ///
-/// Requires the `bw` CLI to be installed and authenticated.
+/// Requires the chosen Bitwarden CLI to be installed and unlocked.
 ///
 /// # Errors
 ///
 /// Returns error if Bitwarden provider is not available or field retrieval fails
-pub fn bitwarden_fields(args: &[Value], _provider_name: &str) -> Result<Value, minijinja::Error> {
+pub fn bitwarden_fields(args: &[Value], provider_name: &str) -> Result<Value, minijinja::Error> {
     if args.len() < 2 {
         return Err(minijinja::Error::new(
             minijinja::ErrorKind::InvalidOperation,
@@ -326,15 +317,21 @@ pub fn bitwarden_fields(args: &[Value], _provider_name: &str) -> Result<Value, m
         )
     })?;
 
-    // Get the raw item
-    let item = bitwarden_get_raw("item", item_id)?;
+    let cache = shared_cache(provider_name);
+    let item_value = cache
+        .get_or_fetch(VaultCommand::GetItem { name: item_id })
+        .map_err(convert_error)?;
+    let item = Value::from_serialize(&item_value);
 
     // Extract the specific field
     get_single_field(&item, field_name)
 }
 
 /// Get a single field from a Bitwarden item
-fn get_single_field(item: &Value, field_name: &str) -> Result<Value, minijinja::Error> {
+fn get_single_field(
+    item: &minijinja::Value,
+    field_name: &str,
+) -> Result<minijinja::Value, minijinja::Error> {
     // Try to get the field from common locations
     // First check custom fields
     if let Ok(fields) = item.get_attr("fields") {
@@ -432,9 +429,6 @@ pub fn bitwarden_secrets(args: &[Value]) -> Result<Value, minijinja::Error> {
         )
     })?;
 
-    // Build command: bws get <secret-id>
-    let cmd_args = vec!["get", secret_id];
-
     // Get or create the cached provider
     let mut cache = BWS_CACHE.lock().unwrap_or_else(|poisoned| {
         // Recover from poisoned lock - cache may be lost but we can recreate it
@@ -452,7 +446,9 @@ pub fn bitwarden_secrets(args: &[Value]) -> Result<Value, minijinja::Error> {
         )
     })?;
 
-    let result = provider.execute_cached(&cmd_args).map_err(convert_error)?;
+    let result = provider
+        .execute_cached(VaultCommand::GetItem { name: secret_id })
+        .map_err(convert_error)?;
 
     Ok(Value::from_serialize(&result))
 }

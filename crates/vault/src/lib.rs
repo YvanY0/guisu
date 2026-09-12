@@ -25,6 +25,44 @@ pub mod bws;
 // #[cfg(feature = "onepassword")]
 // pub mod onepassword;
 
+/// High-level vault commands.
+///
+/// Provider implementations translate `VaultCommand`s into their own
+/// CLI's argument syntax (e.g. rbw uses `rbw get [--raw] NAME`, bw uses
+/// `bw get TYPE NAME`). Callers describe *what* they want, not *how*
+/// to ask for it.
+#[derive(Debug, Clone, Copy)]
+pub enum VaultCommand<'a> {
+    /// Retrieve a vault item by name or UUID.
+    GetItem {
+        /// Item name (UUID).
+        name: &'a str,
+    },
+    /// Retrieve an attachment file from a vault item.
+    ///
+    /// Only `bw` (Bitwarden CLI) supports attachments; `rbw` returns
+    /// an error for this variant.
+    GetAttachment {
+        /// Item ID the attachment belongs to.
+        item_id: &'a str,
+        /// Attachment filename.
+        filename: &'a str,
+    },
+}
+
+impl VaultCommand<'_> {
+    /// Canonical cache key for this command (stable across providers).
+    #[must_use]
+    pub fn cache_key(&self) -> String {
+        match self {
+            Self::GetItem { name } => format!("get_item:{name}"),
+            Self::GetAttachment { item_id, filename } => {
+                format!("get_attachment:{item_id}:{filename}")
+            }
+        }
+    }
+}
+
 /// Trait for secret providers
 ///
 /// All password manager integrations should implement this trait.
@@ -32,16 +70,12 @@ pub trait SecretProvider: Send + Sync {
     /// Get the name of this provider
     fn name(&self) -> &'static str;
 
-    /// Execute a command and return JSON result
-    ///
-    /// # Arguments
-    ///
-    /// * `args` - Command arguments (e.g., \["get", "item", "GitHub"\])
+    /// Execute a high-level vault command.
     ///
     /// # Errors
     ///
-    /// Returns error if command execution fails or JSON parsing fails
-    fn execute(&self, args: &[&str]) -> Result<JsonValue>;
+    /// Returns error if command execution fails or JSON parsing fails.
+    fn execute(&self, cmd: VaultCommand<'_>) -> Result<JsonValue>;
 
     /// Check if the provider is available (CLI installed, etc.)
     fn is_available(&self) -> bool;
@@ -66,19 +100,19 @@ impl<P: SecretProvider> CachedSecretProvider<P> {
         }
     }
 
-    /// Execute command with caching
+    /// Execute a command with caching
     ///
     /// # Errors
     ///
     /// Returns error if command execution fails or JSON parsing fails
-    pub fn execute_cached(&mut self, args: &[&str]) -> Result<JsonValue> {
-        let cache_key = args.join("|");
+    pub fn execute_cached(&mut self, cmd: VaultCommand<'_>) -> Result<JsonValue> {
+        let cache_key = cmd.cache_key();
 
         if let Some(cached) = self.cache.get(&cache_key) {
             return Ok(cached.clone());
         }
 
-        let result = self.provider.execute(args)?;
+        let result = self.provider.execute(cmd)?;
         self.cache.insert(cache_key, result.clone());
 
         Ok(result)
@@ -135,7 +169,7 @@ mod tests {
             "mock"
         }
 
-        fn execute(&self, _args: &[&str]) -> Result<JsonValue> {
+        fn execute(&self, _cmd: VaultCommand<'_>) -> Result<JsonValue> {
             self.call_count.fetch_add(1, Ordering::SeqCst);
             Ok(self.response.clone())
         }
@@ -228,12 +262,16 @@ mod tests {
         let mut cached = CachedSecretProvider::new(provider);
 
         // First call - should execute
-        let result1 = cached.execute_cached(&["get", "item"]).unwrap();
+        let result1 = cached
+            .execute_cached(VaultCommand::GetItem { name: "item" })
+            .unwrap();
         assert_eq!(result1, response);
         assert_eq!(cached.provider.get_call_count(), 1);
 
         // Second call with same args - should use cache
-        let result2 = cached.execute_cached(&["get", "item"]).unwrap();
+        let result2 = cached
+            .execute_cached(VaultCommand::GetItem { name: "item" })
+            .unwrap();
         assert_eq!(result2, response);
         assert_eq!(cached.provider.get_call_count(), 1); // Still 1!
     }
@@ -245,15 +283,21 @@ mod tests {
         let mut cached = CachedSecretProvider::new(provider);
 
         // First call
-        cached.execute_cached(&["get", "item1"]).unwrap();
+        cached
+            .execute_cached(VaultCommand::GetItem { name: "item1" })
+            .unwrap();
         assert_eq!(cached.provider.get_call_count(), 1);
 
         // Different args - should execute again
-        cached.execute_cached(&["get", "item2"]).unwrap();
+        cached
+            .execute_cached(VaultCommand::GetItem { name: "item2" })
+            .unwrap();
         assert_eq!(cached.provider.get_call_count(), 2);
 
         // Same as first - should use cache
-        cached.execute_cached(&["get", "item1"]).unwrap();
+        cached
+            .execute_cached(VaultCommand::GetItem { name: "item1" })
+            .unwrap();
         assert_eq!(cached.provider.get_call_count(), 2);
     }
 
@@ -264,7 +308,9 @@ mod tests {
         let mut cached = CachedSecretProvider::new(provider);
 
         // Execute and cache
-        cached.execute_cached(&["get", "item"]).unwrap();
+        cached
+            .execute_cached(VaultCommand::GetItem { name: "item" })
+            .unwrap();
         assert_eq!(cached.cache.len(), 1);
         assert_eq!(cached.provider.get_call_count(), 1);
 
@@ -273,34 +319,34 @@ mod tests {
         assert_eq!(cached.cache.len(), 0);
 
         // Execute again - should call provider
-        cached.execute_cached(&["get", "item"]).unwrap();
+        cached
+            .execute_cached(VaultCommand::GetItem { name: "item" })
+            .unwrap();
         assert_eq!(cached.provider.get_call_count(), 2);
     }
 
     #[test]
-    fn test_cached_provider_cache_key_includes_all_args() {
+    fn test_cached_provider_cache_key_includes_all_variants() {
         let response = serde_json::json!({"key": "value"});
         let provider = MockProvider::new("test", response);
         let mut cached = CachedSecretProvider::new(provider);
 
         // These should be different cache entries
-        cached.execute_cached(&["get", "item", "name"]).unwrap();
-        cached.execute_cached(&["get", "item"]).unwrap();
-        cached.execute_cached(&["get"]).unwrap();
+        cached
+            .execute_cached(VaultCommand::GetItem { name: "alpha" })
+            .unwrap();
+        cached
+            .execute_cached(VaultCommand::GetItem { name: "beta" })
+            .unwrap();
+        cached
+            .execute_cached(VaultCommand::GetAttachment {
+                item_id: "x",
+                filename: "y",
+            })
+            .unwrap();
 
         assert_eq!(cached.provider.get_call_count(), 3);
         assert_eq!(cached.cache.len(), 3);
-    }
-
-    #[test]
-    fn test_cached_provider_empty_args() {
-        let response = serde_json::json!({"status": "ok"});
-        let provider = MockProvider::new("test", response.clone());
-        let mut cached = CachedSecretProvider::new(provider);
-
-        let result = cached.execute_cached(&[]).unwrap();
-        assert_eq!(result, response);
-        assert_eq!(cached.cache.len(), 1);
     }
 
     #[test]
@@ -316,7 +362,9 @@ mod tests {
         let provider = MockProvider::new("test", response.clone());
         let mut cached = CachedSecretProvider::new(provider);
 
-        let result = cached.execute_cached(&["get"]).unwrap();
+        let result = cached
+            .execute_cached(VaultCommand::GetItem { name: "x" })
+            .unwrap();
         assert_eq!(result, response);
         assert_eq!(result["string"], "value");
         assert_eq!(result["number"], 42);
@@ -352,7 +400,9 @@ mod tests {
         let response = serde_json::json!({"test": "data"});
         let provider = MockProvider::new("test", response.clone());
 
-        let result = provider.execute(&["arg1", "arg2"]).unwrap();
+        let result = provider
+            .execute(VaultCommand::GetItem { name: "arg1" })
+            .unwrap();
         assert_eq!(result, response);
     }
 
@@ -361,10 +411,14 @@ mod tests {
         let provider = MockProvider::new("test", JsonValue::Null);
         assert_eq!(provider.get_call_count(), 0);
 
-        provider.execute(&["arg1"]).unwrap();
+        provider
+            .execute(VaultCommand::GetItem { name: "arg1" })
+            .unwrap();
         assert_eq!(provider.get_call_count(), 1);
 
-        provider.execute(&["arg2"]).unwrap();
+        provider
+            .execute(VaultCommand::GetItem { name: "arg2" })
+            .unwrap();
         assert_eq!(provider.get_call_count(), 2);
     }
 }
