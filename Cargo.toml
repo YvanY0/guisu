@@ -11,7 +11,7 @@ members = [
 resolver = "3"
 
 [workspace.package]
-version = "0.2.9"
+version = "0.2.10"
 edition = "2024"
 # No `rust-version` pin — guisu tracks latest stable Rust. The edition
 # bump to 2024 is the floor (1.85+); everything newer is welcome.
@@ -33,13 +33,13 @@ unsafe_code = "deny"
 missing_docs = "warn"
 
 [workspace.dependencies]
-guisu-core = { path = "crates/core", version = "0.2.9" }
-guisu-crypto = { path = "crates/crypto", version = "0.2.9" }
-guisu-config = { path = "crates/config", version = "0.2.9" }
-guisu-vault = { path = "crates/vault", version = "0.2.9" }
-guisu-template = { path = "crates/template", version = "0.2.9" }
-guisu-engine = { path = "crates/engine", version = "0.2.9" }
-guisu = { path = "crates/cli", version = "0.2.9" }
+guisu-core = { path = "crates/core", version = "0.2.10" }
+guisu-crypto = { path = "crates/crypto", version = "0.2.10" }
+guisu-config = { path = "crates/config", version = "0.2.10" }
+guisu-vault = { path = "crates/vault", version = "0.2.10" }
+guisu-template = { path = "crates/template", version = "0.2.10" }
+guisu-engine = { path = "crates/engine", version = "0.2.10" }
+guisu = { path = "crates/cli", version = "0.2.10" }
 
 clap = { version = "4.6", features = ["derive", "cargo", "env"] }
 clap_complete = "4.6"
