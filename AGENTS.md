@@ -25,7 +25,7 @@ Docs-only changes may skip the cargo checks.
 
 Read the per-crate `AGENTS.md` before editing that crate.
 
-## Hard invariants
+## Code Quality
 
 - No bare `unwrap()` — use `?` with anyhow.
 - Newtype paths: `AbsPath`/`RelPath`, never raw `PathBuf`.
@@ -34,6 +34,23 @@ Read the per-crate `AGENTS.md` before editing that crate.
 - Environment variables: route through `guisu_config::Env`, not raw
   `std::env::var`. The `disallowed-methods` lint in `.clippy.toml`
   enforces this; the `Env` type itself is the one allowed caller.
+- Prefer plain `if`/`else` over `.then()` / `.then_some()`; avoid clever
+  combinators that hide the control flow.
+- Avoid `panic!` / `unreachable!` / `.unwrap()` / `.expect()`; encode the
+  constraint in the type system instead. A larger refactor is fine when
+  it removes these calls.
+- Prefer the smallest coherent change; reuse existing mechanisms instead
+  of building wrappers or abstractions for speculative gains.
+- When lint suppression is needed, prefer narrow
+  `#[expect(reason = "...")]` over `#[allow(...)]` so a future fix
+  becomes a compile error instead of silently re-enabling the lint.
+
+## GitHub Interaction
+
+Draft GitHub comments locally. Do not post comments, submit reviews,
+resolve threads, or otherwise mutate GitHub state without explicit
+authorization — that includes triggering workflows (e.g. `gh workflow run`),
+opening issues, and pushing to remotes.
 
 ## Tests
 
