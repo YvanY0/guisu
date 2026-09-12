@@ -3,6 +3,7 @@
 //! Provides functions for accessing system information like OS, architecture,
 //! hostname, username, home directory, and PATH operations.
 
+use guisu_config::Env;
 use minijinja::Value;
 use std::env;
 use std::path::PathBuf;
@@ -17,7 +18,9 @@ static HOME_DIR_CACHE: OnceLock<String> = OnceLock::new();
 ///
 /// Usage: `{{ env("PATH") }}`
 pub fn env(name: &str) -> std::borrow::Cow<'static, str> {
-    env::var(name).map_or(std::borrow::Cow::Borrowed(""), std::borrow::Cow::Owned)
+    Env::system()
+        .get(name)
+        .map_or(std::borrow::Cow::Borrowed(""), std::borrow::Cow::Owned)
 }
 
 /// Get the operating system name
@@ -58,9 +61,9 @@ pub fn hostname() -> &'static str {
 /// Usage: `{{ username() }}`
 pub fn username() -> &'static str {
     USERNAME_CACHE.get_or_init(|| {
-        env::var("USER")
-            .or_else(|_| env::var("USERNAME"))
-            .unwrap_or_else(|_| "unknown".to_string())
+        Env::system()
+            .username()
+            .unwrap_or_else(|| "unknown".to_string())
     })
 }
 

@@ -8,4 +8,14 @@ cognitive-complexity-threshold = 30
 # This is useful during development but can be disabled for release
 # doc-markdown = true
 
+# Ban raw environment-variable reads so every crate routes through
+# `guisu_config::Env`. Single entry point → easy to mock in tests,
+# easy to layer config-file overrides later, easy to audit.
+disallowed-methods = [
+  "std::env::var",
+  "std::env::var_os",
+  "std::env::vars",
+  "std::env::vars_os",
+]
+
 # Lint level configuration is in workspace Cargo.toml [lints.clippy]

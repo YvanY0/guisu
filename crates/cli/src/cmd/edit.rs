@@ -6,7 +6,6 @@ use anyhow::{Context, Result};
 use clap::Args;
 use guisu_crypto::{decrypt, decrypt_file_content, encrypt, encrypt_inline};
 use owo_colors::OwoColorize;
-use std::env;
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::process::Command as ProcessCommand;
@@ -14,7 +13,7 @@ use tempfile::TempDir;
 
 use crate::command::Command;
 use crate::common::RuntimeContext;
-use guisu_config::Config;
+use guisu_config::{Config, Env};
 
 /// Cached regex for matching inline age encrypted values
 static AGE_VALUE_REGEX: std::sync::LazyLock<regex::Regex> = std::sync::LazyLock::new(|| {
@@ -170,12 +169,12 @@ fn get_editor(config: &Config) -> (String, Vec<String>) {
     }
 
     // 2. Try $VISUAL environment variable
-    if let Ok(visual) = env::var("VISUAL") {
+    if let Some(visual) = Env::system().get("VISUAL") {
         return (visual, vec![]);
     }
 
     // 3. Try $EDITOR environment variable
-    if let Ok(editor) = env::var("EDITOR") {
+    if let Some(editor) = Env::system().get("EDITOR") {
         return (editor, vec![]);
     }
 

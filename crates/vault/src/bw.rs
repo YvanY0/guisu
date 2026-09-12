@@ -25,8 +25,8 @@
 //! at the application level without modifications to the `bw` tool itself.
 
 use crate::{Error, Result, SecretProvider};
+use guisu_config::Env;
 use serde_json::Value as JsonValue;
-use std::env;
 use std::process::{Command, Stdio};
 use std::sync::Mutex;
 use tracing::info;
@@ -44,7 +44,7 @@ impl BwCli {
     #[must_use]
     pub fn new() -> Self {
         // Try to get session from environment variable
-        let session_key = env::var("BW_SESSION").ok();
+        let session_key = Env::system().get("BW_SESSION");
 
         Self {
             session_key: Mutex::new(session_key),
@@ -61,7 +61,7 @@ impl BwCli {
         }
 
         // Check environment variable
-        if let Ok(session) = env::var("BW_SESSION") {
+        if let Some(session) = Env::system().get("BW_SESSION") {
             // Cache it
             if let Ok(mut guard) = self.session_key.lock() {
                 *guard = Some(session.clone());

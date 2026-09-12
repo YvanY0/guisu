@@ -6,6 +6,7 @@
 //! Template function: `bitwardenSecrets()`
 
 use crate::{Error, Result, SecretProvider};
+use guisu_config::Env;
 use serde_json::Value as JsonValue;
 use std::process::Command;
 
@@ -20,7 +21,7 @@ impl BwsCli {
     }
 
     fn check_access_token() -> Result<()> {
-        if std::env::var("BWS_ACCESS_TOKEN").is_err() {
+        if Env::system().get("BWS_ACCESS_TOKEN").is_none() {
             return Err(Error::VaultAuthenticationRequired(
                 "BWS_ACCESS_TOKEN environment variable not set.\n\
                  Get your access token from Bitwarden Secrets Manager:\n\

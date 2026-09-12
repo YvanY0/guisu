@@ -1735,6 +1735,7 @@ dependencies = [
 name = "guisu-vault"
 version = "0.2.9"
 dependencies = [
+ "guisu-config",
  "guisu-core",
  "indexmap",
  "serde",

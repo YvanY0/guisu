@@ -16,7 +16,6 @@ use owo_colors::OwoColorize;
 use rayon::prelude::*;
 use similar::{ChangeTag, TextDiff};
 use std::collections::HashSet;
-use std::env;
 use std::fmt::Write as FmtWrite;
 use std::fs;
 use std::io::Write;
@@ -33,7 +32,7 @@ use crate::ui::{FileDiff, FileStatus, InteractiveDiffViewer};
 use crate::utils::filter::path_matches_any_filter;
 use crate::utils::path::SourceDirExt;
 use crate::utils::path_display::{DiffSide, PathDisplayStyle, PathFormatter};
-use guisu_config::Config;
+use guisu_config::{Config, Env};
 
 // File permission constants
 const PERM_MASK: u32 = 0o7777;
@@ -837,7 +836,7 @@ fn format_new_file(new_label: &str, _old_label: &str, content: &[u8], mode: Opti
 /// Use pager for output if available
 fn maybe_use_pager(output: &str, _config: &Config) -> Result<()> {
     // Try to use pager from environment
-    let pager = env::var("PAGER").unwrap_or_else(|_| {
+    let pager = Env::system().get("PAGER").unwrap_or_else(|| {
         #[cfg(unix)]
         {
             "less -R".to_string()

@@ -13,6 +13,8 @@ resolver = "2"
 [workspace.package]
 version = "0.2.9"
 edition = "2024"
+# No `rust-version` pin — guisu tracks latest stable Rust. The edition
+# bump to 2024 is the floor (1.85+); everything newer is welcome.
 authors = ["Yihuang Yu <yuyihuang@live.com>"]
 license = "MIT OR Apache-2.0"
 repository = "https://github.com/YvanY0/guisu"

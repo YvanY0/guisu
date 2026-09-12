@@ -3,6 +3,7 @@
 //! The context provides data that is available to templates during rendering.
 
 use crate::info::ConfigInfo;
+use guisu_config::Env;
 use indexmap::IndexMap;
 use serde::{Deserialize, Serialize};
 use std::env;
@@ -249,7 +250,7 @@ impl TemplateContext {
 
     /// Collect environment variables
     fn collect_env() -> IndexMap<String, String> {
-        env::vars().collect()
+        Env::system().iter().collect()
     }
 }
 
@@ -318,9 +319,9 @@ impl SystemInfo {
     }
 
     fn detect_username() -> String {
-        env::var("USER")
-            .or_else(|_| env::var("USERNAME"))
-            .unwrap_or_else(|_| "unknown".to_string())
+        Env::system()
+            .username()
+            .unwrap_or_else(|| "unknown".to_string())
     }
 
     fn detect_uid() -> String {
@@ -553,7 +554,7 @@ mod tests {
         let ctx = TemplateContext::new();
 
         // PATH should exist on all systems
-        if let Ok(path_val) = env::var("PATH") {
+        if let Some(path_val) = Env::system().get("PATH") {
             assert_eq!(ctx.get_env("PATH"), Some(&path_val));
         }
 

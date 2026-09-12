@@ -10,6 +10,7 @@
 
 pub mod config;
 pub mod dirs;
+pub mod env;
 pub mod ignores;
 pub mod patterns;
 pub mod variables;
@@ -31,5 +32,6 @@ pub use config::{
 // NOTE: database module moved to guisu-engine
 // CLI should import from engine::database directly
 pub use dirs::{data_dir, default_source_dir, state_dir};
+pub use env::Env;
 pub use ignores::IgnoresConfig;
 pub use patterns::IgnoreMatcher;

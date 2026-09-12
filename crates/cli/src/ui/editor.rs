@@ -1,6 +1,7 @@
 //! Editor integration for manual conflict resolution
 
 use anyhow::{Context, Result, anyhow};
+use guisu_config::Env;
 use std::fmt::Write as FmtWrite;
 use std::fs;
 use std::path::Path;
@@ -177,15 +178,17 @@ pub fn open_for_merge(
 
 /// Get the editor command from environment variables
 fn get_editor() -> String {
+    let env = Env::system();
+
     // Try EDITOR first
-    if let Ok(editor) = std::env::var("EDITOR")
+    if let Some(editor) = env.get("EDITOR")
         && !editor.is_empty()
     {
         return editor;
     }
 
     // Try VISUAL
-    if let Ok(editor) = std::env::var("VISUAL")
+    if let Some(editor) = env.get("VISUAL")
         && !editor.is_empty()
     {
         return editor;

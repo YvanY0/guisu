@@ -5,6 +5,7 @@
 use super::config::{Hook, HookCollections, HookMode, HookStage};
 use super::env;
 use super::script;
+use guisu_config::Env;
 use guisu_core::platform::CURRENT_PLATFORM;
 use guisu_core::{Error, Result};
 use indexmap::IndexMap;
@@ -722,7 +723,7 @@ impl<'a> HookRunnerBuilder<'a, NoOpRenderer> {
         let mut env_vars = IndexMap::new();
 
         // Inherit all environment variables from parent shell (like chezmoi does)
-        for (key, value) in std::env::vars() {
+        for (key, value) in Env::system().iter() {
             env_vars.insert(key, value);
         }
 
