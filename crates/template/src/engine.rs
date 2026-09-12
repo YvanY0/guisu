@@ -101,7 +101,8 @@ impl TemplateEngine {
     /// This is the most complete constructor that accepts:
     /// - Identities for encryption/decryption
     /// - Template directory for include/includeTemplate
-    /// - Bitwarden provider selection ("bw" or "rbw")
+    /// - Bitwarden provider selection (currently "bw"; "bws" for Bitwarden
+    ///   Secrets is configured separately via the env wrapper)
     pub fn with_identities_arc_template_dir_and_bitwarden_provider(
         identities: &Arc<Vec<Identity>>,
         template_dir: Option<PathBuf>,
@@ -144,7 +145,7 @@ impl TemplateEngine {
         env.add_function("includeTemplate", functions::include_template);
 
         // Register Bitwarden functions with provider closure
-        #[cfg(any(feature = "bw", feature = "rbw"))]
+        #[cfg(feature = "bw")]
         {
             let provider = bitwarden_provider.to_string();
 
@@ -452,7 +453,7 @@ mod tests {
         let engine = TemplateEngine::with_identities_arc_template_dir_and_bitwarden_provider(
             &identities,
             None,
-            "rbw",
+            "bw",
         );
 
         let ctx = TemplateContext::new();

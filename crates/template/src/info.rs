@@ -45,7 +45,7 @@ pub struct AgeConfigInfo {
 /// Bitwarden configuration exposed to templates
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct BitwardenConfigInfo {
-    /// Which Bitwarden CLI provider is used: "bw" or "rbw"
+    /// Which Bitwarden CLI provider is used: "bw" or "bws"
     pub provider: String,
 }
 
@@ -151,11 +151,11 @@ mod tests {
     #[test]
     fn test_bitwarden_config_info_serialization() {
         let bw = BitwardenConfigInfo {
-            provider: "rbw".to_string(),
+            provider: "bw".to_string(),
         };
         let serialized = serde_json::to_string(&bw).unwrap();
 
-        assert!(serialized.contains("\"provider\":\"rbw\""));
+        assert!(serialized.contains("\"provider\":\"bw\""));
     }
 
     #[test]
@@ -259,7 +259,7 @@ mod tests {
     fn test_from_config_preserves_all_fields() {
         let mut config = Config::default();
         config.age.derive = true;
-        config.bitwarden.provider = "rbw".to_string();
+        config.bitwarden.provider = "bw".to_string();
         config.ui.icons = IconMode::Always;
         config.ui.diff_format = "split".to_string();
         config.ui.context_lines = 10;
@@ -268,7 +268,7 @@ mod tests {
         let info = ConfigInfo::from(&config);
 
         assert!(info.age.derive);
-        assert_eq!(info.bitwarden.provider, "rbw");
+        assert_eq!(info.bitwarden.provider, "bw");
         assert_eq!(info.ui.icons, "always");
         assert_eq!(info.ui.diff_format, "split");
         assert_eq!(info.ui.context_lines, 10);

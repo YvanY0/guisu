@@ -49,7 +49,6 @@ criterion.workspace = true
 default = ["bw", "bws"]
 bw = ["guisu-vault/bw"]
 bws = ["guisu-vault/bws"]
-rbw = ["guisu-vault/rbw"]
 
 [lints]
 workspace = true

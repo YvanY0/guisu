@@ -9,7 +9,6 @@ use indexmap::IndexMap;
 use minijinja::Value;
 use secrecy::{ExposeSecret, SecretString};
 use serde_json::Value as JsonValue;
-use std::collections::HashMap;
 use std::sync::{Arc, Mutex, OnceLock};
 
 // Bitwarden cache structure with separated provider and cache
@@ -37,16 +36,11 @@ impl BitwardenCache {
             #[cfg(feature = "bw")]
             "bw" => Ok(Box::new(guisu_vault::bw::BwCli::new())),
 
-            #[cfg(feature = "bw")]
-            "rbw" => Ok(Box::new(guisu_vault::bw::RbwCli::new())),
-
             _ => {
                 // Build list of available providers based on enabled features
                 let providers = [
                     #[cfg(feature = "bw")]
                     "bw",
-                    #[cfg(feature = "bw")]
-                    "rbw",
                 ];
 
                 Err(guisu_vault::Error::VaultProviderNotAvailable(format!(
@@ -85,10 +79,10 @@ impl BitwardenCache {
     }
 }
 
-// Bitwarden cache singleton
-// Since provider is configured once in config, we only need one cache instance
-// The cache is initialized on first use with the configured provider
-static BITWARDEN_CACHE: OnceLock<Mutex<HashMap<String, Arc<BitwardenCache>>>> = OnceLock::new();
+// Single Bitwarden cache: only one provider ("bw") is supported, so no
+// per-provider keying is needed. `OnceLock` handles the lazy init and
+// gives us thread-safe shared ownership without an extra Mutex.
+static BITWARDEN_CACHE: OnceLock<Arc<BitwardenCache>> = OnceLock::new();
 
 // Cache for Bitwarden Secrets Manager CLI calls
 #[cfg(feature = "bws")]
@@ -130,7 +124,7 @@ fn convert_error(e: guisu_vault::Error) -> minijinja::Error {
 /// # Arguments
 ///
 /// - `item_id`: The name or UUID of the Bitwarden item
-/// - `provider_name`: The Bitwarden provider to use ("bw" or "rbw")
+/// - `provider_name`: Reserved for future provider selection; currently always `"bw"`.
 ///
 /// # Returns
 ///
@@ -138,12 +132,12 @@ fn convert_error(e: guisu_vault::Error) -> minijinja::Error {
 ///
 /// # Environment
 ///
-/// Requires either `bw` or `rbw` CLI to be installed and authenticated.
+/// Requires the `bw` CLI to be installed and authenticated.
 ///
 /// # Errors
 ///
 /// Returns error if Bitwarden provider is not available or item retrieval fails
-pub fn bitwarden(args: &[Value], provider_name: &str) -> Result<Value, minijinja::Error> {
+pub fn bitwarden(args: &[Value], _provider_name: &str) -> Result<Value, minijinja::Error> {
     if args.is_empty() {
         return Err(minijinja::Error::new(
             minijinja::ErrorKind::InvalidOperation,
@@ -159,44 +153,26 @@ pub fn bitwarden(args: &[Value], provider_name: &str) -> Result<Value, minijinja
     })?;
 
     // Return the raw item directly
-    bitwarden_get_raw("item", item_id, provider_name)
+    bitwarden_get_raw("item", item_id)
 }
 
 /// Internal function to get raw Bitwarden item
-#[cfg(any(feature = "bw", feature = "rbw"))]
-fn bitwarden_get_raw(
-    item_type: &str,
-    item_id: &str,
-    provider_name: &str,
-) -> Result<Value, minijinja::Error> {
-    // Build command arguments based on provider
-    let cmd_args: Vec<&str> = if provider_name == "rbw" {
-        // rbw uses: rbw get --raw <name>
-        vec!["get", "--raw", item_id]
-    } else {
-        // bw uses: bw get <type> <name>
-        vec!["get", item_type, item_id]
-    };
+#[cfg(feature = "bw")]
+fn bitwarden_get_raw(item_type: &str, item_id: &str) -> Result<Value, minijinja::Error> {
+    // bw uses: bw get <type> <name>
+    let cmd_args = vec!["get", item_type, item_id];
 
-    // Get or initialize cache for this provider
-    let caches = BITWARDEN_CACHE.get_or_init(|| Mutex::new(HashMap::new()));
-    let mut caches = caches.lock().unwrap_or_else(|poisoned| {
-        // Recover from poisoned lock - cache may be incomplete but we can rebuild it
-        poisoned.into_inner()
-    });
+    // Lazy-init the shared cache once; subsequent calls reuse the same Arc.
+    let cache =
+        BITWARDEN_CACHE
+            .get_or_init(|| {
+                Arc::new(BitwardenCache::new("bw").expect(
+                    "create_provider only fails on unknown provider names; 'bw' is hard-coded",
+                ))
+            })
+            .clone();
 
-    // Get or create cache for this provider
-    if !caches.contains_key(provider_name) {
-        let new_cache = BitwardenCache::new(provider_name).map_err(convert_error)?;
-        caches.insert(provider_name.to_string(), Arc::new(new_cache));
-    }
-
-    let cache = Arc::clone(caches.get(provider_name).expect("Cache was just inserted"));
-    drop(caches); // Release lock before executing command
-
-    // Fetch from cache
     let result = cache.get_or_fetch(&cmd_args).map_err(convert_error)?;
-
     Ok(Value::from_serialize(&result))
 }
 
@@ -219,7 +195,7 @@ fn bitwarden_get_raw(
 ///
 /// - `filename`: The name of the attachment file
 /// - `item_id`: The name or UUID of the item containing the attachment
-/// - `provider_name`: The Bitwarden provider to use ("bw" or "rbw")
+/// - `provider_name`: Reserved for future provider selection; currently always `"bw"`.
 ///
 /// # Command executed
 ///
@@ -228,7 +204,6 @@ fn bitwarden_get_raw(
 /// # Important
 ///
 /// - Only works with `bw` CLI (Bitwarden official CLI)
-/// - `rbw` does not support attachments, so this function will fail if rbw is configured
 /// - The attachment content is returned as a string
 /// - Binary attachments will be returned as-is (you may need to handle encoding)
 ///
@@ -246,7 +221,7 @@ fn bitwarden_get_raw(
 #[cfg(feature = "bw")]
 pub fn bitwarden_attachment(
     args: &[Value],
-    provider_name: &str,
+    _provider_name: &str,
 ) -> Result<String, minijinja::Error> {
     if args.len() < 2 {
         return Err(minijinja::Error::new(
@@ -269,34 +244,18 @@ pub fn bitwarden_attachment(
         )
     })?;
 
-    // rbw doesn't support attachments
-    if provider_name == "rbw" {
-        return Err(minijinja::Error::new(
-            minijinja::ErrorKind::InvalidOperation,
-            "bitwardenAttachment is not supported with rbw. Please use bw (Bitwarden CLI) instead.",
-        ));
-    }
-
     // Build command: bw get attachment <filename> --itemid <itemid> --raw
     let cmd_args = vec!["get", "attachment", filename, "--itemid", item_id, "--raw"];
 
-    // Get or initialize cache for this provider
-    let caches = BITWARDEN_CACHE.get_or_init(|| Mutex::new(HashMap::new()));
-    let mut caches = caches.lock().unwrap_or_else(|poisoned| {
-        // Recover from poisoned lock - cache may be incomplete but we can rebuild it
-        poisoned.into_inner()
-    });
+    let cache =
+        BITWARDEN_CACHE
+            .get_or_init(|| {
+                Arc::new(BitwardenCache::new("bw").expect(
+                    "create_provider only fails on unknown provider names; 'bw' is hard-coded",
+                ))
+            })
+            .clone();
 
-    // Get or create cache for this provider
-    if !caches.contains_key(provider_name) {
-        let new_cache = BitwardenCache::new(provider_name).map_err(convert_error)?;
-        caches.insert(provider_name.to_string(), Arc::new(new_cache));
-    }
-
-    let cache = Arc::clone(caches.get(provider_name).expect("Cache was just inserted"));
-    drop(caches); // Release lock before executing command
-
-    // Fetch from cache
     let result = cache.get_or_fetch(&cmd_args).map_err(convert_error)?;
 
     // Extract string content from result
@@ -331,7 +290,7 @@ pub fn bitwarden_attachment(
 ///
 /// - `item_id`: The name or UUID of the item
 /// - `field_name`: The name of the field to extract from the fields array
-/// - `provider_name`: The Bitwarden provider to use ("bw" or "rbw")
+/// - `provider_name`: Reserved for future provider selection; currently always `"bw"`.
 ///
 /// # Note
 ///
@@ -340,12 +299,12 @@ pub fn bitwarden_attachment(
 ///
 /// # Environment
 ///
-/// Requires either `bw` or `rbw` CLI to be installed and authenticated.
+/// Requires the `bw` CLI to be installed and authenticated.
 ///
 /// # Errors
 ///
 /// Returns error if Bitwarden provider is not available or field retrieval fails
-pub fn bitwarden_fields(args: &[Value], provider_name: &str) -> Result<Value, minijinja::Error> {
+pub fn bitwarden_fields(args: &[Value], _provider_name: &str) -> Result<Value, minijinja::Error> {
     if args.len() < 2 {
         return Err(minijinja::Error::new(
             minijinja::ErrorKind::InvalidOperation,
@@ -368,7 +327,7 @@ pub fn bitwarden_fields(args: &[Value], provider_name: &str) -> Result<Value, mi
     })?;
 
     // Get the raw item
-    let item = bitwarden_get_raw("item", item_id, provider_name)?;
+    let item = bitwarden_get_raw("item", item_id)?;
 
     // Extract the specific field
     get_single_field(&item, field_name)
