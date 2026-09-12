@@ -7,6 +7,20 @@ members = ["cargo:."]
 cargo-dist-version = "0.32.0"
 # CI backends to support
 ci = "github"
+# Allow CI workflow edits to bypass dist's dirty-working-tree check.
+# Editing .github/workflows/release.yml + bumping the dist binary in the same
+# PR otherwise trips dist's safety net.
+allow-dirty = ["ci"]
+# PRs only run `dist plan` (dry-run); tag push runs the full build matrix.
+# Personal dev: PR minute budget matters, tag-push stays fully automatic.
+pr-run-mode = "skip"
+# Publish jobs to run in CI
+publish-jobs = ["homebrew"]
+# Whether to install an updater program
+install-updater = false
+# GitHub Artifact Attestations: free SLSA provenance for every release artifact.
+# Renders the "Verified" badge on the Release page without running cosign.
+github-attestations = true
 # The installers to generate for each app
 installers = ["shell", "powershell", "homebrew"]
 # A GitHub repo to push Homebrew formulas to
@@ -20,7 +34,3 @@ targets = [
 ]
 # Path that installers should place binaries in
 install-path = "CARGO_HOME"
-# Publish jobs to run in CI
-publish-jobs = ["homebrew"]
-# Whether to install an updater program
-install-updater = false
