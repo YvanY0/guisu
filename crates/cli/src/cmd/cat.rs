@@ -73,48 +73,13 @@ fn run_impl(source_dir: &Path, dest_dir: &Path, files: &[PathBuf], config: &Conf
     Ok(())
 }
 
-/// Resolve file path by expanding tilde and converting to absolute path
+/// Resolve file path to a `RelPath` under the destination directory.
+///
+/// Delegates to the shared [`crate::common::resolve_target`] helper,
+/// which already handles tilde expansion, missing files, and the
+/// `not under destination` error path.
 fn resolve_file_path(file_path: &Path, dest_abs: &AbsPath) -> Result<guisu_core::path::RelPath> {
-    // Expand tilde in path
-    let expanded_path = if file_path.starts_with("~") {
-        if let Some(home) = dirs::home_dir() {
-            let path_str = file_path.to_string_lossy();
-            let without_tilde = path_str
-                .strip_prefix("~/")
-                .or(path_str.strip_prefix("~"))
-                .unwrap_or(&path_str);
-            home.join(without_tilde)
-        } else {
-            file_path.to_path_buf()
-        }
-    } else {
-        file_path.to_path_buf()
-    };
-
-    // Try to get absolute path, but if file doesn't exist, construct it manually
-    let file_abs = if expanded_path.exists() {
-        AbsPath::new(
-            fs::canonicalize(&expanded_path)
-                .with_context(|| format!("Failed to resolve path: {}", expanded_path.display()))?,
-        )?
-    } else {
-        // File doesn't exist yet, construct absolute path manually
-        let abs_path = if expanded_path.is_absolute() {
-            expanded_path
-        } else {
-            std::env::current_dir()?.join(&expanded_path)
-        };
-        AbsPath::new(abs_path)?
-    };
-
-    // Get relative path from destination
-    file_abs.strip_prefix(dest_abs).with_context(|| {
-        format!(
-            "File {} is not under destination directory {}",
-            file_abs.as_path().display(),
-            dest_abs.as_path().display()
-        )
-    })
+    crate::common::resolve_target(file_path, dest_abs).map(|(_, rel)| rel)
 }
 
 /// Get source entry info and validate it's a file (not directory or symlink)

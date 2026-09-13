@@ -724,8 +724,12 @@ pub(crate) fn expand_tilde(path: &std::path::Path) -> std::path::PathBuf {
 
 /// Resolve a path to an absolute path
 ///
-/// If the path exists, canonicalize it. Otherwise, construct an absolute path.
-fn resolve_absolute_path(path: &std::path::Path) -> Result<guisu_core::path::AbsPath> {
+/// If the path exists, canonicalize it (this also resolves symlinks
+/// like macOS's `/tmp` → `/private/tmp`). If only the parent
+/// directory exists, canonicalize the parent and rejoin the file
+/// name. Otherwise, construct an absolute path from the current
+/// directory.
+pub(crate) fn resolve_absolute_path(path: &std::path::Path) -> Result<guisu_core::path::AbsPath> {
     use anyhow::Context;
 
     if path.exists() {
@@ -733,6 +737,26 @@ fn resolve_absolute_path(path: &std::path::Path) -> Result<guisu_core::path::Abs
             std::fs::canonicalize(path)
                 .with_context(|| format!("Failed to resolve path: {}", path.display()))?,
         )?)
+    } else if let Some(parent) = path.parent().filter(|p| !p.as_os_str().is_empty()) {
+        // File itself doesn't exist but the parent might — fall back to
+        // canonicalizing the parent and reattaching the file name so we
+        // resolve symlinks (e.g. macOS `/tmp` → `/private/tmp`) even when
+        // the target itself is missing.
+        if parent.exists() {
+            let canon_parent = std::fs::canonicalize(parent)
+                .with_context(|| format!("Failed to resolve parent: {}", parent.display()))?;
+            let file_name = path
+                .file_name()
+                .ok_or_else(|| anyhow::anyhow!("Path has no file name: {}", path.display()))?;
+            Ok(guisu_core::path::AbsPath::new(
+                canon_parent.join(file_name),
+            )?)
+        } else if path.is_absolute() {
+            Ok(guisu_core::path::AbsPath::new(path.to_path_buf())?)
+        } else {
+            let abs_path = std::env::current_dir()?.join(path);
+            Ok(guisu_core::path::AbsPath::new(abs_path)?)
+        }
     } else if path.is_absolute() {
         Ok(guisu_core::path::AbsPath::new(path.to_path_buf())?)
     } else {

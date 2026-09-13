@@ -4,6 +4,7 @@
 
 use anyhow::{Context, Result};
 use clap::Args;
+use guisu_core::path::AbsPath;
 use guisu_crypto::{decrypt, decrypt_file_content, encrypt, encrypt_inline};
 use owo_colors::OwoColorize;
 use std::fs;
@@ -44,7 +45,7 @@ impl Command for EditCommand {
         // Edit the file and check if it was modified
         let modified = edit_file(
             context.source_dir(),
-            context.dest_dir().as_path(),
+            context.dest_dir(),
             &self.target,
             &context.config,
         )?;
@@ -69,7 +70,12 @@ impl Command for EditCommand {
 
 /// Edit a file in the source directory
 /// Returns true if the file was modified
-fn edit_file(source_dir: &Path, dest_dir: &Path, target: &Path, config: &Config) -> Result<bool> {
+fn edit_file(
+    source_dir: &Path,
+    dest_dir: &AbsPath,
+    target: &Path,
+    config: &Config,
+) -> Result<bool> {
     let source_file = find_source_file(source_dir, dest_dir, target, config)?;
 
     // Read original content
@@ -92,69 +98,25 @@ fn edit_file(source_dir: &Path, dest_dir: &Path, target: &Path, config: &Config)
     Ok(before != after)
 }
 
-/// Find the source file corresponding to a target file
+/// Find the source file corresponding to a target file.
+///
+/// The target doesn't have to exist yet (the dotfile may not be
+/// symlinked to `dest_dir`); only the matching source file in
+/// `source_dir` needs to exist. Delegates path resolution to the
+/// shared [`crate::common::resolve_target`] and source lookup to
+/// [`crate::common::find_source_candidate`].
 fn find_source_file(
     source_dir: &Path,
-    dest_dir: &Path,
+    dest_abs: &AbsPath,
     target: &Path,
     config: &Config,
 ) -> Result<PathBuf> {
-    // Convert target to absolute path
-    let target_abs = fs::canonicalize(target)
-        .with_context(|| format!("Target file not found: {}", target.display()))?;
-
-    // Get relative path from destination
-    let rel_path = target_abs.strip_prefix(dest_dir).with_context(|| {
-        format!(
-            "Target {} is not under destination directory {}",
-            target_abs.display(),
-            dest_dir.display()
-        )
-    })?;
-
-    // Build base path with root_entry
-    let base_path = source_dir.join(&config.general.root_entry).join(rel_path);
-
-    // Try possible file name combinations
-    let candidates = vec![
-        base_path.clone(),
-        // Try adding .age extension
-        {
-            let mut path = base_path.clone();
-            if let Some(file_name) = base_path.file_name() {
-                path.set_file_name(format!("{}.age", file_name.to_string_lossy()));
-            }
-            path
-        },
-        // Try adding .j2 extension
-        {
-            let mut path = base_path.clone();
-            if let Some(file_name) = base_path.file_name() {
-                path.set_file_name(format!("{}.j2", file_name.to_string_lossy()));
-            }
-            path
-        },
-        // Handle .j2.age case
-        {
-            let mut path = base_path.clone();
-            if let Some(file_name) = base_path.file_name() {
-                path.set_file_name(format!("{}.j2.age", file_name.to_string_lossy()));
-            }
-            path
-        },
-    ];
-
-    for candidate in &candidates {
-        if candidate.exists() {
-            return Ok(candidate.clone());
-        }
-    }
-
-    anyhow::bail!(
-        "File not managed by guisu: {}\n\n  \
-         Hint: run `guisu add {}` to start managing this file.",
-        target.display(),
-        target.display()
+    let (_, rel) = crate::common::resolve_target(target, dest_abs)?;
+    crate::common::find_source_candidate(
+        source_dir,
+        &config.general.root_entry,
+        &rel,
+        &target.display().to_string(),
     )
 }
 
@@ -401,7 +363,12 @@ mod tests {
 
         let config = test_config();
 
-        let result = find_source_file(&source_dir, &dest_dir, &target_file, &config);
+        let result = find_source_file(
+            &source_dir,
+            &AbsPath::new(dest_dir.clone()).expect("dest abs"),
+            &target_file,
+            &config,
+        );
         assert!(result.is_ok());
         assert_eq!(result.unwrap(), source_file);
     }
@@ -426,7 +393,12 @@ mod tests {
 
         let config = test_config();
 
-        let result = find_source_file(&source_dir, &dest_dir, &target_file, &config);
+        let result = find_source_file(
+            &source_dir,
+            &AbsPath::new(dest_dir.clone()).expect("dest abs"),
+            &target_file,
+            &config,
+        );
         assert!(result.is_ok());
         assert_eq!(result.unwrap(), source_file);
     }
@@ -451,7 +423,12 @@ mod tests {
 
         let config = test_config();
 
-        let result = find_source_file(&source_dir, &dest_dir, &target_file, &config);
+        let result = find_source_file(
+            &source_dir,
+            &AbsPath::new(dest_dir.clone()).expect("dest abs"),
+            &target_file,
+            &config,
+        );
         assert!(result.is_ok());
         assert_eq!(result.unwrap(), source_file);
     }
@@ -476,7 +453,12 @@ mod tests {
 
         let config = test_config();
 
-        let result = find_source_file(&source_dir, &dest_dir, &target_file, &config);
+        let result = find_source_file(
+            &source_dir,
+            &AbsPath::new(dest_dir.clone()).expect("dest abs"),
+            &target_file,
+            &config,
+        );
         assert!(result.is_ok());
         assert_eq!(result.unwrap(), source_file);
     }
@@ -497,7 +479,12 @@ mod tests {
 
         let config = test_config();
 
-        let result = find_source_file(&source_dir, &dest_dir, &target_file, &config);
+        let result = find_source_file(
+            &source_dir,
+            &AbsPath::new(dest_dir.clone()).expect("dest abs"),
+            &target_file,
+            &config,
+        );
         assert!(result.is_err());
         assert!(result.unwrap_err().to_string().contains("not managed"));
     }
@@ -517,7 +504,12 @@ mod tests {
 
         let config = test_config();
 
-        let result = find_source_file(&source_dir, &dest_dir, &target_file, &config);
+        let result = find_source_file(
+            &source_dir,
+            &AbsPath::new(dest_dir.clone()).expect("dest abs"),
+            &target_file,
+            &config,
+        );
         assert!(result.is_err());
         assert!(
             result
@@ -586,7 +578,12 @@ mod tests {
 
         let config = test_config();
 
-        let result = find_source_file(&source_dir, &dest_dir, &target_file, &config);
+        let result = find_source_file(
+            &source_dir,
+            &AbsPath::new(dest_dir.clone()).expect("dest abs"),
+            &target_file,
+            &config,
+        );
         assert!(result.is_ok());
         // Should prefer plain file (checked first in candidates list)
         assert_eq!(result.unwrap(), plain_file);
