@@ -61,7 +61,7 @@ pub struct DiffCommand {
 
 impl Command for DiffCommand {
     type Output = ();
-    fn execute(&self, context: &mut RuntimeContext) -> crate::error::Result<()> {
+    fn execute(&self, context: &mut RuntimeContext) -> anyhow::Result<()> {
         // Snapshot immutable pieces from `context` so we can take exclusive
         // `&mut` access to the database afterwards. `config` is cloned
         // (Arc refcount bump) so the immutable borrow on `context.config`
@@ -79,7 +79,6 @@ impl Command for DiffCommand {
             &config,
             db,
         )
-        .map_err(Into::into)
     }
 }
 

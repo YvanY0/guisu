@@ -35,7 +35,7 @@ pub struct EditCommand {
 
 impl Command for EditCommand {
     type Output = ();
-    fn execute(&self, context: &mut RuntimeContext) -> crate::error::Result<()> {
+    fn execute(&self, context: &mut RuntimeContext) -> anyhow::Result<()> {
         // Determine whether to apply: command line flag takes precedence over config
         // If --apply is passed on command line, use it
         // Otherwise, use config.edit.apply as default
@@ -150,7 +150,12 @@ fn find_source_file(
         }
     }
 
-    anyhow::bail!("File not managed by guisu: {}", target.display())
+    anyhow::bail!(
+        "File not managed by guisu: {}\n\n  \
+         Hint: run `guisu add {}` to start managing this file.",
+        target.display(),
+        target.display()
+    )
 }
 
 /// Get the editor command to use

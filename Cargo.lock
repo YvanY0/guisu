@@ -1631,7 +1631,6 @@ dependencies = [
 name = "guisu-core"
 version = "0.2.9"
 dependencies = [
- "anyhow",
  "git2",
  "serde",
  "serde_json",

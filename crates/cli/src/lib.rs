@@ -461,7 +461,7 @@ fn handle_apply_command(
 fn dispatch_leaf(cmd: &impl command::Command, context: &mut RuntimeContext) -> Result<()> {
     match cmd.execute(context) {
         Ok(output) => std::process::exit(cmd.exit_code(&output)),
-        Err(e) => Err(anyhow::Error::from(e)),
+        Err(e) => Err(e),
     }
 }
 

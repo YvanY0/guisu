@@ -535,67 +535,6 @@ impl Error {
     }
 }
 
-// Newtype wrapper that adapts `anyhow::Error` to `std::error::Error`.
-//
-// `anyhow::Error` deliberately does not implement `std::error::Error` directly
-// (dtolnay's design choice — preserves type erasure across the anyhow boundary).
-// But it *does* provide:
-//
-//   impl From<Error> for Box<dyn StdError + Send + Sync + 'static>
-//   impl AsRef<dyn StdError + Send + Sync> for Error
-//   fn source(&self) -> Option<&(dyn StdError + 'static)>   (on ErrorImpl)
-//
-// So we can store an `anyhow::Error` and delegate both `Display` and
-// `source()` to it — preserving the full cause chain (including any
-// `.context(...)` segments the caller added in CLI code) when the typed
-// `Error` is later displayed by miette.
-#[cfg(feature = "anyhow")]
-struct AnyhowErrorAdapter(anyhow::Error);
-
-#[cfg(feature = "anyhow")]
-impl std::fmt::Debug for AnyhowErrorAdapter {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        std::fmt::Debug::fmt(&self.0, f)
-    }
-}
-
-#[cfg(feature = "anyhow")]
-impl std::fmt::Display for AnyhowErrorAdapter {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        // `anyhow::Error`'s own Display only shows the outermost context frame
-        // (each `ErrorImpl` knows only its own message). Walk the full chain
-        // with Debug formatting so callers see every context layer plus the
-        // underlying cause — the same output `anyhow!` would produce via
-        // `format!("{:?}", err)`.
-        write!(f, "{:?}", self.0)
-    }
-}
-
-#[cfg(feature = "anyhow")]
-impl std::error::Error for AnyhowErrorAdapter {
-    fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
-        // anyhow exposes its chain via AsRef<dyn StdError>. Walk through
-        // it so callers iterating `std::error::Error::source()` see the
-        // same frames they would have seen from the original anyhow error.
-        Some(self.0.as_ref())
-    }
-}
-
-// Implement From<anyhow::Error> for CLI compatibility
-#[cfg(feature = "anyhow")]
-impl From<anyhow::Error> for Error {
-    fn from(err: anyhow::Error) -> Self {
-        // Wrap in `Other` so the full anyhow cause chain is preserved through
-        // the typed enum rather than flattened to a single string. `Display`
-        // shows the anyhow-rendered chain (including `.context(...)` segments);
-        // `source()` exposes the underlying concrete error when present.
-        Error::Other {
-            context: "converted from anyhow::Error".to_string(),
-            source: Box::new(AnyhowErrorAdapter(err)),
-        }
-    }
-}
-
 /// Result type alias
 pub type Result<T> = std::result::Result<T, Error>;
 
@@ -621,46 +560,5 @@ mod tests {
 
         let error_string = error.to_string();
         assert!(error_string.contains("level 2"));
-    }
-}
-
-#[cfg(feature = "anyhow")]
-mod anyhow_tests {
-    #[test]
-    fn conversion_preserves_context_chain() {
-        // `anyhow::Error::context` is an inherent method (not a trait method),
-        // so no `use anyhow::Context` is required.
-        let inner = std::io::Error::new(std::io::ErrorKind::NotFound, "file missing");
-        let anyhow_err: anyhow::Error = anyhow::Error::new(inner)
-            .context("opening config")
-            .context("loading guisu source");
-
-        let typed: crate::Error = anyhow_err.into();
-
-        // Display must surface both context layers and the underlying message.
-        let rendered = typed.to_string();
-        assert!(
-            rendered.contains("loading guisu source"),
-            "outer context missing from Display: {rendered}"
-        );
-        assert!(
-            rendered.contains("opening config"),
-            "inner context missing from Display: {rendered}"
-        );
-        assert!(
-            rendered.contains("file missing"),
-            "underlying io::Error message missing: {rendered}"
-        );
-
-        // source() chain must walk through to a std::error::Error so callers
-        // iterating `std::error::Error::source()` see the underlying cause.
-        let mut current: Option<&(dyn std::error::Error + 'static)> = Some(&typed);
-        let mut depth = 0;
-        while let Some(e) = current {
-            depth += 1;
-            assert!(depth < 16, "source chain looped or was absurdly deep");
-            current = e.source();
-        }
-        assert!(depth >= 2, "expected at least 2 frames, got {depth}");
     }
 }
