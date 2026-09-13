@@ -280,6 +280,87 @@ impl RuntimeContext {
     }
 }
 
+/// Resolve a target path: tilde-expand it, convert to absolute
+/// (canonicalized if it exists; otherwise the path itself is used),
+/// and reduce it to its path under `dest_abs`.
+///
+/// Returns `(absolute_path, path_relative_to_dest)`. Works for both
+/// existing files (`cat`, `edit`) and missing ones (`edit` can target
+/// a file that hasn't been symlinked to dest yet — only the matching
+/// source file needs to exist).
+///
+/// # Errors
+///
+/// Returns an error if path resolution fails or the path is not
+/// under `dest_abs`.
+pub fn resolve_target(
+    target: &Path,
+    dest_abs: &AbsPath,
+) -> Result<(guisu_core::path::AbsPath, guisu_core::path::RelPath)> {
+    let expanded = crate::expand_tilde(target);
+    let abs = crate::resolve_absolute_path(&expanded)
+        .with_context(|| format!("Failed to resolve path: {}", expanded.display()))?;
+    let rel = abs.strip_prefix(dest_abs).with_context(|| {
+        format!(
+            "File {} is not under destination directory {}",
+            abs.as_path().display(),
+            dest_abs.as_path().display()
+        )
+    })?;
+    Ok((abs, rel))
+}
+
+/// Given a target's path relative to `dest_abs`, find the matching
+/// source file under `source_dir`. Tries the bare path first, then
+/// `.age`, `.j2`, and `.j2.age` extensions, returning the first one
+/// that exists.
+///
+/// Returns an error with a `guisu add` hint if no candidate exists.
+///
+/// # Errors
+///
+/// Currently infallible in practice (the underlying `Path::exists`
+/// does not error), but returns `Result` for API symmetry with
+/// `resolve_target`.
+pub fn find_source_candidate(
+    source_dir: &Path,
+    root_entry: &Path,
+    rel_path: &guisu_core::path::RelPath,
+    target_display: &str,
+) -> Result<PathBuf> {
+    let base = source_dir.join(root_entry).join(rel_path.as_path());
+
+    let candidates = [
+        base.clone(),
+        with_appended_ext(&base, ".age"),
+        with_appended_ext(&base, ".j2"),
+        with_j2_age_ext(&base),
+    ];
+
+    candidates.into_iter().find(|p| p.exists()).ok_or_else(|| {
+        anyhow::anyhow!(
+            "File not managed by guisu: {target_display}\n\n  \
+                 Hint: run `guisu add {target_display}` to start managing this file."
+        )
+    })
+}
+
+/// Add a `.age` / `.j2` extension to the file name part of `path`,
+/// preserving any other extensions that are already there.
+fn with_appended_ext(base: &Path, ext: &str) -> PathBuf {
+    let mut path = base.to_path_buf();
+    if let Some(file_name) = base.file_name() {
+        path.set_file_name(format!("{}{}", file_name.to_string_lossy(), ext));
+    }
+    path
+}
+
+/// Add a `.j2.age` extension for files whose source is both a
+/// template and encrypted.
+fn with_j2_age_ext(base: &Path) -> PathBuf {
+    with_appended_ext(base, ".j2.age")
+}
+
 #[cfg(test)]
 mod tests {
     #![allow(clippy::unwrap_used, clippy::panic)]
