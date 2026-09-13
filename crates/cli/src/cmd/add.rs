@@ -75,7 +75,7 @@ struct AddParams<'a> {
 
 impl Command for AddCommand {
     type Output = ();
-    fn execute(&self, context: &mut RuntimeContext) -> crate::error::Result<()> {
+    fn execute(&self, context: &mut RuntimeContext) -> anyhow::Result<()> {
         let source_dir = context.source_dir();
         let source_abs = context.dotfiles_dir();
         let dest_abs = context.dest_dir();

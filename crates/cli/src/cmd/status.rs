@@ -135,7 +135,7 @@ pub struct StatusCommand {
 
 impl Command for StatusCommand {
     type Output = ();
-    fn execute(&self, context: &mut RuntimeContext) -> crate::error::Result<()> {
+    fn execute(&self, context: &mut RuntimeContext) -> anyhow::Result<()> {
         let output_format = if self.tree {
             OutputFormat::Tree
         } else {
@@ -159,7 +159,6 @@ impl Command for StatusCommand {
             output_format,
             self.absolute,
         )
-        .map_err(Into::into)
     }
 }
 

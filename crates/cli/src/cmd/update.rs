@@ -26,8 +26,8 @@ pub struct UpdateCommand {
 
 impl Command for UpdateCommand {
     type Output = ();
-    fn execute(&self, context: &mut RuntimeContext) -> crate::error::Result<()> {
-        run_impl(context, self.apply, self.rebase).map_err(Into::into)
+    fn execute(&self, context: &mut RuntimeContext) -> anyhow::Result<()> {
+        run_impl(context, self.apply, self.rebase)
     }
 }
 

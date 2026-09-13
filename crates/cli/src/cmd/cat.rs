@@ -24,14 +24,13 @@ pub struct CatCommand {
 
 impl Command for CatCommand {
     type Output = ();
-    fn execute(&self, context: &mut RuntimeContext) -> crate::error::Result<()> {
+    fn execute(&self, context: &mut RuntimeContext) -> anyhow::Result<()> {
         run_impl(
             context.source_dir(),
             context.dest_dir().as_path(),
             &self.files,
             &context.config,
         )
-        .map_err(Into::into)
     }
 }
 
@@ -125,9 +124,14 @@ fn get_source_entry_info<'a>(
     file_path: &Path,
 ) -> Result<(&'a guisu_core::path::SourceRelPath, bool, bool)> {
     // Find the entry in source state
-    let entry = source_state
-        .get(rel_path)
-        .with_context(|| format!("File not managed by guisu: {}", file_path.display()))?;
+    let entry = source_state.get(rel_path).ok_or_else(|| {
+        anyhow::anyhow!(
+            "File not managed by guisu: {}\n\n  \
+                 Hint: run `guisu add {}` to start managing this file.",
+            file_path.display(),
+            file_path.display()
+        )
+    })?;
 
     // Get source file path and attributes
     match entry {

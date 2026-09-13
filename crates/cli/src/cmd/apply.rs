@@ -616,7 +616,7 @@ fn process_entries_sequential(
 impl Command for ApplyCommand {
     type Output = ApplyStats;
     #[allow(clippy::too_many_lines)]
-    fn execute(&self, context: &mut RuntimeContext) -> crate::error::Result<ApplyStats> {
+    fn execute(&self, context: &mut RuntimeContext) -> anyhow::Result<ApplyStats> {
         // Extract paths and config from context. Every `config` use below
         // happens before `context.database_mut()`, so the immutable borrow
         // is released by the time we need exclusive access to the database.
@@ -758,7 +758,7 @@ impl Command for ApplyCommand {
 
         let failed_count = stats.failed();
         if failed_count > 0 {
-            return Err(anyhow::anyhow!("Failed to apply {failed_count} entries").into());
+            return Err(anyhow::anyhow!("Failed to apply {failed_count} entries"));
         }
 
         Ok(stats.snapshot())
