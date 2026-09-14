@@ -17,6 +17,12 @@ on:
 
 permissions:
   contents: read
+  # zizmor-action's post-step uploads SARIF to the GitHub Code Scanning
+  # API (CodeQL Action under the hood). Without security-events: write
+  # that upload fails with "Resource not accessible by integration"
+  # and the job ends in failure even when the zizmor scan itself
+  # succeeded.
+  security-events: write
 
 concurrency:
   group: zizmor-${{ github.ref }}
@@ -35,4 +41,4 @@ jobs:
         with:
           # Scan every workflow in the repo; fail the job on any finding
           # at or above the 'medium' severity threshold.
-          level: medium
+          min-severity: medium
