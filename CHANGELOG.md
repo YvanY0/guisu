@@ -5,6 +5,22 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.2.10](https://github.com/YvanY0/guisu/compare/v0.2.9...v0.2.10) - 2026-09-14
+
+### Fixed
+
+- *(error)* render anyhow chain via miette for native box-drawing
+- *(ci)* cargo-shear removes 32 unused deps + drop '--all-features'
+
+### Other
+
+- *(cli)* share path resolution between cat and edit
+- tighten build profiles, resolver, and test ergonomics
+- route all env reads through guisu_config::Env
+- *(vault)* abstract CLI syntax differences behind VaultCommand
+- *(template)* remove rbw Bitwarden provider from vault functions
+- sync documentation with current build/test/CI conventions
+
 ## [0.2.9](https://github.com/YvanY0/guisu/compare/v0.2.8...v0.2.9) - 2026-08-31
 
 ### Other
