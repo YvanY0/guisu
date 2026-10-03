@@ -75,7 +75,7 @@ indexmap = { version = "2.14", features = ["serde"] }
 rayon = "1.12"
 
 redb = "4.1"
-git2 = "0.21"
+git2 = { version = "0.21", features = ["https", "ssh"] }
 git2_credentials = "0.16"
 similar = "3.1"
 os_info = "3.15"
