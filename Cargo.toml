@@ -121,15 +121,6 @@ strip = true
 inherits = "release"
 lto = "thin"
 
-# Faster CI builds: skip debug info, single codegen unit, light LTO.
-# Used by Rust CI when the assertion is "this compiles + tests pass",
-# not "produce a shippable artifact" (that's what `dist` + `release` are for).
-[profile.no-debug]
-inherits = "dev"
-opt-level = 1
-debug = 0
-strip = "debuginfo"
-
 # Profiling builds: keep symbols, disable LTO so flamegraphs / perf / cargo-bloat
 # see real call stacks. Used by `cargo bench` and ad-hoc perf investigations.
 [profile.profiling]
