@@ -20,15 +20,28 @@ use tracing::{debug, info, warn};
 
 use crate::command::Command;
 use crate::common::RuntimeContext;
-use crate::conflict::{ChangeType, ConflictHandler};
+use crate::conflict::{ChangeType, ConflictHandler, is_binary, select_action};
 use crate::stats::ApplyStats;
-use crate::ui::ConflictAction;
 use crate::ui::progress;
+use crate::ui::{ConflictAction, DiffFormat, DiffViewer};
 use crate::utils::filter::path_matches_any_filter;
 use crate::utils::path::SourceDirExt;
 
 // File permission constants
 const DEFAULT_SECURE_MODE: u32 = 0o600; // Default secure file mode (rw-------)
+
+/// Batch decisions made by the non-interactive conflict prompt.
+///
+/// Mirrors the `override_all` field on `ConflictHandler` for the `-i` path:
+/// when the user picks "All Override" / "All Skip" once, every subsequent
+/// file in this apply run honors the choice without re-prompting.
+#[derive(Default)]
+struct BatchOverrides {
+    /// Apply source over destination for every remaining drifted file.
+    override_all: bool,
+    /// Leave destination as-is for every remaining drifted file.
+    skip_all: bool,
+}
 
 /// Type alias for batch entry state data (path, content, mode)
 type BatchEntryData = (String, Vec<u8>, Option<u32>);
@@ -425,7 +438,13 @@ fn handle_interactive_conflict(
     }
 }
 
-/// Handle non-interactive conflict resolution with user confirmation
+/// Handle non-interactive conflict resolution with a multi-option prompt.
+///
+/// Every drifted file pops a 5-option dialog (Overwrite / Skip / All Override
+/// / All Skip / Quit) preceded by a unified diff so the user can decide with
+/// full context. The All-* choices are remembered in `batch` and honored for
+/// every remaining entry in this run.
+#[allow(clippy::too_many_arguments)]
 fn handle_non_interactive_conflict(
     db: &guisu_engine::state::RedbPersistentState,
     entry: &TargetEntry,
@@ -434,6 +453,7 @@ fn handle_non_interactive_conflict(
     identities: &[guisu_crypto::Identity],
     fail_on_decrypt_error: bool,
     force: bool,
+    batch: &mut BatchOverrides,
 ) -> Result<bool> {
     // Force mode: skip all conflict detection and apply directly
     if force {
@@ -441,6 +461,14 @@ fn handle_non_interactive_conflict(
     }
 
     if !entry_needs_update(entry, dest_path, identities, fail_on_decrypt_error)? {
+        return Ok(false);
+    }
+
+    // Honor batch decisions from earlier "All Override" / "All Skip" choices.
+    if batch.override_all {
+        return Ok(true);
+    }
+    if batch.skip_all {
         return Ok(false);
     }
 
@@ -452,38 +480,136 @@ fn handle_non_interactive_conflict(
         identities,
     )?;
 
-    if let Some(change_type) = change_type {
-        match change_type {
-            ChangeType::LocalModification | ChangeType::TrueConflict => {
-                use dialoguer::{Confirm, theme::ColorfulTheme};
-                let change_label = match change_type {
-                    ChangeType::LocalModification => "Local modification",
-                    ChangeType::TrueConflict => "Conflict (both local and source modified)",
-                    ChangeType::SourceUpdate => {
-                        unreachable!("SourceUpdate filtered by outer match")
-                    }
-                };
+    let Some(change_type) = change_type else {
+        return Ok(true);
+    };
 
-                println!("\n{} {}", "⚠".yellow(), change_label.yellow().bold());
-                println!("  File: {}", entry.path().bright_white());
-                println!("  {}", "This file has been modified locally.".yellow());
+    match change_type {
+        ChangeType::SourceUpdate => Ok(true),
+        ChangeType::LocalModification | ChangeType::TrueConflict => {
+            let prompt_text = build_conflict_prompt(entry, change_type);
+
+            // Render a diff before asking so the user has full context.
+            // Binary files skip the diff and go straight to the same 5-option prompt.
+            if !render_conflict_diff(entry, dest_abs, identities) {
                 println!(
-                    "  {}",
-                    "Applying will overwrite your local changes.".yellow()
+                    "\n{}",
+                    "Binary files differ — no preview available.".yellow()
                 );
-
-                let theme = ColorfulTheme::default();
-                Confirm::with_theme(&theme)
-                    .with_prompt("Continue and overwrite local changes?")
-                    .default(false)
-                    .interact()
-                    .context("Failed to read user input")
             }
-            ChangeType::SourceUpdate => Ok(true),
+
+            // Loop so the user can pick "Diff" to view a more detailed diff
+            // before committing.
+            let action = loop {
+                let picked = select_action(&prompt_text, true)?;
+                if !matches!(picked, ConflictAction::Diff) {
+                    break picked;
+                }
+                // Re-render the diff with a separator so multiple views don't
+                // run together, then loop back to the prompt.
+                println!("\n{}\n", "─── diff ───".dimmed());
+                let _ = render_conflict_diff(entry, dest_abs, identities);
+                println!();
+            };
+
+            match action {
+                ConflictAction::Override => Ok(true),
+                ConflictAction::Skip => Ok(false),
+                ConflictAction::AllOverride => {
+                    batch.override_all = true;
+                    Ok(true)
+                }
+                ConflictAction::AllSkip => {
+                    batch.skip_all = true;
+                    Ok(false)
+                }
+                ConflictAction::Quit | ConflictAction::Diff => {
+                    Err(anyhow::anyhow!("Apply cancelled by user"))
+                }
+            }
         }
-    } else {
-        Ok(true)
     }
+}
+
+/// Build the prompt text shown above the multi-option dialog.
+///
+/// Phrasing: "<path> has changed since guisu last wrote it"
+/// for local-only drifts, with a distinct prefix when both sides moved.
+fn build_conflict_prompt(entry: &TargetEntry, change_type: ChangeType) -> String {
+    match change_type {
+        ChangeType::LocalModification => {
+            format!(
+                "{} has changed since guisu last wrote it",
+                entry.path().bright_white()
+            )
+        }
+        ChangeType::TrueConflict => format!(
+            "{} has changed both in source and on disk",
+            entry.path().bright_white()
+        ),
+        ChangeType::SourceUpdate => {
+            // Unreachable — caller only routes the two conflict variants here.
+            format!("{} has a source update", entry.path().bright_white())
+        }
+    }
+}
+
+/// Render the source-vs-destination diff to stdout for a drifted file.
+///
+/// Returns `true` if a text diff was rendered, `false` if the file is binary
+/// (caller prints its own note).
+fn render_conflict_diff(
+    entry: &TargetEntry,
+    dest_abs: &AbsPath,
+    identities: &[guisu_crypto::Identity],
+) -> bool {
+    let TargetEntry::File {
+        content: target_content,
+        mode: target_mode,
+        ..
+    } = entry
+    else {
+        return false;
+    };
+
+    let dest_path = dest_abs.join(entry.path());
+    let Ok(actual_content) = fs::read(dest_path.as_path()) else {
+        return false;
+    };
+
+    // Decrypt inline age: values so the preview shows plaintext.
+    let target_content = decrypt_inline_age_values(target_content, identities, false)
+        .unwrap_or_else(|_| target_content.clone());
+
+    if is_binary(&target_content) || is_binary(&actual_content) {
+        return false;
+    }
+
+    let target_str = String::from_utf8_lossy(&target_content);
+    let actual_str = String::from_utf8_lossy(&actual_content);
+
+    let mut stdout = std::io::stdout();
+    let _ = DiffViewer::new(DiffFormat::Unified, 3).display(
+        &mut stdout,
+        &actual_str,
+        &target_str,
+        "destination",
+        "source",
+    );
+    // Show mode diff if applicable
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        if let (Some(target_m), Ok(meta)) = (target_mode, fs::metadata(dest_path.as_path())) {
+            let actual_m = meta.permissions().mode();
+            if (target_m & 0o7777) != (actual_m & 0o7777) {
+                println!("\nold mode {actual_m:06o}");
+                println!("new mode {target_m:06o}");
+            }
+        }
+    }
+    let _ = target_mode; // suppress unused on non-unix
+    true
 }
 
 /// Apply entry and handle errors, returning entry data for batch save
@@ -542,6 +668,7 @@ fn process_entries_sequential(
     dest_abs: &AbsPath,
     identities: &[guisu_crypto::Identity],
     conflict_handler: &mut Option<ConflictHandler>,
+    batch_overrides: &mut BatchOverrides,
     stats: &ApplyStats,
     show_icons: bool,
     dry_run: bool,
@@ -584,6 +711,7 @@ fn process_entries_sequential(
                     identities,
                     fail_on_decrypt_error,
                     force,
+                    batch_overrides,
                 )?
             };
 
@@ -735,6 +863,10 @@ impl Command for ApplyCommand {
             None
         };
 
+        // Track batch decisions ("All Override" / "All Skip") made by the
+        // non-interactive conflict prompt across all entries in this run.
+        let mut batch_overrides = BatchOverrides::default();
+
         // Sequential processing. `filter_entries_to_apply` already sorts
         // `entries_to_apply` by path, so output order is deterministic across
         // runs. Parallel execution was removed because rayon `par_iter()`
@@ -746,6 +878,7 @@ impl Command for ApplyCommand {
             &dest_abs,
             &identities,
             &mut conflict_handler,
+            &mut batch_overrides,
             &stats,
             show_icons,
             self.dry_run,
@@ -1414,7 +1547,7 @@ mod tests {
     ///
     /// This pins the polarity: the previous bug had the conditions
     /// inverted, so dry-run printed only up-to-date files and silently
-    /// hid the drifted ones — the opposite of chezmoi's behaviour.
+    /// hid the drifted ones — the opposite of the intended behaviour.
     #[test]
     fn dry_run_entry_skips_up_to_date_and_prints_drifted() {
         let temp = TempDir::new().expect("Failed to create temp dir");

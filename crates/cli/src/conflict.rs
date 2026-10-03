@@ -17,6 +17,62 @@ use guisu_config::Config;
 // File permission constants
 const PERM_MASK: u32 = 0o7777; // Permission bits mask (rwxrwxrwx)
 
+/// Present the standard multi-option conflict prompt and return the chosen action.
+///
+/// When `with_diff` is true, "Diff" is offered as the first option so callers
+/// can loop on it (show the full diff, then re-prompt), letting the user
+/// request a diff before committing.
+///
+/// Binary callers pass `false` because there is nothing meaningful to diff.
+/// Text-file callers pass `true` and handle the resulting `ConflictAction::Diff`
+/// by re-rendering the diff and looping.
+pub(crate) fn select_action(prompt: &str, with_diff: bool) -> Result<ConflictAction> {
+    use dialoguer::{Select, theme::ColorfulTheme};
+
+    let mut options: Vec<&str> = vec![
+        "Overwrite - apply source changes",
+        "Skip - keep destination as-is",
+        "All Overwrite - apply source for all remaining",
+        "All Skip - keep all remaining as-is",
+        "Quit - exit operation",
+    ];
+    if with_diff {
+        options.insert(0, "Diff - view full changes");
+    }
+
+    let selection = Select::with_theme(&ColorfulTheme::default())
+        .with_prompt(prompt)
+        .items(&options)
+        .default(0)
+        .interact()
+        .context("Failed to read user input")?;
+
+    Ok(map_select_index(selection, with_diff))
+}
+
+/// Map a `dialoguer::Select` index to a `ConflictAction`, accounting for the
+/// optional leading "Diff" option.
+///
+/// Extracted from `select_action` so the mapping is testable without a TTY
+/// (dialoguer's `interact()` requires one).
+///
+/// Option ordering:
+///
+/// | `with_diff` | 0 | 1 | 2 | 3 | 4 | 5 |
+/// |---|---|---|---|---|---|---|
+/// | `false`     | Override | Skip | AllOverride | AllSkip | Quit | — |
+/// | `true`      | Diff | Override | Skip | AllOverride | AllSkip | Quit |
+fn map_select_index(selection: usize, with_diff: bool) -> ConflictAction {
+    match (with_diff, selection) {
+        (true, 0) => ConflictAction::Diff,
+        (false, 0) | (true, 1) => ConflictAction::Override,
+        (false, 1) | (true, 2) => ConflictAction::Skip,
+        (false, 2) | (true, 3) => ConflictAction::AllOverride,
+        (false, 3) | (true, 4) => ConflictAction::AllSkip,
+        _ => ConflictAction::Quit,
+    }
+}
+
 /// Type of change detected
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ChangeType {
@@ -313,31 +369,7 @@ impl ConflictHandler {
 
     /// Simple prompt for binary files (no preview/merge available)
     fn simple_prompt(_entry: &TargetEntry) -> Result<ConflictAction> {
-        use dialoguer::{Select, theme::ColorfulTheme};
-
-        let options = vec![
-            "Override - apply source changes",
-            "Skip - keep destination as-is",
-            "All Override - apply source for all remaining",
-            "All Skip - keep all remaining as-is",
-            "Quit - exit operation",
-        ];
-
-        let theme = ColorfulTheme::default();
-        let selection = Select::with_theme(&theme)
-            .with_prompt("Binary file - choose action")
-            .items(&options)
-            .default(0)
-            .interact()
-            .context("Failed to read user input")?;
-
-        match selection {
-            0 => Ok(ConflictAction::Override),
-            1 => Ok(ConflictAction::Skip),
-            2 => Ok(ConflictAction::AllOverride),
-            3 => Ok(ConflictAction::AllSkip),
-            _ => Ok(ConflictAction::Quit),
-        }
+        select_action("Binary file - choose action", false)
     }
 
     /// Show a diff between target and actual states
@@ -436,7 +468,7 @@ impl ConflictHandler {
 }
 
 /// Check if content is binary
-fn is_binary(content: &[u8]) -> bool {
+pub(crate) fn is_binary(content: &[u8]) -> bool {
     // Simple heuristic: check for null bytes in first 8KB
     content.iter().take(8000).any(|&b| b == 0)
 }
@@ -648,5 +680,34 @@ mod tests {
             ThreeWayComparisonResult::BothChanged,
             ThreeWayComparisonResult::Converged
         );
+    }
+
+    #[test]
+    fn test_map_select_index_no_diff_variant() {
+        // Binary prompt — five options, no Diff.
+        assert_eq!(map_select_index(0, false), ConflictAction::Override);
+        assert_eq!(map_select_index(1, false), ConflictAction::Skip);
+        assert_eq!(map_select_index(2, false), ConflictAction::AllOverride);
+        assert_eq!(map_select_index(3, false), ConflictAction::AllSkip);
+        assert_eq!(map_select_index(4, false), ConflictAction::Quit);
+    }
+
+    #[test]
+    fn test_map_select_index_with_diff_variant() {
+        // Text prompt — Diff is the first option, shifting every other index by 1.
+        assert_eq!(map_select_index(0, true), ConflictAction::Diff);
+        assert_eq!(map_select_index(1, true), ConflictAction::Override);
+        assert_eq!(map_select_index(2, true), ConflictAction::Skip);
+        assert_eq!(map_select_index(3, true), ConflictAction::AllOverride);
+        assert_eq!(map_select_index(4, true), ConflictAction::AllSkip);
+        assert_eq!(map_select_index(5, true), ConflictAction::Quit);
+    }
+
+    #[test]
+    fn test_map_select_index_out_of_range_falls_back_to_quit() {
+        // Defensive default — anything past the offered options is treated as Quit
+        // so a malformed TTY selection can't silently apply.
+        assert_eq!(map_select_index(99, false), ConflictAction::Quit);
+        assert_eq!(map_select_index(usize::MAX, true), ConflictAction::Quit);
     }
 }
