@@ -983,7 +983,7 @@ files = ["~/.config/once.txt"]
         // A missing [remove] section should default to an empty path set,
         // not error.
         let parsed: Metadata = toml::from_str("").expect("parse empty toml");
-        assert!(parsed.remove.paths.is_empty());
+        assert_eq!(parsed.remove.paths.len(), 0);
         assert!(parsed.remove.iter().next().is_none());
     }
 

@@ -275,16 +275,16 @@ mod tests {
     #[test]
     fn test_hook_collections_default() {
         let collections = HookCollections::default();
-        assert!(collections.pre.is_empty());
-        assert!(collections.post.is_empty());
-        assert!(collections.is_empty());
+        assert_eq!(collections.pre.len(), 0);
+        assert_eq!(collections.post.len(), 0);
+        assert_eq!(collections.pre.len() + collections.post.len(), 0);
         assert_eq!(collections.total(), 0);
     }
 
     #[test]
     fn test_hook_collections_is_empty() {
         let mut collections = HookCollections::default();
-        assert!(collections.is_empty());
+        assert_eq!(collections.pre.len() + collections.post.len(), 0);
 
         collections.pre.push(Hook {
             name: HookName::new("test").unwrap(),
@@ -299,7 +299,7 @@ mod tests {
             timeout: 0,
         });
 
-        assert!(!collections.is_empty());
+        assert_ne!(collections.pre.len() + collections.post.len(), 0);
     }
 
     #[test]

@@ -451,7 +451,7 @@ mod tests {
     fn dry_run_read_file_returns_empty() {
         let sys = DryRunSystem::new();
         let content = sys.read_file(&abs("/fake")).unwrap();
-        assert!(content.is_empty());
+        assert_eq!(content.len(), 0);
 
         let ops = sys.operations();
         assert_eq!(ops.len(), 1);

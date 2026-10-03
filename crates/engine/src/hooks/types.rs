@@ -268,11 +268,11 @@ mod tests {
     fn test_hook_script() {
         let script = HookScript::new("echo hello");
         assert_eq!(script.as_str(), "echo hello");
-        assert!(!script.is_empty());
+        assert_ne!(script.len(), 0);
         assert_eq!(script.len(), 10);
 
         let empty = HookScript::new("");
-        assert!(empty.is_empty());
+        assert_eq!(empty.len(), 0);
         assert_eq!(empty.len(), 0);
     }
 

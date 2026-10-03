@@ -942,7 +942,7 @@ mod tests {
         let os_name = get_os_name();
 
         // Just verify it returns a non-empty string
-        assert!(!os_name.is_empty());
+        assert_ne!(os_name, "");
     }
 
     #[test]
@@ -951,6 +951,6 @@ mod tests {
         let kernel = get_kernel_version();
 
         // Just verify it returns a non-empty string
-        assert!(!kernel.is_empty());
+        assert_ne!(kernel, "");
     }
 }

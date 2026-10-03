@@ -470,7 +470,7 @@ mod tests {
         let result = engine.render_str(template, &ctx).unwrap();
 
         assert!(result.contains("Hello"));
-        assert!(!result.is_empty());
+        assert_ne!(result, "");
     }
 
     #[test]
@@ -529,7 +529,7 @@ mod tests {
             .render_named_str("greeting.txt", template, &ctx)
             .unwrap();
 
-        assert!(!result.is_empty());
+        assert_ne!(result, "");
     }
 
     #[test]
@@ -552,7 +552,7 @@ mod tests {
         let template = b"Hello {{ username }}!";
         let result = engine.render(template, &ctx).unwrap();
 
-        assert!(!result.is_empty());
+        assert_ne!(result, [] as [u8; 0]);
         assert!(String::from_utf8(result).is_ok());
     }
 

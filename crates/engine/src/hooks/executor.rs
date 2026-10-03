@@ -1057,8 +1057,8 @@ mod tests {
         let runner = HookRunnerBuilder::new(&collections, temp.path()).build();
 
         // Verify Arc-wrapped fields are initialized
-        assert!(runner.once_executed.lock().unwrap().is_empty());
-        assert!(runner.onchange_hashes.lock().unwrap().is_empty());
+        assert_eq!(runner.once_executed.lock().unwrap().len(), 0);
+        assert_eq!(runner.onchange_hashes.lock().unwrap().len(), 0);
     }
 
     // ======================================================================
@@ -1236,8 +1236,8 @@ mod tests {
         runner.mark_hook_executed(&hook, None, None);
 
         // Should not be tracked
-        assert!(runner.once_executed.lock().unwrap().is_empty());
-        assert!(runner.onchange_hashes.lock().unwrap().is_empty());
+        assert_eq!(runner.once_executed.lock().unwrap().len(), 0);
+        assert_eq!(runner.onchange_hashes.lock().unwrap().len(), 0);
     }
 
     #[test]
@@ -1284,7 +1284,7 @@ mod tests {
         // Should compute and store hash
         let hashes = runner.onchange_hashes.lock().unwrap();
         assert!(hashes.contains_key("test"));
-        assert!(!hashes.get("test").unwrap().is_empty());
+        assert_ne!(hashes.get("test").unwrap().len(), 0);
     }
 
     #[test]
@@ -1364,8 +1364,8 @@ mod tests {
         let runner = HookRunner::new(&collections, temp.path());
 
         // Should have empty execution state
-        assert!(runner.once_executed.lock().unwrap().is_empty());
-        assert!(runner.onchange_hashes.lock().unwrap().is_empty());
+        assert_eq!(runner.once_executed.lock().unwrap().len(), 0);
+        assert_eq!(runner.onchange_hashes.lock().unwrap().len(), 0);
 
         // Should have GUISU_SOURCE env var
         assert!(runner.env_vars.get("GUISU_SOURCE").is_some());

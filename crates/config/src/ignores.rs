@@ -78,10 +78,10 @@ mod tests {
     fn test_ignores_config_default() {
         let config = IgnoresConfig::default();
 
-        assert!(config.global.is_empty());
-        assert!(config.darwin.is_empty());
-        assert!(config.linux.is_empty());
-        assert!(config.windows.is_empty());
+        assert_eq!(config.global, [] as [std::string::String; 0]);
+        assert_eq!(config.darwin, [] as [std::string::String; 0]);
+        assert_eq!(config.linux, [] as [std::string::String; 0]);
+        assert_eq!(config.windows, [] as [std::string::String; 0]);
     }
 
     #[test]
@@ -92,10 +92,10 @@ mod tests {
         let result = IgnoresConfig::load(temp.path()).unwrap();
 
         // Should return default config
-        assert!(result.global.is_empty());
-        assert!(result.darwin.is_empty());
-        assert!(result.linux.is_empty());
-        assert!(result.windows.is_empty());
+        assert_eq!(result.global, [] as [std::string::String; 0]);
+        assert_eq!(result.darwin, [] as [std::string::String; 0]);
+        assert_eq!(result.linux, [] as [std::string::String; 0]);
+        assert_eq!(result.windows, [] as [std::string::String; 0]);
     }
 
     #[test]
@@ -126,7 +126,7 @@ linux = [
         assert_eq!(config.global, vec![".DS_Store", "*.log"]);
         assert_eq!(config.darwin, vec![".Trash/"]);
         assert_eq!(config.linux, vec!["~/.cache/"]);
-        assert!(config.windows.is_empty()); // Not specified, should be default
+        assert_eq!(config.windows, [] as [std::string::String; 0]); // Not specified, should be default
     }
 
     #[test]
@@ -191,10 +191,10 @@ darwin = []
 
         let config = IgnoresConfig::load(temp.path()).unwrap();
 
-        assert!(config.global.is_empty());
-        assert!(config.darwin.is_empty());
-        assert!(config.linux.is_empty());
-        assert!(config.windows.is_empty());
+        assert_eq!(config.global, [] as [std::string::String; 0]);
+        assert_eq!(config.darwin, [] as [std::string::String; 0]);
+        assert_eq!(config.linux, [] as [std::string::String; 0]);
+        assert_eq!(config.windows, [] as [std::string::String; 0]);
     }
 
     #[test]
@@ -214,9 +214,9 @@ global = ["*.log"]
 
         assert_eq!(config.global, vec!["*.log"]);
         // Other platforms should default to empty
-        assert!(config.darwin.is_empty());
-        assert!(config.linux.is_empty());
-        assert!(config.windows.is_empty());
+        assert_eq!(config.darwin, [] as [std::string::String; 0]);
+        assert_eq!(config.linux, [] as [std::string::String; 0]);
+        assert_eq!(config.windows, [] as [std::string::String; 0]);
     }
 
     #[test]
@@ -246,8 +246,8 @@ darwin = [".DS_Store"]
 
         assert_eq!(config.global, vec!["*.tmp", "*.log"]);
         assert_eq!(config.darwin, vec![".DS_Store"]);
-        assert!(config.linux.is_empty());
-        assert!(config.windows.is_empty());
+        assert_eq!(config.linux, [] as [std::string::String; 0]);
+        assert_eq!(config.windows, [] as [std::string::String; 0]);
     }
 
     #[test]
@@ -257,9 +257,9 @@ darwin = [".DS_Store"]
         let config: IgnoresConfig = toml::from_str(toml_str).unwrap();
 
         // Should deserialize to default
-        assert!(config.global.is_empty());
-        assert!(config.darwin.is_empty());
-        assert!(config.linux.is_empty());
-        assert!(config.windows.is_empty());
+        assert_eq!(config.global, [] as [std::string::String; 0]);
+        assert_eq!(config.darwin, [] as [std::string::String; 0]);
+        assert_eq!(config.linux, [] as [std::string::String; 0]);
+        assert_eq!(config.windows, [] as [std::string::String; 0]);
     }
 }

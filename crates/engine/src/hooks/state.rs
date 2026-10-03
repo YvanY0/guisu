@@ -108,7 +108,7 @@ mod tests {
         let state = HookConfigState::new(temp_file.path()).unwrap();
 
         // Hash should not be empty
-        assert!(!state.config_hash.is_empty());
+        assert_ne!(state.config_hash.len(), 0);
         assert_eq!(state.config_hash.len(), 32); // blake3 is 32 bytes
 
         // Timestamp should be recent (not UNIX_EPOCH)
@@ -276,7 +276,7 @@ mod tests {
         let state = HookConfigState::new(temp_file.path()).unwrap();
 
         // Should still compute a hash (hash of empty content)
-        assert!(!state.config_hash.is_empty());
+        assert_ne!(state.config_hash.len(), 0);
         assert_eq!(state.config_hash.len(), 32);
     }
 
@@ -291,7 +291,7 @@ mod tests {
         let state = HookConfigState::new(temp_file.path()).unwrap();
 
         // Should handle large files correctly
-        assert!(!state.config_hash.is_empty());
+        assert_ne!(state.config_hash.len(), 0);
         assert_eq!(state.config_hash.len(), 32);
     }
 
@@ -306,7 +306,7 @@ mod tests {
         let state = HookConfigState::new(temp_file.path()).unwrap();
 
         // Should handle binary content correctly
-        assert!(!state.config_hash.is_empty());
+        assert_ne!(state.config_hash.len(), 0);
         assert_eq!(state.config_hash.len(), 32);
     }
 

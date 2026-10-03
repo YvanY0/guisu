@@ -471,7 +471,7 @@ mod tests {
         let retrieved = EntryState::from_bytes(&bytes).expect("Failed to deserialize");
         assert_eq!(retrieved.mode, Some(0o644));
         // Empty content should have a hash (even if it's the hash of empty bytes)
-        assert!(!retrieved.content_hash.is_empty());
+        assert_ne!(retrieved.content_hash.len(), 0);
     }
 
     #[test]
@@ -496,7 +496,7 @@ mod tests {
 
         let retrieved = EntryState::from_bytes(&bytes).expect("Failed to deserialize");
         // Hash should be computed correctly
-        assert!(!retrieved.content_hash.is_empty());
+        assert_ne!(retrieved.content_hash.len(), 0);
     }
 
     #[test]

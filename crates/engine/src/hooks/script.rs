@@ -260,7 +260,7 @@ mod tests {
 
         let (interpreter, args) = parse_shebang(&script_path).unwrap();
         assert_eq!(interpreter, "bash");
-        assert!(args.is_empty());
+        assert_eq!(args.len(), 0);
     }
 
     #[test]
@@ -282,7 +282,7 @@ mod tests {
 
         let (interpreter, args) = parse_shebang(&script_path).unwrap();
         assert_eq!(interpreter, "python3");
-        assert!(args.is_empty());
+        assert_eq!(args.len(), 0);
     }
 
     #[test]
@@ -304,7 +304,7 @@ mod tests {
 
         let (interpreter, args) = parse_shebang(&script_path).unwrap();
         assert_eq!(interpreter, "bash");
-        assert!(args.is_empty());
+        assert_eq!(args.len(), 0);
     }
 
     #[test]
@@ -315,7 +315,7 @@ mod tests {
 
         let (interpreter, args) = parse_shebang(&script_path).unwrap();
         assert_eq!(interpreter, "bash");
-        assert!(args.is_empty());
+        assert_eq!(args.len(), 0);
     }
 
     // ======================================================================
@@ -330,7 +330,7 @@ mod tests {
 
         let (interpreter, args) = infer_interpreter(&script_path).unwrap();
         assert_eq!(interpreter, "sh");
-        assert!(args.is_empty());
+        assert_eq!(args.len(), 0);
     }
 
     #[test]
@@ -341,7 +341,7 @@ mod tests {
 
         let (interpreter, args) = infer_interpreter(&script_path).unwrap();
         assert_eq!(interpreter, "bash");
-        assert!(args.is_empty());
+        assert_eq!(args.len(), 0);
     }
 
     #[test]
@@ -352,7 +352,7 @@ mod tests {
 
         let (interpreter, args) = infer_interpreter(&script_path).unwrap();
         assert_eq!(interpreter, "python3");
-        assert!(args.is_empty());
+        assert_eq!(args.len(), 0);
     }
 
     #[test]
@@ -363,7 +363,7 @@ mod tests {
 
         let (interpreter, args) = infer_interpreter(&script_path).unwrap();
         assert_eq!(interpreter, "ruby");
-        assert!(args.is_empty());
+        assert_eq!(args.len(), 0);
     }
 
     #[test]
@@ -374,7 +374,7 @@ mod tests {
 
         let (interpreter, args) = infer_interpreter(&script_path).unwrap();
         assert_eq!(interpreter, "perl");
-        assert!(args.is_empty());
+        assert_eq!(args.len(), 0);
     }
 
     #[test]
@@ -385,7 +385,7 @@ mod tests {
 
         let (interpreter, args) = infer_interpreter(&script_path).unwrap();
         assert_eq!(interpreter, "node");
-        assert!(args.is_empty());
+        assert_eq!(args.len(), 0);
     }
 
     #[test]
@@ -396,7 +396,7 @@ mod tests {
 
         let (interpreter, args) = infer_interpreter(&script_path).unwrap();
         assert_eq!(interpreter, "zsh");
-        assert!(args.is_empty());
+        assert_eq!(args.len(), 0);
     }
 
     #[test]
@@ -418,6 +418,6 @@ mod tests {
 
         let (interpreter, args) = infer_interpreter(&script_path).unwrap();
         assert_eq!(interpreter, "sh");
-        assert!(args.is_empty());
+        assert_eq!(args.len(), 0);
     }
 }

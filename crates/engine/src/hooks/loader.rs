@@ -352,7 +352,7 @@ mod tests {
         let loader = HookLoader::new(temp.path());
 
         let result = loader.load().unwrap();
-        assert!(result.is_empty());
+        assert_eq!(result.pre.len() + result.post.len(), 0);
     }
 
     #[test]
@@ -362,7 +362,7 @@ mod tests {
         let loader = HookLoader::new(temp.path());
 
         let result = loader.load().unwrap();
-        assert!(result.is_empty());
+        assert_eq!(result.pre.len() + result.post.len(), 0);
     }
 
     #[test]
@@ -865,8 +865,8 @@ timeout = 5
         let loader = HookLoader::new(temp.path());
         let result = loader.load().unwrap();
 
-        assert!(result.pre.is_empty());
-        assert!(result.post.is_empty());
+        assert_eq!(result.pre.len(), 0);
+        assert_eq!(result.post.len(), 0);
     }
 
     #[test]

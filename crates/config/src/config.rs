@@ -952,7 +952,7 @@ mod tests {
         assert!(config.src_dir.is_none());
         assert!(config.dst_dir.is_none());
         assert!(config.editor.is_none());
-        assert!(config.editor_args.is_empty());
+        assert_eq!(config.editor_args, [] as [std::string::String; 0]);
     }
 
     #[test]
@@ -976,7 +976,7 @@ mod tests {
         assert!(config.identity.is_none());
         assert!(config.identities.is_none());
         assert!(config.recipient.is_none());
-        assert!(config.recipients.is_empty());
+        assert_eq!(config.recipients, [] as [std::string::String; 0]);
         assert!(!config.derive);
     }
 
@@ -1286,7 +1286,7 @@ name = "Test User"
             "darwin" => assert_eq!(platform, vec![".DS_Store"]),
             "linux" => assert_eq!(platform, vec!["*.swp"]),
             "windows" => assert_eq!(platform, vec!["Thumbs.db"]),
-            _ => assert!(platform.is_empty()),
+            _ => assert_eq!(platform, [] as [std::string::String; 0]),
         }
     }
 
@@ -1485,10 +1485,10 @@ identity = "./key.txt"
     #[test]
     fn test_ignore_config_default() {
         let config = IgnoreConfig::default();
-        assert!(config.global.is_empty());
-        assert!(config.darwin.is_empty());
-        assert!(config.linux.is_empty());
-        assert!(config.windows.is_empty());
+        assert_eq!(config.global, [] as [std::string::String; 0]);
+        assert_eq!(config.darwin, [] as [std::string::String; 0]);
+        assert_eq!(config.linux, [] as [std::string::String; 0]);
+        assert_eq!(config.windows, [] as [std::string::String; 0]);
     }
 
     #[test]

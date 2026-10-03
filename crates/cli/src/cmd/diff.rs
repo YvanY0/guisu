@@ -1502,7 +1502,7 @@ mod tests {
             interactive: false,
         };
 
-        assert!(cmd.files.is_empty());
+        assert_eq!(cmd.files, [] as [std::path::PathBuf; 0]);
         assert!(!cmd.pager);
         assert!(!cmd.interactive);
     }

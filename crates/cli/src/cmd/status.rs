@@ -1553,7 +1553,7 @@ mod tests {
             absolute: false,
         };
 
-        assert!(cmd.files.is_empty());
+        assert_eq!(cmd.files, [] as [std::path::PathBuf; 0]);
         assert!(!cmd.all);
         assert!(!cmd.tree);
         assert!(!cmd.absolute);

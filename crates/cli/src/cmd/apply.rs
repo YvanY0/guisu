@@ -1313,7 +1313,7 @@ mod tests {
             interactive: false,
         };
 
-        assert!(cmd.files.is_empty());
+        assert_eq!(cmd.files, [] as [std::path::PathBuf; 0]);
         assert!(!cmd.dry_run);
         assert!(!cmd.force);
         assert!(!cmd.interactive);

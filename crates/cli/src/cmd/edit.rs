@@ -537,7 +537,7 @@ mod tests {
 
         let (editor, args) = get_editor(&config);
         assert_eq!(editor, "emacs");
-        assert!(args.is_empty());
+        assert_eq!(args, [] as [std::string::String; 0]);
     }
 
     #[test]

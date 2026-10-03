@@ -420,7 +420,7 @@ mod tests {
 
         // Should be able to get public key
         let recipient = identity.to_public();
-        assert!(!recipient.to_string().is_empty());
+        assert_ne!(recipient.to_string(), "");
     }
 
     #[test]

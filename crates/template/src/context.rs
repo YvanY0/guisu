@@ -567,12 +567,12 @@ mod tests {
         let sys = SystemInfo::detect();
 
         // Basic assertions that should work on all platforms
-        assert!(!sys.os.is_empty());
-        assert!(!sys.os_family.is_empty());
-        assert!(!sys.arch.is_empty());
-        assert!(!sys.hostname.is_empty());
-        assert!(!sys.username.is_empty());
-        assert!(!sys.home_dir.is_empty());
+        assert_ne!(sys.os, "");
+        assert_ne!(sys.os_family, "");
+        assert_ne!(sys.arch, "");
+        assert_ne!(sys.hostname, "");
+        assert_ne!(sys.username, "");
+        assert_ne!(sys.home_dir, "");
 
         // Platform-specific checks
         #[cfg(target_os = "linux")]
@@ -620,7 +620,7 @@ mod tests {
     fn test_system_info_arch() {
         let arch = SystemInfo::detect_arch();
 
-        assert!(!arch.is_empty());
+        assert_ne!(arch, "");
         assert!(["x86_64", "aarch64", "arm", "x86"].contains(&arch.as_str()));
     }
 
@@ -628,7 +628,7 @@ mod tests {
     fn test_system_info_hostname() {
         let hostname = SystemInfo::detect_hostname();
 
-        assert!(!hostname.is_empty());
+        assert_ne!(hostname, "");
         assert_ne!(hostname, "unknown"); // Should detect actual hostname
     }
 
@@ -636,14 +636,14 @@ mod tests {
     fn test_system_info_username() {
         let username = SystemInfo::detect_username();
 
-        assert!(!username.is_empty());
+        assert_ne!(username, "");
     }
 
     #[test]
     fn test_system_info_home_dir() {
         let home = SystemInfo::detect_home_dir();
 
-        assert!(!home.is_empty());
+        assert_ne!(home, "");
         #[cfg(unix)]
         assert!(home.starts_with('/'));
 
@@ -657,8 +657,8 @@ mod tests {
         let sys = SystemInfo::detect();
 
         // UID and GID should be non-empty on Unix
-        assert!(!sys.uid.is_empty());
-        assert!(!sys.gid.is_empty());
+        assert_ne!(sys.uid, "");
+        assert_ne!(sys.gid, "");
 
         // Should be parseable as numbers
         assert!(sys.uid.parse::<u32>().is_ok());
