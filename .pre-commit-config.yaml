@@ -62,12 +62,12 @@ repos:
     hooks:
       - id: gitleaks
   - repo: https://github.com/adhtruong/mirrors-typos
-    rev: v1.50.1
+    rev: v1.50.3
     hooks:
       - id: typos
         args: ["--force-exclude"]
   - repo: https://github.com/alessandrojcm/commitlint-pre-commit-hook
-    rev: v9.26.0
+    rev: v9.27.0
     hooks:
       - id: commitlint
         additional_dependencies: ["@commitlint/config-conventional"]
