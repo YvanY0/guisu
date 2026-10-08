@@ -16,6 +16,30 @@ pub struct TemplateEngine {
     env: Environment<'static>,
 }
 
+/// Enable Jinja2 standard whitespace control and a TOML-safe bool formatter.
+fn configure_env_defaults(env: &mut Environment<'static>) {
+    // trim_blocks: automatically remove newlines after block tags
+    // lstrip_blocks: automatically strip leading whitespace from block lines
+    // keep_trailing_newline: ensure files always end with a newline
+    env.set_trim_blocks(true);
+    env.set_lstrip_blocks(true);
+    env.set_keep_trailing_newline(true);
+
+    // Render booleans as lowercase `true`/`false` (valid in TOML and JSON)
+    // instead of minijinja 2.22+'s Python-style `True`/`False`. This keeps
+    // `{{ bool_expr }}` safe to embed in `.guisu.toml.j2` (whose output is
+    // parsed as TOML) and in dotfile configs. Everything else delegates to
+    // the default `escape_formatter`.
+    env.set_formatter(|out, state, value| {
+        let value = if value.kind() == minijinja::value::ValueKind::Bool {
+            minijinja::Value::from(if value.is_true() { "true" } else { "false" })
+        } else {
+            value.clone()
+        };
+        minijinja::escape_formatter(out, state, &value)
+    });
+}
+
 impl TemplateEngine {
     /// Create a new template engine without decryption support
     #[must_use]
@@ -102,35 +126,15 @@ impl TemplateEngine {
     /// - Identities for encryption/decryption
     /// - Template directory for include/includeTemplate
     /// - Bitwarden provider selection (currently "bw"; "bws" for Bitwarden
-    ///   Secrets is configured separately via the env wrapper)
+    ///   Secrets is configured separately via the env wrapper). The value is
+    ///   either a bare binary name or an explicit path to the binary.
     pub fn with_identities_arc_template_dir_and_bitwarden_provider(
         identities: &Arc<Vec<Identity>>,
         template_dir: Option<PathBuf>,
         bitwarden_provider: &str,
     ) -> Self {
         let mut env = Environment::new();
-
-        // Enable Jinja2 standard whitespace control
-        // trim_blocks: automatically remove newlines after block tags
-        // lstrip_blocks: automatically strip leading whitespace from block lines
-        // keep_trailing_newline: ensure files always end with a newline
-        env.set_trim_blocks(true);
-        env.set_lstrip_blocks(true);
-        env.set_keep_trailing_newline(true);
-
-        // Render booleans as lowercase `true`/`false` (valid in TOML and JSON)
-        // instead of minijinja 2.22+'s Python-style `True`/`False`. This keeps
-        // `{{ bool_expr }}` safe to embed in `.guisu.toml.j2` (whose output is
-        // parsed as TOML) and in dotfile configs. Everything else delegates to
-        // the default `escape_formatter`.
-        env.set_formatter(|out, state, value| {
-            let value = if value.kind() == minijinja::value::ValueKind::Bool {
-                minijinja::Value::from(if value.is_true() { "true" } else { "false" })
-            } else {
-                value.clone()
-            };
-            minijinja::escape_formatter(out, state, &value)
-        });
+        configure_env_defaults(&mut env);
 
         // Register custom functions
         env.add_function("env", functions::env);

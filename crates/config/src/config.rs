@@ -135,13 +135,17 @@ pub struct IgnoreConfig {
 ///
 /// ```toml
 /// [bitwarden]
-/// provider = "rbw"  # or "bw" (default)
+/// provider = "rbw"  # or "bw" (default), or a path to the binary
 /// ```
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct BitwardenConfig {
     /// Which Bitwarden CLI to use: "bw" or "rbw"
     /// - "bw": Official Bitwarden CLI (Node.js based)
     /// - "rbw": Rust Bitwarden CLI (faster, daemon-based)
+    ///
+    /// May also be an explicit path to the binary (e.g.
+    /// `/home/user/.cargo/bin/rbw`) when multiple versions are installed;
+    /// the CLI kind is determined from the file name.
     #[serde(default = "default_bitwarden_provider")]
     pub provider: String,
 }

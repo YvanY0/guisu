@@ -19,12 +19,30 @@ struct BitwardenCache {
 }
 
 impl BitwardenCache {
-    fn new(provider_name: &str) -> Result<Self, guisu_vault::Error> {
-        let provider = Self::create_provider(provider_name)?;
+    fn new(provider_spec: &str) -> Result<Self, guisu_vault::Error> {
+        let provider = Self::create_provider(provider_spec)?;
         Ok(Self {
             provider,
             cache: Mutex::new(IndexMap::new()),
         })
+    }
+
+    /// Split a provider spec into the CLI kind and the binary to invoke.
+    ///
+    /// The spec is either a bare binary name (`"bw"`, `"rbw"`, resolved
+    /// via `PATH`) or an explicit path to the binary
+    /// (e.g. `/home/user/.cargo/bin/rbw`); in the path case the CLI kind
+    /// is taken from the file name so the right argument syntax is used.
+    fn split_provider_spec(spec: &str) -> (&str, &str) {
+        if spec.contains('/') {
+            let name = std::path::Path::new(spec)
+                .file_name()
+                .and_then(|n| n.to_str())
+                .unwrap_or(spec);
+            (name, spec)
+        } else {
+            (spec, spec)
+        }
     }
 
     /// Create Bitwarden provider based on configuration.
@@ -32,13 +50,14 @@ impl BitwardenCache {
     /// Both `bw` and `rbw` are routed here; the [`VaultCommand`] returned
     /// by each provider is translated by the provider itself, so this
     /// template layer never has to know CLI-specific argument syntax.
-    fn create_provider(provider_name: &str) -> Result<Box<dyn SecretProvider>, guisu_vault::Error> {
-        match provider_name {
+    fn create_provider(provider_spec: &str) -> Result<Box<dyn SecretProvider>, guisu_vault::Error> {
+        let (kind, bin) = Self::split_provider_spec(provider_spec);
+        match kind {
             #[cfg(feature = "bw")]
-            "bw" => Ok(Box::new(guisu_vault::bw::BwCli::new())),
+            "bw" => Ok(Box::new(guisu_vault::bw::BwCli::with_bin(bin))),
 
             #[cfg(feature = "bw")]
-            "rbw" => Ok(Box::new(guisu_vault::bw::RbwCli::new())),
+            "rbw" => Ok(Box::new(guisu_vault::bw::RbwCli::with_bin(bin))),
 
             _ => {
                 // Build list of available providers based on enabled features
@@ -50,8 +69,8 @@ impl BitwardenCache {
                 ];
 
                 Err(guisu_vault::Error::VaultProviderNotAvailable(format!(
-                    "Unknown Bitwarden Vault provider: '{}'. Valid options: {}",
-                    provider_name,
+                    "Unknown Bitwarden Vault provider: '{}'. Valid options: {} (a bare name or a path to the binary)",
+                    provider_spec,
                     providers.join(", ")
                 )))
             }
@@ -61,10 +80,14 @@ impl BitwardenCache {
     fn get_or_fetch(&self, cmd: VaultCommand<'_>) -> Result<JsonValue, guisu_vault::Error> {
         let cache_key = cmd.cache_key();
 
-        // Quick read-only check - deserialize from Secret<String>
-        if let Ok(cache) = self.cache.lock()
-            && let Some(cached_secret) = cache.get(&cache_key)
-        {
+        // Hold the lock across the lookup AND the fetch so that parallel
+        // template renders asking for the same item spawn exactly one
+        // provider call instead of racing the cache and duplicating it.
+        let mut cache = self.cache.lock().map_err(|_| {
+            guisu_vault::Error::VaultExecutionFailed("Bitwarden cache lock poisoned".to_string())
+        })?;
+
+        if let Some(cached_secret) = cache.get(&cache_key) {
             let json_str = cached_secret.expose_secret();
             return serde_json::from_str(json_str)
                 .map_err(|e| guisu_vault::Error::VaultCacheDeserialize { source: e });
@@ -74,9 +97,7 @@ impl BitwardenCache {
         let result = self.provider.execute(cmd)?;
 
         // Serialize to string and wrap in SecretString for automatic zeroization
-        if let Ok(mut cache) = self.cache.lock()
-            && let Ok(json_str) = serde_json::to_string(&result)
-        {
+        if let Ok(json_str) = serde_json::to_string(&result) {
             cache.insert(cache_key, SecretString::new(json_str.into()));
         }
 
@@ -116,10 +137,10 @@ fn convert_error(e: guisu_vault::Error) -> minijinja::Error {
 /// provider. Init failures panic — the template engine can't run if the
 /// vault provider can't be constructed, so it's a startup-time failure
 /// rather than something to surface per-render.
-fn shared_cache(provider_name: &str) -> Arc<BitwardenCache> {
+fn shared_cache(provider_spec: &str) -> Arc<BitwardenCache> {
     BITWARDEN_CACHE
         .get_or_init(|| {
-            Arc::new(BitwardenCache::new(provider_name).expect("Bitwarden provider init failed"))
+            Arc::new(BitwardenCache::new(provider_spec).expect("Bitwarden provider init failed"))
         })
         .clone()
 }
@@ -155,7 +176,7 @@ fn shared_cache(provider_name: &str) -> Arc<BitwardenCache> {
 /// Returns error if the Bitwarden provider is not available or item
 /// retrieval fails.
 #[allow(clippy::missing_errors_doc)]
-pub fn bitwarden(args: &[Value], provider_name: &str) -> Result<Value, minijinja::Error> {
+pub fn bitwarden(args: &[Value], provider_spec: &str) -> Result<Value, minijinja::Error> {
     if args.is_empty() {
         return Err(minijinja::Error::new(
             minijinja::ErrorKind::InvalidOperation,
@@ -170,7 +191,7 @@ pub fn bitwarden(args: &[Value], provider_name: &str) -> Result<Value, minijinja
         )
     })?;
 
-    let cache = shared_cache(provider_name);
+    let cache = shared_cache(provider_spec);
     let result = cache
         .get_or_fetch(VaultCommand::GetItem { name: item_id })
         .map_err(convert_error)?;
@@ -221,7 +242,7 @@ pub fn bitwarden(args: &[Value], provider_name: &str) -> Result<Value, minijinja
 /// Returns error if Bitwarden CLI is not available or attachment retrieval fails
 pub fn bitwarden_attachment(
     args: &[Value],
-    provider_name: &str,
+    provider_spec: &str,
 ) -> Result<String, minijinja::Error> {
     if args.len() < 2 {
         return Err(minijinja::Error::new(
@@ -244,7 +265,7 @@ pub fn bitwarden_attachment(
         )
     })?;
 
-    let cache = shared_cache(provider_name);
+    let cache = shared_cache(provider_spec);
     let result = cache
         .get_or_fetch(VaultCommand::GetAttachment { item_id, filename })
         .map_err(convert_error)?;
@@ -295,7 +316,7 @@ pub fn bitwarden_attachment(
 /// # Errors
 ///
 /// Returns error if Bitwarden provider is not available or field retrieval fails
-pub fn bitwarden_fields(args: &[Value], provider_name: &str) -> Result<Value, minijinja::Error> {
+pub fn bitwarden_fields(args: &[Value], provider_spec: &str) -> Result<Value, minijinja::Error> {
     if args.len() < 2 {
         return Err(minijinja::Error::new(
             minijinja::ErrorKind::InvalidOperation,
@@ -317,7 +338,7 @@ pub fn bitwarden_fields(args: &[Value], provider_name: &str) -> Result<Value, mi
         )
     })?;
 
-    let cache = shared_cache(provider_name);
+    let cache = shared_cache(provider_spec);
     let item_value = cache
         .get_or_fetch(VaultCommand::GetItem { name: item_id })
         .map_err(convert_error)?;

@@ -37,7 +37,7 @@ The full schema of `.guisu.toml`. Every key is optional; Guisu applies a default
 
 | Key | Type | Default | Notes |
 | --- | --- | --- | --- |
-| `provider` | string | `"bw"` | One of `bw`, `rbw`, `bws`. |
+| `provider` | string | `"bw"` | `bw` or `rbw`, or an explicit path to either binary (e.g. `/home/user/.cargo/bin/rbw`); the CLI kind is taken from the file name for paths. |
 
 ## `[ui]`
 

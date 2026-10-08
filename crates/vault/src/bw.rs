@@ -57,10 +57,28 @@ fn rbw_args_for(cmd: VaultCommand<'_>) -> Vec<&str> {
     }
 }
 
+/// Map a provider spawn failure to an error. A missing or non-executable
+/// binary gets a dedicated message pointing at `[bitwarden] provider`, so
+/// a wrong/stale resolution (e.g. two `rbw` installs) is diagnosable
+/// instead of surfacing as a bare io error.
+fn map_spawn_error(bin: &str, e: std::io::Error) -> Error {
+    match e.kind() {
+        std::io::ErrorKind::NotFound => Error::VaultExecutionFailed(format!(
+            "Provider binary '{bin}' not found; install it or point [bitwarden] provider in .guisu.toml at the correct binary"
+        )),
+        std::io::ErrorKind::PermissionDenied => Error::VaultExecutionFailed(format!(
+            "Provider binary '{bin}' is not executable; check its permissions or point [bitwarden] provider in .guisu.toml at the correct binary"
+        )),
+        _ => Error::Io(e),
+    }
+}
+
 /// Official Bitwarden CLI provider (`bw`)
 ///
 /// Uses the official Node.js-based `bw` CLI with session-based authentication.
 pub struct BwCli {
+    /// Provider binary (name resolved via `PATH`, or an explicit path)
+    bin: String,
     /// Cached session key (`BW_SESSION`)
     session_key: Mutex<Option<String>>,
 }
@@ -69,10 +87,17 @@ impl BwCli {
     /// Create a new Bitwarden CLI provider
     #[must_use]
     pub fn new() -> Self {
+        Self::with_bin("bw")
+    }
+
+    /// Create a provider that invokes a specific `bw` binary
+    #[must_use]
+    pub fn with_bin(bin: impl Into<String>) -> Self {
         // Try to get session from environment variable
         let session_key = Env::system().get("BW_SESSION");
 
         Self {
+            bin: bin.into(),
             session_key: Mutex::new(session_key),
         }
     }
@@ -106,13 +131,13 @@ impl BwCli {
     }
 
     /// Check vault status using `bw status`
-    fn check_vault_status() -> Result<bool> {
-        let output = Command::new("bw")
+    fn check_vault_status(&self) -> Result<bool> {
+        let output = Command::new(&self.bin)
             .arg("status")
             .stdout(Stdio::piped())
             .stderr(Stdio::piped())
             .output()
-            .map_err(Error::Io)?;
+            .map_err(|e| map_spawn_error(&self.bin, e))?;
 
         if !output.status.success() {
             return Ok(false); // Assume locked if status command fails
@@ -134,10 +159,10 @@ impl BwCli {
     }
 
     /// Try to unlock the vault interactively
-    fn try_unlock() -> Result<String> {
+    fn try_unlock(&self) -> Result<String> {
         info!("Bitwarden vault is locked. Unlocking...");
 
-        let output = Command::new("bw")
+        let output = Command::new(&self.bin)
             .arg("unlock")
             .arg("--raw")
             .stdin(Stdio::inherit())
@@ -180,20 +205,20 @@ impl BwCli {
         let args = bw_args_for(cmd);
 
         // Check vault status first using `bw status`
-        let is_unlocked = Self::check_vault_status()?;
+        let is_unlocked = self.check_vault_status()?;
 
         // If vault is locked, unlock it first
         let session_key = if is_unlocked {
             // Use cached session key if available
             self.get_session_key()
         } else {
-            let key = Self::try_unlock()?;
+            let key = self.try_unlock()?;
             self.cache_session_key(key.clone());
             Some(key)
         };
 
         // Execute the actual command with session key
-        let mut cmd = Command::new("bw");
+        let mut cmd = Command::new(&self.bin);
         cmd.args(args).env("NODE_OPTIONS", "--no-deprecation");
 
         if let Some(ref session) = session_key {
@@ -250,7 +275,7 @@ impl SecretProvider for BwCli {
     }
 
     fn is_available(&self) -> bool {
-        Command::new("bw")
+        Command::new(&self.bin)
             .arg("--version")
             .output()
             .is_ok_and(|o| o.status.success())
@@ -280,13 +305,22 @@ impl SecretProvider for BwCli {
 /// - No session keys: The daemon manages authentication, no `BW_SESSION` env var needed
 /// - Different JSON format: rbw outputs `data` field instead of `login`, requires mapping
 /// - Unlock check: Use `rbw unlocked` to check vault status
-pub struct RbwCli;
+pub struct RbwCli {
+    /// Provider binary (name resolved via `PATH`, or an explicit path)
+    bin: String,
+}
 
 impl RbwCli {
     /// Create a new rbw provider instance
     #[must_use]
     pub fn new() -> Self {
-        Self
+        Self::with_bin("rbw")
+    }
+
+    /// Create a provider that invokes a specific `rbw` binary
+    #[must_use]
+    pub fn with_bin(bin: impl Into<String>) -> Self {
+        Self { bin: bin.into() }
     }
 
     /// Transform rbw JSON format to bw-compatible format
@@ -376,17 +410,17 @@ impl RbwCli {
     /// - SSH private keys: rbw does not return `private_key` field for SSH items.
     ///   Only `public_key` and `fingerprint` are available. Use bw CLI if you need
     ///   to access SSH private keys in templates.
-    fn execute_rbw(cmd: VaultCommand<'_>) -> Result<JsonValue> {
+    fn execute_rbw(&self, cmd: VaultCommand<'_>) -> Result<JsonValue> {
         let args = rbw_args_for(cmd);
 
         // Execute rbw - it handles daemon startup and unlocking automatically
-        let output = Command::new("rbw")
+        let output = Command::new(&self.bin)
             .args(&args)
             .stdin(Stdio::inherit()) // Allow rbw to prompt for password if needed
             .stdout(Stdio::piped())
             .stderr(Stdio::piped())
             .output()
-            .map_err(Error::Io)?;
+            .map_err(|e| map_spawn_error(&self.bin, e))?;
 
         let stdout = String::from_utf8_lossy(&output.stdout);
         let stderr = String::from_utf8_lossy(&output.stderr);
@@ -449,12 +483,12 @@ impl SecretProvider for RbwCli {
                     .to_string(),
             ));
         }
-        Self::execute_rbw(cmd)
+        self.execute_rbw(cmd)
     }
 
     fn is_available(&self) -> bool {
         // Check if rbw command exists
-        Command::new("rbw")
+        Command::new(&self.bin)
             .arg("--version")
             .stdout(Stdio::null())
             .stderr(Stdio::null())
