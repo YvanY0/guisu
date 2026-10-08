@@ -12,14 +12,22 @@ use std::path::{Path, PathBuf};
 /// Discover and load hooks from the hooks directory
 pub struct HookLoader {
     hooks_dir: PathBuf,
+    /// Current platform (e.g. `"linux"`, `"darwin"`); used to resolve
+    /// platform-specific script overrides under `scripts/{platform}/`.
+    platform: String,
 }
 
 impl HookLoader {
-    /// Create a new hook loader for the given source directory
+    /// Create a new hook loader for the given source directory and platform.
+    ///
+    /// A hook that declares `platforms` resolves its script under
+    /// `scripts/{platform}/` only (see [`Self::resolve_script_path`]);
+    /// pass `""` to disable that (used by unit tests).
     #[must_use]
-    pub fn new(source_dir: &Path) -> Self {
+    pub fn new(source_dir: &Path, platform: &str) -> Self {
         Self {
             hooks_dir: source_dir.join(".guisu/hooks"),
+            platform: platform.to_string(),
         }
     }
 
@@ -225,12 +233,14 @@ impl HookLoader {
         )))
     }
 
-    /// Resolve script path relative to hook file directory
+    /// Resolve script path relative to hook file directory.
     ///
-    /// This function supports automatic .j2 template detection:
-    /// - If script = "script.sh.j2", uses it directly as a template
-    /// - If script = "script.sh" and "script.sh.j2" exists, uses the template version
-    /// - Otherwise, uses the specified path as-is
+    /// The `.j2` suffix is stripped to get the logical name, then the
+    /// directory is probed for `{logical}.j2` first, else `{logical}`.
+    /// Hooks declaring `platforms` probe `scripts/{platform}/` only
+    /// (missing script = error; other platforms are skipped before
+    /// resolution); hooks without `platforms` probe `scripts/` only.
+    /// Full rules: docs/user-guide/hooks.md.
     fn resolve_script_path(&self, hook: &mut Hook, hook_file_path: &Path) -> Result<()> {
         if let Some(script) = &hook.script {
             // Skip absolute paths
@@ -246,26 +256,80 @@ impl HookLoader {
                 ))
             })?;
 
-            // Resolve script path relative to hook directory
-            let script_abs = hook_dir.join(script);
-
-            // Auto-detect .j2 template version
-            let final_script_abs = if script.to_lowercase().ends_with(".j2") {
-                // Explicitly specified as template
-                script_abs
+            // Strip an explicit `.j2` suffix to get the logical name.
+            let script_rel = Path::new(script);
+            let rel_dir = script_rel
+                .parent()
+                .ok_or_else(|| Error::HookConfig(format!("Invalid script path: {script}")))?;
+            let raw_name = script_rel
+                .file_name()
+                .ok_or_else(|| Error::HookConfig(format!("Invalid script path: {script}")))?;
+            let raw_name = raw_name.to_string_lossy();
+            let logical_name = if raw_name.to_lowercase().ends_with(".j2") {
+                &raw_name[..raw_name.len() - 3]
             } else {
-                // Check if .j2 version exists
-                let template_version = hook_dir.join(format!("{script}.j2"));
-                if template_version.exists() {
-                    tracing::debug!(
-                        "Auto-detected template version: {} -> {}",
-                        script,
-                        template_version.display()
-                    );
-                    template_version
+                &raw_name
+            };
+
+            // Probe one candidate directory: prefer the adjacent `.j2`
+            // template version if it exists, else the plain path.
+            let probe = |candidate: &Path| -> PathBuf {
+                let template = candidate.with_file_name(format!("{logical_name}.j2"));
+                if template.exists() {
+                    template
                 } else {
-                    // Use original path
-                    script_abs
+                    candidate.to_path_buf()
+                }
+            };
+
+            let base_candidate = hook_dir.join(rel_dir).join(logical_name);
+
+            // Probing is directory-symmetric: prefer the adjacent `.j2`
+            // template if it exists, else the plain path. Which directory
+            // is probed depends solely on the hook's `platforms` field:
+            // hooks that declare platforms resolve inside the platform
+            // directory (no fallback to the shared base path); hooks
+            // without `platforms` are platform-agnostic and resolve in
+            // the base directory.
+            let final_script_abs = if hook.platforms.is_empty() {
+                probe(&base_candidate)
+            } else if !hook.platforms.iter().any(|p| p == &self.platform) {
+                // Not runnable on this machine; the executor filters the
+                // hook out, so skip script resolution entirely.
+                tracing::debug!(
+                    "Hook '{}' declares platforms {:?}; skipping script resolution on '{}'",
+                    hook.name,
+                    hook.platforms,
+                    self.platform
+                );
+                return Ok(());
+            } else {
+                let platform_candidate = inject_platform_subdir(&base_candidate, &self.platform)
+                    .ok_or_else(|| {
+                        Error::HookConfig(format!(
+                            "Cannot build platform script path for hook '{}' (script: {script})",
+                            hook.name
+                        ))
+                    })?;
+                let platform_resolved = probe(&platform_candidate);
+                if platform_resolved.exists() {
+                    tracing::debug!(
+                        "Using platform-specific script: {} -> {}",
+                        script,
+                        platform_resolved.display()
+                    );
+                    platform_resolved
+                } else {
+                    return Err(Error::HookConfig(format!(
+                        "Hook '{}' declares platforms {:?} but no script exists for platform '{}': expected {} or {} next to the hook file",
+                        hook.name,
+                        hook.platforms,
+                        self.platform,
+                        platform_candidate.display(),
+                        platform_candidate
+                            .with_file_name(format!("{logical_name}.j2"))
+                            .display(),
+                    )));
                 }
             };
 
@@ -308,6 +372,30 @@ impl HookLoader {
     }
 }
 
+/// Inject a platform subdirectory segment into a script path.
+///
+/// Transforms the logical candidate `scripts/foo.sh` into
+/// `scripts/linux/foo.sh`. The input is the logical path (any explicit
+/// `.j2` suffix already stripped), so callers only ever inject once.
+/// Returns `None` if the input has no parent directory (e.g. a bare
+/// filename), since there is nowhere to insert the platform segment.
+///
+/// Platform names containing path separators or `..` are rejected to
+/// prevent path traversal: a malicious TOML cannot escape the script
+/// root via this mechanism.
+fn inject_platform_subdir(script_path: &Path, platform: &str) -> Option<PathBuf> {
+    if platform.is_empty()
+        || platform.contains('/')
+        || platform.contains('\\')
+        || platform.contains("..")
+    {
+        return None;
+    }
+    let parent = script_path.parent()?;
+    let file_name = script_path.file_name()?;
+    Some(parent.join(platform).join(file_name))
+}
+
 #[cfg(test)]
 mod tests {
     #![allow(clippy::unwrap_used, clippy::panic)]
@@ -324,7 +412,7 @@ mod tests {
     #[test]
     fn test_hook_loader_new() {
         let temp = TempDir::new().unwrap();
-        let loader = HookLoader::new(temp.path());
+        let loader = HookLoader::new(temp.path(), "linux");
 
         assert_eq!(loader.hooks_dir, temp.path().join(".guisu/hooks"));
     }
@@ -332,7 +420,7 @@ mod tests {
     #[test]
     fn test_exists_no_directory() {
         let temp = TempDir::new().unwrap();
-        let loader = HookLoader::new(temp.path());
+        let loader = HookLoader::new(temp.path(), "linux");
 
         assert!(!loader.exists());
     }
@@ -341,7 +429,7 @@ mod tests {
     fn test_exists_with_directory() {
         let temp = TempDir::new().unwrap();
         create_hooks_dir_structure(temp.path());
-        let loader = HookLoader::new(temp.path());
+        let loader = HookLoader::new(temp.path(), "linux");
 
         assert!(loader.exists());
     }
@@ -349,7 +437,7 @@ mod tests {
     #[test]
     fn test_load_no_hooks_directory() {
         let temp = TempDir::new().unwrap();
-        let loader = HookLoader::new(temp.path());
+        let loader = HookLoader::new(temp.path(), "linux");
 
         let result = loader.load().unwrap();
         assert_eq!(result.pre.len() + result.post.len(), 0);
@@ -359,7 +447,7 @@ mod tests {
     fn test_load_empty_hooks_directory() {
         let temp = TempDir::new().unwrap();
         create_hooks_dir_structure(temp.path());
-        let loader = HookLoader::new(temp.path());
+        let loader = HookLoader::new(temp.path(), "linux");
 
         let result = loader.load().unwrap();
         assert_eq!(result.pre.len() + result.post.len(), 0);
@@ -378,7 +466,7 @@ cmd = "echo test"
 "#;
         fs::write(pre_dir.join("hook.toml"), toml_content).unwrap();
 
-        let loader = HookLoader::new(temp.path());
+        let loader = HookLoader::new(temp.path(), "linux");
         let result = loader.load().unwrap();
 
         assert_eq!(result.pre.len(), 1);
@@ -405,7 +493,7 @@ cmd = "echo test"
         )
         .unwrap();
 
-        let loader = HookLoader::new(temp.path());
+        let loader = HookLoader::new(temp.path(), "linux");
         let result = loader.load().unwrap();
 
         assert_eq!(result.post.len(), 2);
@@ -434,7 +522,7 @@ cmd = "echo test"
         )
         .unwrap();
 
-        let loader = HookLoader::new(temp.path());
+        let loader = HookLoader::new(temp.path(), "linux");
         let result = loader.load().unwrap();
 
         // Should only load the visible file
@@ -456,7 +544,7 @@ cmd = "echo test"
         // Create normal file
         fs::write(pre_dir.join("hook.toml"), "name = 'normal'\ncmd = 'test'").unwrap();
 
-        let loader = HookLoader::new(temp.path());
+        let loader = HookLoader::new(temp.path(), "linux");
         let result = loader.load().unwrap();
 
         // Should only load the normal file
@@ -485,7 +573,7 @@ cmd = "echo test"
         )
         .unwrap();
 
-        let loader = HookLoader::new(temp.path());
+        let loader = HookLoader::new(temp.path(), "linux");
         let result = loader.load().unwrap();
 
         assert_eq!(result.pre.len(), 1);
@@ -518,7 +606,7 @@ cmd = "echo test"
         )
         .unwrap();
 
-        let loader = HookLoader::new(temp.path());
+        let loader = HookLoader::new(temp.path(), "linux");
         let result = loader.load().unwrap();
 
         assert_eq!(result.pre.len(), 3);
@@ -539,7 +627,7 @@ cmd = "echo test"
         fs::write(pre_dir.join("b.toml"), "name = 'b'\ncmd = 'echo b'").unwrap();
         fs::write(pre_dir.join("c.toml"), "name = 'c'\ncmd = 'echo c'").unwrap();
 
-        let loader = HookLoader::new(temp.path());
+        let loader = HookLoader::new(temp.path(), "linux");
         let result = loader.load().unwrap();
 
         // Order should be 0, 10, 20, 30...
@@ -557,7 +645,7 @@ cmd = "echo test"
 
         fs::write(pre_dir.join("invalid.toml"), "invalid toml [[").unwrap();
 
-        let loader = HookLoader::new(temp.path());
+        let loader = HookLoader::new(temp.path(), "linux");
         let result = loader.load();
 
         assert!(result.is_err());
@@ -581,7 +669,7 @@ script = "install.sh"
 "#;
         fs::write(pre_dir.join("hook.toml"), toml_content).unwrap();
 
-        let loader = HookLoader::new(temp.path());
+        let loader = HookLoader::new(temp.path(), "linux");
         let result = loader.load().unwrap();
 
         assert_eq!(result.pre.len(), 1);
@@ -605,7 +693,7 @@ script = "/usr/local/bin/some-script.sh"
 "#;
         fs::write(pre_dir.join("hook.toml"), toml_content).unwrap();
 
-        let loader = HookLoader::new(temp.path());
+        let loader = HookLoader::new(temp.path(), "linux");
         let result = loader.load().unwrap();
 
         assert_eq!(result.pre.len(), 1);
@@ -634,7 +722,7 @@ script = "script.sh"
 "#;
         fs::write(pre_dir.join("hook.toml"), toml_content).unwrap();
 
-        let loader = HookLoader::new(temp.path());
+        let loader = HookLoader::new(temp.path(), "linux");
         let result = loader.load().unwrap();
 
         assert_eq!(result.pre.len(), 1);
@@ -663,7 +751,7 @@ script = "template.sh.j2"
 "#;
         fs::write(pre_dir.join("hook.toml"), toml_content).unwrap();
 
-        let loader = HookLoader::new(temp.path());
+        let loader = HookLoader::new(temp.path(), "linux");
         let result = loader.load().unwrap();
 
         assert_eq!(result.pre.len(), 1);
@@ -687,7 +775,7 @@ script = "script.sh"
 "#;
         fs::write(pre_dir.join("hook.toml"), toml_content).unwrap();
 
-        let loader = HookLoader::new(temp.path());
+        let loader = HookLoader::new(temp.path(), "linux");
         let result = loader.load().unwrap();
 
         assert_eq!(result.pre.len(), 1);
@@ -716,7 +804,7 @@ script = "script.sh"
         perms.set_mode(0o755);
         fs::set_permissions(&script_path, perms).unwrap();
 
-        let loader = HookLoader::new(temp.path());
+        let loader = HookLoader::new(temp.path(), "linux");
         let result = loader.load().unwrap();
 
         assert_eq!(result.pre.len(), 1);
@@ -737,7 +825,7 @@ script = "script.sh"
         fs::write(&script_path, "#!/bin/bash\necho test").unwrap();
         // Don't set executable permission
 
-        let loader = HookLoader::new(temp.path());
+        let loader = HookLoader::new(temp.path(), "linux");
         let result = loader.load().unwrap();
 
         // Should be skipped
@@ -758,7 +846,7 @@ script = "script.sh"
         )
         .unwrap();
 
-        let loader = HookLoader::new(temp.path());
+        let loader = HookLoader::new(temp.path(), "linux");
         let result = loader.load().unwrap();
 
         assert_eq!(result.pre.len(), 2);
@@ -778,7 +866,7 @@ mode = "once"
 "#;
         fs::write(pre_dir.join("hook.toml"), toml_content).unwrap();
 
-        let loader = HookLoader::new(temp.path());
+        let loader = HookLoader::new(temp.path(), "linux");
         let result = loader.load().unwrap();
 
         assert_eq!(result.pre.len(), 1);
@@ -799,7 +887,7 @@ platforms = ["darwin", "linux"]
 "#;
         fs::write(pre_dir.join("hook.toml"), toml_content).unwrap();
 
-        let loader = HookLoader::new(temp.path());
+        let loader = HookLoader::new(temp.path(), "linux");
         let result = loader.load().unwrap();
 
         assert_eq!(result.pre.len(), 1);
@@ -825,7 +913,7 @@ VAR = "value"
 "#;
         fs::write(pre_dir.join("hook.toml"), toml_content).unwrap();
 
-        let loader = HookLoader::new(temp.path());
+        let loader = HookLoader::new(temp.path(), "linux");
         let result = loader.load().unwrap();
 
         assert_eq!(result.pre.len(), 1);
@@ -846,7 +934,7 @@ timeout = 5
 "#;
         fs::write(pre_dir.join("hook.toml"), toml_content).unwrap();
 
-        let loader = HookLoader::new(temp.path());
+        let loader = HookLoader::new(temp.path(), "linux");
         let result = loader.load().unwrap();
 
         assert_eq!(result.pre.len(), 1);
@@ -862,7 +950,7 @@ timeout = 5
         fs::create_dir_all(hooks_dir.join("pre")).unwrap();
         fs::create_dir_all(hooks_dir.join("post")).unwrap();
 
-        let loader = HookLoader::new(temp.path());
+        let loader = HookLoader::new(temp.path(), "linux");
         let result = loader.load().unwrap();
 
         assert_eq!(result.pre.len(), 0);
@@ -879,7 +967,7 @@ timeout = 5
         fs::write(pre_dir.join("hook.toml"), "name = 'pre'\ncmd = 'echo pre'").unwrap();
         // Don't create post directory
 
-        let loader = HookLoader::new(temp.path());
+        let loader = HookLoader::new(temp.path(), "linux");
         let result = loader.load().unwrap();
 
         assert_eq!(result.pre.len(), 1);
@@ -900,10 +988,298 @@ timeout = 5
         .unwrap();
         // Don't create pre directory
 
-        let loader = HookLoader::new(temp.path());
+        let loader = HookLoader::new(temp.path(), "linux");
         let result = loader.load().unwrap();
 
         assert_eq!(result.pre.len(), 0);
         assert_eq!(result.post.len(), 1);
+    }
+
+    // ── Platform-specific script resolution ────────────────────────
+    //
+    // The loader should look for `scripts/{platform}/foo.sh` before
+    // falling back to `scripts/foo.sh`. Mirrors the chezmoi convention
+    // of `run_*` scripts under `.chezmoiscripts/{linux,darwin}/`.
+
+    #[test]
+    fn test_platform_specific_script_overrides_default() {
+        let temp = TempDir::new().unwrap();
+        let hooks_dir = create_hooks_dir_structure(temp.path());
+        let pre_dir = hooks_dir.join("pre");
+        let scripts_dir = pre_dir.join("scripts");
+        fs::create_dir_all(&pre_dir).unwrap();
+        fs::create_dir_all(scripts_dir.join("linux")).unwrap();
+
+        fs::write(
+            pre_dir.join("01-foo.toml"),
+            "name = 'foo'\nscript = 'scripts/install.sh.j2'\nplatforms = ['linux']\n",
+        )
+        .unwrap();
+        // Both versions exist; the linux one should win on linux.
+        fs::write(scripts_dir.join("install.sh.j2"), "default\n").unwrap();
+        fs::write(scripts_dir.join("linux").join("install.sh.j2"), "linux\n").unwrap();
+
+        let loader = HookLoader::new(temp.path(), "linux");
+        let result = loader.load().unwrap();
+
+        assert_eq!(result.pre.len(), 1);
+        assert!(
+            result.pre[0]
+                .script
+                .as_deref()
+                .unwrap()
+                .ends_with("scripts/linux/install.sh.j2"),
+            "linux script should win, got {:?}",
+            result.pre[0].script,
+        );
+        assert_eq!(result.pre[0].script_content.as_deref().unwrap(), "linux\n",);
+    }
+
+    #[test]
+    fn test_platform_hook_without_platform_script_is_an_error() {
+        // Hooks that declare `platforms` must provide the script inside
+        // the platform directory — the shared base path is NOT a
+        // fallback.
+        let temp = TempDir::new().unwrap();
+        let hooks_dir = create_hooks_dir_structure(temp.path());
+        let pre_dir = hooks_dir.join("pre");
+        let scripts_dir = pre_dir.join("scripts");
+        fs::create_dir_all(&pre_dir).unwrap();
+        fs::create_dir_all(&scripts_dir).unwrap();
+
+        fs::write(
+            pre_dir.join("01-foo.toml"),
+            "name = 'foo'\nscript = 'scripts/install.sh'\nplatforms = ['linux']\n",
+        )
+        .unwrap();
+        // Only the shared base script exists; loading must fail.
+        fs::write(scripts_dir.join("install.sh"), "default\n").unwrap();
+
+        let loader = HookLoader::new(temp.path(), "linux");
+        let result = loader.load();
+
+        let err = result.expect_err("missing platform script should be an error");
+        assert!(
+            err.to_string()
+                .contains("no script exists for platform 'linux'"),
+            "unexpected error: {err}"
+        );
+    }
+
+    #[test]
+    fn test_platform_hook_skipped_on_other_platform() {
+        // A darwin-only hook on a linux machine is skipped entirely:
+        // resolution is skipped (no error for the missing linux script),
+        // and the executor filters the hook out.
+        let temp = TempDir::new().unwrap();
+        let hooks_dir = create_hooks_dir_structure(temp.path());
+        let pre_dir = hooks_dir.join("pre");
+        let scripts_dir = pre_dir.join("scripts");
+        fs::create_dir_all(&pre_dir).unwrap();
+        fs::create_dir_all(scripts_dir.join("darwin")).unwrap();
+
+        fs::write(
+            pre_dir.join("01-foo.toml"),
+            "name = 'foo'\nscript = 'scripts/install.sh'\nplatforms = ['darwin']\n",
+        )
+        .unwrap();
+        fs::write(
+            scripts_dir.join("darwin").join("install.sh"),
+            "#!/bin/sh\necho darwin\n",
+        )
+        .unwrap();
+
+        let loader = HookLoader::new(temp.path(), "linux");
+        let result = loader.load().unwrap();
+
+        assert_eq!(result.pre.len(), 1);
+        assert_eq!(result.pre[0].script.as_deref(), Some("scripts/install.sh"));
+        assert_eq!(result.pre[0].script_content, None);
+    }
+
+    #[test]
+    fn test_darwin_loader_picks_darwin_script() {
+        let temp = TempDir::new().unwrap();
+        let hooks_dir = create_hooks_dir_structure(temp.path());
+        let pre_dir = hooks_dir.join("pre");
+        let scripts_dir = pre_dir.join("scripts");
+        fs::create_dir_all(&pre_dir).unwrap();
+        fs::create_dir_all(scripts_dir.join("linux")).unwrap();
+        fs::create_dir_all(scripts_dir.join("darwin")).unwrap();
+
+        fs::write(
+            pre_dir.join("01-foo.toml"),
+            "name = 'foo'\nscript = 'scripts/install.sh.j2'\nplatforms = ['linux','darwin']\n",
+        )
+        .unwrap();
+        fs::write(scripts_dir.join("linux").join("install.sh.j2"), "linux\n").unwrap();
+        fs::write(scripts_dir.join("darwin").join("install.sh.j2"), "darwin\n").unwrap();
+
+        let loader = HookLoader::new(temp.path(), "darwin");
+        let result = loader.load().unwrap();
+
+        assert_eq!(result.pre.len(), 1);
+        assert!(
+            result.pre[0]
+                .script
+                .as_deref()
+                .unwrap()
+                .ends_with("scripts/darwin/install.sh.j2"),
+            "darwin loader should pick darwin script, got {:?}",
+            result.pre[0].script,
+        );
+        assert_eq!(result.pre[0].script_content.as_deref().unwrap(), "darwin\n",);
+    }
+
+    #[test]
+    fn test_j2_autodetect_extensionless_script_after_platform_override() {
+        // Extensionless scripts must resolve to `install.j2` (not
+        // `install..j2`, which `with_extension` would produce), and the
+        // lookup must happen next to the platform-overridden path.
+        let temp = TempDir::new().unwrap();
+        let hooks_dir = create_hooks_dir_structure(temp.path());
+        let pre_dir = hooks_dir.join("pre");
+        let scripts_dir = pre_dir.join("scripts");
+        fs::create_dir_all(&pre_dir).unwrap();
+        fs::create_dir_all(scripts_dir.join("linux")).unwrap();
+
+        fs::write(
+            pre_dir.join("01-foo.toml"),
+            "name = 'foo'\nscript = 'scripts/install'\nplatforms = ['linux']\n",
+        )
+        .unwrap();
+        fs::write(
+            scripts_dir.join("linux").join("install"),
+            "#!/bin/sh\necho linux\n",
+        )
+        .unwrap();
+        fs::write(
+            scripts_dir.join("linux").join("install.j2"),
+            "echo {{ name }}\n",
+        )
+        .unwrap();
+
+        let loader = HookLoader::new(temp.path(), "linux");
+        let result = loader.load().unwrap();
+
+        assert_eq!(result.pre.len(), 1);
+        assert!(
+            result.pre[0]
+                .script
+                .as_deref()
+                .unwrap()
+                .ends_with("scripts/linux/install.j2"),
+            "adjacent .j2 next to the platform override should win, got {:?}",
+            result.pre[0].script,
+        );
+        assert_eq!(
+            result.pre[0].script_content.as_deref().unwrap(),
+            "echo {{ name }}\n",
+        );
+    }
+
+    #[test]
+    fn test_platform_override_with_j2_only() {
+        // Only the platform directory holds a `.j2` template (no plain
+        // file): the probe must still hit it and resolve to the template.
+        let temp = TempDir::new().unwrap();
+        let hooks_dir = create_hooks_dir_structure(temp.path());
+        let pre_dir = hooks_dir.join("pre");
+        let scripts_dir = pre_dir.join("scripts");
+        fs::create_dir_all(&pre_dir).unwrap();
+        fs::create_dir_all(scripts_dir.join("linux")).unwrap();
+
+        fs::write(
+            pre_dir.join("01-foo.toml"),
+            "name = 'foo'\nscript = 'scripts/install.sh'\nplatforms = ['linux']\n",
+        )
+        .unwrap();
+        fs::write(
+            scripts_dir.join("linux").join("install.sh.j2"),
+            "echo {{ name }}\n",
+        )
+        .unwrap();
+
+        let loader = HookLoader::new(temp.path(), "linux");
+        let result = loader.load().unwrap();
+
+        assert_eq!(result.pre.len(), 1);
+        assert!(
+            result.pre[0]
+                .script
+                .as_deref()
+                .unwrap()
+                .ends_with("scripts/linux/install.sh.j2"),
+            "platform .j2-only override should resolve, got {:?}",
+            result.pre[0].script,
+        );
+        assert_eq!(
+            result.pre[0].script_content.as_deref().unwrap(),
+            "echo {{ name }}\n",
+        );
+    }
+
+    #[test]
+    fn test_explicit_j2_script_falls_back_to_platform_plain_script() {
+        // The TOML names the `.j2` variant but the platform directory
+        // only holds the plain script: probing must be identical in both
+        // directories, so the platform plain script is used.
+        let temp = TempDir::new().unwrap();
+        let hooks_dir = create_hooks_dir_structure(temp.path());
+        let pre_dir = hooks_dir.join("pre");
+        let scripts_dir = pre_dir.join("scripts");
+        fs::create_dir_all(&pre_dir).unwrap();
+        fs::create_dir_all(scripts_dir.join("darwin")).unwrap();
+
+        fs::write(
+            pre_dir.join("01-foo.toml"),
+            "name = 'foo'\nscript = 'scripts/install.sh.j2'\nplatforms = ['darwin']\n",
+        )
+        .unwrap();
+        fs::write(
+            scripts_dir.join("darwin").join("install.sh"),
+            "#!/bin/sh\necho darwin\n",
+        )
+        .unwrap();
+
+        let loader = HookLoader::new(temp.path(), "darwin");
+        let result = loader.load().unwrap();
+
+        assert_eq!(result.pre.len(), 1);
+        assert!(
+            result.pre[0]
+                .script
+                .as_deref()
+                .unwrap()
+                .ends_with("scripts/darwin/install.sh"),
+            "platform plain script should win over nonexistent .j2, got {:?}",
+            result.pre[0].script,
+        );
+        assert_eq!(
+            result.pre[0].script_content.as_deref().unwrap(),
+            "#!/bin/sh\necho darwin\n",
+        );
+    }
+
+    #[test]
+    fn test_inject_platform_subdir_rejects_traversal() {
+        // Path-traversal guard: a malicious platform name must not be
+        // used to escape the script root.
+        assert!(inject_platform_subdir(Path::new("scripts/foo.sh"), "../etc").is_none());
+        assert!(inject_platform_subdir(Path::new("scripts/foo.sh"), "foo/bar").is_none());
+        assert!(inject_platform_subdir(Path::new("scripts/foo.sh"), "").is_none());
+        // Happy path: typical case.
+        assert_eq!(
+            inject_platform_subdir(Path::new("scripts/foo.sh"), "linux"),
+            Some(PathBuf::from("scripts/linux/foo.sh")),
+        );
+        // Bare filename with no parent segment: parent() returns Some(""),
+        // so the result is `linux/foo.sh` (relative to cwd). That's
+        // not a security issue, just unusual; we still produce a path
+        // so the caller can check existence.
+        assert_eq!(
+            inject_platform_subdir(Path::new("foo.sh"), "linux"),
+            Some(PathBuf::from("linux/foo.sh")),
+        );
     }
 }

@@ -91,6 +91,48 @@ platforms = ["darwin"]
 
 There are no platform subdirectories to create — the filter is the field.
 
+### Platform-specific scripts
+
+While the hook *definition* stays in `pre/` and `post/`, the *script*
+body is chosen by the hook's `platforms` field:
+
+- **`platforms` set** (e.g. `platforms = ["linux", "darwin"]`): the
+  loader resolves the script inside `scripts/{platform}/` only, where
+  `{platform}` is `CURRENT_PLATFORM.os` (`linux`, `darwin`,
+  `windows`). The platform directory must hold the script (plain or
+  `.j2`) — the shared base path is **not** a fallback, and a missing
+  platform script is a configuration error. If the current platform is
+  not in the hook's `platforms` list, the hook is skipped on this
+  machine.
+- **`platforms` unset/empty**: the hook is platform-agnostic and the
+  script resolves in `scripts/` directly.
+
+Probing is **identical in both directories** and favors the template:
+for the logical script name (the `script` value with any explicit
+`.j2` suffix stripped — `foo.sh.j2` probes `foo.sh`, `foo` probes
+`foo`), the directory is first probed for the adjacent `{logical}.j2`
+template, then the plain `{logical}` path. Only `.j2` scripts are
+rendered through the template engine, so platform scripts can freely
+use variables. Platform names containing `/`, `\`, or `..` are
+rejected, so the override cannot escape the script root.
+
+```text
+.guisu/hooks/
+├── pre/
+│   ├── 01-install-packages.toml      # platforms=["linux","darwin"]
+│   │                                 #   → scripts/{platform}/install-packages.sh
+│   ├── 02-cleanup.toml               # no platforms field
+│   │                                 #   → scripts/cleanup.sh (shared)
+│   └── scripts/
+│       ├── cleanup.sh               # platform-agnostic hook
+│       ├── linux/install-packages.sh
+│       └── darwin/install-packages.sh
+```
+
+This mirrors chezmoi's `.chezmoiscripts/{linux,darwin}/` layout: the
+TOML definition is a Guisu-level concern, the script body lives in
+platform subdirectories of `scripts/`.
+
 ## Other hook fields
 
 | Field | Default | Notes |

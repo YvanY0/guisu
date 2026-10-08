@@ -3,6 +3,7 @@
 //! This module provides helper functions for loading and managing hooks
 //! that are used by multiple commands (diff, status, etc.).
 
+use guisu_core::platform::CURRENT_PLATFORM;
 use guisu_engine::hooks::{HookCollections, HookLoader};
 use guisu_engine::state::{HookState, HookStatePersistence, RedbPersistentState};
 use std::path::Path;
@@ -41,7 +42,7 @@ pub fn load_hooks_and_state(
     }
 
     // Load hooks
-    let loader = HookLoader::new(source_dir);
+    let loader = HookLoader::new(source_dir, CURRENT_PLATFORM.os);
     let collections = loader.load().ok()?;
 
     if collections.is_empty() {

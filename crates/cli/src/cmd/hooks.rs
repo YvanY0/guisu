@@ -72,7 +72,7 @@ fn prepare_collections(
     source_dir: &Path,
     hook_filter: Option<&str>,
 ) -> Result<Option<guisu_engine::hooks::HookCollections>> {
-    let loader = HookLoader::new(source_dir);
+    let loader = HookLoader::new(source_dir, CURRENT_PLATFORM.os);
 
     if !loader.exists() {
         print_no_hooks_directory();
@@ -186,7 +186,7 @@ fn execute_and_persist(
     // last-run snapshot. Saving the filtered collection would leave hooks that
     // weren't in this run invisible to subsequent comparisons and cause them to
     // be reported as Latent forever.
-    let full_collections = HookLoader::new(source_dir)
+    let full_collections = HookLoader::new(source_dir, CURRENT_PLATFORM.os)
         .load()
         .context("Failed to load full hook collection for state persistence")?;
     state
@@ -228,7 +228,7 @@ fn print_no_hooks_directory() {
 /// - JSON serialization fails (when format is "json")
 pub fn run_list(source_dir: &Path, _config: &Config, format: &str) -> Result<()> {
     // Load hooks using HookLoader
-    let loader = HookLoader::new(source_dir);
+    let loader = HookLoader::new(source_dir, CURRENT_PLATFORM.os);
 
     if !loader.exists() {
         println!("{}", "No hooks directory found.".yellow());
@@ -313,7 +313,7 @@ pub fn run_check(
     let is_tty = std::io::stdout().is_terminal();
     let use_nerd_fonts = config.ui.icons.should_show_icons(is_tty);
     // Load hooks using HookLoader
-    let loader = HookLoader::new(source_dir);
+    let loader = HookLoader::new(source_dir, CURRENT_PLATFORM.os);
 
     if !loader.exists() {
         println!("{}", "No hooks directory found.".yellow());
@@ -405,7 +405,7 @@ pub fn run_show(source_dir: &Path, config: &Config, hook_name: &str) -> Result<(
 
 /// Load hooks from directory or return early if directory doesn't exist
 fn load_hooks_or_return(source_dir: &Path) -> Result<guisu_engine::hooks::HookCollections> {
-    let loader = HookLoader::new(source_dir);
+    let loader = HookLoader::new(source_dir, CURRENT_PLATFORM.os);
 
     if !loader.exists() {
         println!("{}", "No hooks directory found.".yellow());
@@ -562,7 +562,7 @@ pub fn handle_hooks_pre(
     use guisu_engine::hooks::config::HookMode;
 
     // Load hooks using HookLoader
-    let loader = HookLoader::new(source_dir);
+    let loader = HookLoader::new(source_dir, CURRENT_PLATFORM.os);
 
     if !loader.exists() {
         tracing::debug!("No hooks directory found, skipping");
@@ -652,7 +652,7 @@ pub fn handle_hooks_post(
     use guisu_engine::hooks::config::HookMode;
 
     // Load hooks using HookLoader
-    let loader = HookLoader::new(source_dir);
+    let loader = HookLoader::new(source_dir, CURRENT_PLATFORM.os);
 
     if !loader.exists() {
         tracing::debug!("No hooks directory found, skipping");
