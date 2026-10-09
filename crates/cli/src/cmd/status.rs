@@ -283,6 +283,9 @@ fn run_impl(
         SourceState::read(source_abs.to_owned()).context("Failed to read source state")?;
 
     if source_state.is_empty() {
+        // Hooks are compared against the state DB, not the source tree, so
+        // they can still have changes to show even with no tracked files.
+        print_hooks_status(source_dir, database, show_all, config);
         return Ok(());
     }
 
@@ -1126,30 +1129,28 @@ fn print_hooks_status(
                     || hook.cmd != last_hook.cmd
                     || hook.script != last_hook.script;
 
-                // For mode=onchange hooks, also check if rendered content hash changed.
-                // A missing saved hash means the hook has never been executed (or
-                // wasn't part of the most recent run); that's a `Latent` first-run
-                // signal, not a `Behind` change.
+                // Content-level changes are invisible to the metadata
+                // comparison above (`script_content` is a runtime-only field
+                // that never round-trips through `last_collections`), so
+                // compare the old side — recovered from the state DB —
+                // against the freshly rendered current content. This covers
+                // template and plain scripts in every mode, including
+                // onchange hooks whose diff comes from a dependency change.
                 if !has_changes
-                    && hook.mode == HookMode::OnChange
-                    && let Some(content) = &hook.script_content
-                    && let Some(saved_hash) = state.onchange_hashes.get(hook.name.as_str())
+                    && let (Some(script), Some(raw)) = (&hook.script, &hook.script_content)
                 {
-                    // Render current content and compute hash
-                    let rendered = render_script_content(
-                        source_dir,
-                        hook.script.as_ref().unwrap_or(&String::new()),
-                        content,
-                        config,
-                    );
-                    let current_hash = guisu_engine::hash_content(rendered.as_bytes());
-                    if &current_hash != saved_hash {
-                        has_changes = true;
+                    let old_content = match (&last_hook.script, &last_hook.script_content) {
+                        (Some(old_script), Some(old_raw)) => Some(render_script_content(
+                            source_dir, old_script, old_raw, config,
+                        )),
+                        _ => state.onchange_rendered.get(hook.name.as_str()).cloned(),
+                    };
+                    if let Some(old_content) = old_content {
+                        let new_content = render_script_content(source_dir, script, raw, config);
+                        if old_content != new_content {
+                            has_changes = true;
+                        }
                     }
-                    // No saved hash → leave has_changes as false; the hook will
-                    // fall through to the `Latent` branch below (handled by the
-                    // caller, since no entry in onchange_hashes means the hook
-                    // hasn't been executed yet).
                 }
 
                 if has_changes {

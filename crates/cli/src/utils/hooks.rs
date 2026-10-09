@@ -43,7 +43,13 @@ pub fn load_hooks_and_state(
 
     // Load hooks
     let loader = HookLoader::new(source_dir, CURRENT_PLATFORM.os);
-    let collections = loader.load().ok()?;
+    let collections = match loader.load() {
+        Ok(c) => c,
+        Err(e) => {
+            tracing::debug!("Failed to load hooks for diff/status: {e:#}");
+            return None;
+        }
+    };
 
     if collections.is_empty() {
         return None;
@@ -51,7 +57,13 @@ pub fn load_hooks_and_state(
 
     // Load state from database
     let mut persistence = HookStatePersistence::new(db);
-    let state = persistence.load().ok()?;
+    let state = match persistence.load() {
+        Ok(s) => s,
+        Err(e) => {
+            tracing::debug!("Failed to load hook state for diff/status: {e:#}");
+            return None;
+        }
+    };
 
     Some((collections, state))
 }
