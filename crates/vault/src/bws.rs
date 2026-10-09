@@ -6,7 +6,7 @@
 //! Template function: `bitwardenSecrets()`
 
 use crate::{Error, Result, SecretProvider, VaultCommand};
-use guisu_config::Env;
+use guisu_core::Env;
 use serde_json::Value as JsonValue;
 use std::process::Command;
 

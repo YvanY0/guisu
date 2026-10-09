@@ -10,10 +10,12 @@
 //!
 //! This crate has no dependencies on other guisu crates.
 
+pub mod env;
 pub mod error;
 pub mod path;
 pub mod platform;
 pub mod traits;
 
+pub use env::Env;
 pub use error::{Error, Result};
 pub use traits::TemplateRenderer;

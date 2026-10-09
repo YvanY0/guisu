@@ -10,7 +10,6 @@ name = "guisu_vault"
 
 [dependencies]
 guisu-core = { workspace = true }
-guisu-config = { workspace = true }
 
 indexmap.workspace = true
 serde_json.workspace = true

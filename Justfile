@@ -10,7 +10,7 @@ clippy:
 
 # Run tests
 test:
-    cargo test --workspace
+    cargo test --workspace --all-features --locked
 
 # Build release binary
 build:

@@ -183,9 +183,18 @@ impl PersistentState for RedbPersistentState {
             })?;
         let table_def = Self::table_def_with_storage(bucket)?;
 
-        // Table doesn't exist yet
-        let Ok(table) = read_txn.open_table(table_def) else {
-            return Ok(None);
+        // A missing table means this bucket has no state yet. Other errors
+        // indicate that the database could not be read reliably.
+        let table = match read_txn.open_table(table_def) {
+            Ok(table) => table,
+            Err(redb::TableError::TableDoesNotExist(_)) => return Ok(None),
+            Err(e) => {
+                return Err(Error::BucketOperation {
+                    operation: "open_table",
+                    bucket: bucket.to_string(),
+                    source: Box::new(e),
+                });
+            }
         };
 
         match table.get(key) {
@@ -342,8 +351,16 @@ impl PersistentState for RedbPersistentState {
         let table_def = Self::table_def_with_storage(bucket)?;
 
         // No bucket yet
-        let Ok(table) = read_txn.open_table(table_def) else {
-            return Ok(());
+        let table = match read_txn.open_table(table_def) {
+            Ok(table) => table,
+            Err(redb::TableError::TableDoesNotExist(_)) => return Ok(()),
+            Err(e) => {
+                return Err(Error::BucketOperation {
+                    operation: "open_table",
+                    bucket: bucket.to_string(),
+                    source: Box::new(e),
+                });
+            }
         };
 
         let iter = table.iter().map_err(|e| Error::BucketOperation {
@@ -390,6 +407,53 @@ mod tests {
         let db_path = temp_dir.path().join("test.db");
         let db = RedbPersistentState::new(&db_path).expect("failed to create database");
         (temp_dir, db)
+    }
+
+    #[test]
+    fn test_get_missing_bucket_returns_none() {
+        let (_temp, db) = test_db_setup();
+        assert_eq!(
+            db.get(ENTRY_STATE_BUCKET, b"key").expect("get failed"),
+            None
+        );
+    }
+
+    #[test]
+    fn test_get_propagates_table_type_mismatch() {
+        let (_temp, db) = test_db_setup();
+        let write_txn = db.db.begin_write().expect("failed to begin write");
+        {
+            let mut table = write_txn
+                .open_table(TableDefinition::<&str, &str>::new(ENTRY_STATE_BUCKET))
+                .expect("failed to create conflicting table");
+            table
+                .insert("wrong-key", "wrong-value")
+                .expect("failed to write conflicting table");
+        }
+        write_txn
+            .commit()
+            .expect("failed to commit conflicting table");
+
+        let error = db
+            .get(ENTRY_STATE_BUCKET, b"key")
+            .expect_err("table type mismatch must propagate");
+        assert!(matches!(
+            error,
+            Error::BucketOperation {
+                operation: "open_table",
+                ..
+            }
+        ));
+        let for_each_error = db
+            .for_each(ENTRY_STATE_BUCKET, |_, _| Ok(()))
+            .expect_err("for_each table type mismatch must propagate");
+        assert!(matches!(
+            for_each_error,
+            Error::BucketOperation {
+                operation: "open_table",
+                ..
+            }
+        ));
     }
 
     #[test]

@@ -202,14 +202,21 @@ impl IdentityFile {
         #[cfg(unix)]
         {
             use std::io::Write;
-            use std::os::unix::fs::OpenOptionsExt;
+            use std::os::unix::fs::{OpenOptionsExt, PermissionsExt};
 
             let mut file = fs::OpenOptions::new()
                 .write(true)
                 .create(true)
-                .truncate(true)
-                .mode(0o600) // Set permissions on creation - no race condition
+                .truncate(false)
+                .mode(0o600)
                 .open(path_ref)
+                .map_err(|e| Error::IdentityFile {
+                    operation: "write".to_string(),
+                    path: path_str.clone(),
+                    source: e,
+                })?;
+            file.set_permissions(fs::Permissions::from_mode(0o600))
+                .and_then(|()| file.set_len(0))
                 .map_err(|e| Error::IdentityFile {
                     operation: "write".to_string(),
                     path: path_str.clone(),
@@ -505,6 +512,26 @@ mod tests {
         if let Err(e) = result {
             assert!(matches!(e, Error::IdentityNotFound { .. }));
         }
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn test_identity_file_save_restricts_existing_file_permissions() {
+        use std::os::unix::fs::PermissionsExt;
+
+        let temp_file = NamedTempFile::new().expect("Failed to create temp file");
+        fs::set_permissions(temp_file.path(), fs::Permissions::from_mode(0o644))
+            .expect("Failed to set permissive mode");
+        let identities = vec![Identity::generate()];
+
+        IdentityFile::save(temp_file.path(), &identities).expect("Failed to save identity file");
+
+        let mode = fs::metadata(temp_file.path())
+            .expect("Failed to read identity metadata")
+            .permissions()
+            .mode()
+            & 0o777;
+        assert_eq!(mode, 0o600);
     }
 
     #[test]

@@ -1007,8 +1007,10 @@ fn apply_target_entry(
             // Remove existing symlink/file if it exists
             if dest_path.as_path().exists() || dest_path.as_path().is_symlink() {
                 if dest_path.as_path().is_dir() && !dest_path.as_path().is_symlink() {
-                    fs::remove_dir_all(dest_path.as_path()).with_context(|| {
-                        format!("Failed to remove existing directory: {dest_path:?}")
+                    fs::remove_dir(dest_path.as_path()).with_context(|| {
+                        format!(
+                            "Failed to remove existing directory (must be empty): {dest_path:?}"
+                        )
                     })?;
                 } else {
                     fs::remove_file(dest_path.as_path()).with_context(|| {
@@ -1432,6 +1434,31 @@ mod tests {
                 "apply must chmod existing dest to source mode (was {actual_mode:o})"
             );
         }
+    }
+
+    #[test]
+    fn test_apply_symlink_refuses_nonempty_destination_directory() {
+        let temp = TempDir::new().expect("Failed to create temp dir");
+        let temp_canon =
+            std::fs::canonicalize(temp.path()).expect("Failed to canonicalize temp dir");
+        let dest_dir = AbsPath::new(temp_canon).expect("Failed to create AbsPath");
+        let rel_path = guisu_core::path::RelPath::new("occupied".into()).expect("Invalid rel path");
+        let dest_path = dest_dir.join(&rel_path);
+        std::fs::create_dir(dest_path.as_path()).expect("Failed to create destination dir");
+        let preserved = dest_path.as_path().join("user-data.txt");
+        std::fs::write(&preserved, b"keep me").expect("Failed to write user data");
+        let entry = TargetEntry::Symlink {
+            path: rel_path,
+            target: PathBuf::from("target"),
+        };
+
+        let result = apply_target_entry(&entry, &dest_path, &[], false);
+
+        assert!(result.is_err(), "nonempty destination must not be removed");
+        assert_eq!(
+            std::fs::read(&preserved).expect("user data was removed"),
+            b"keep me"
+        );
     }
 
     #[test]
