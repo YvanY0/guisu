@@ -8,7 +8,6 @@ use guisu_core::path::AbsPath;
 use guisu_engine::adapters::crypto::CryptoDecryptorAdapter;
 use guisu_engine::adapters::template::TemplateRendererAdapter;
 use guisu_engine::entry::{SourceEntry, TargetEntry};
-use guisu_engine::hooks::config::HookMode;
 use guisu_engine::processor::ContentProcessor;
 use guisu_engine::state::{RedbPersistentState, SourceState, TargetState};
 use guisu_template::TemplateContext;
@@ -446,6 +445,9 @@ fn run_impl(
         SourceState::read(source_abs.to_owned()).context("Failed to read source state")?;
 
     if source_state.is_empty() {
+        // Hooks are compared against the state DB, not the source tree, so
+        // they can still have changes to show even with no tracked files.
+        let _hooks_displayed = print_hooks_status(source_dir, config, db);
         return Ok(());
     }
 
@@ -1040,15 +1042,20 @@ fn print_cmd_changes(old_cmd: Option<&str>, new_cmd: Option<&str>) {
 }
 
 /// Print script changes between hooks
-#[allow(clippy::too_many_arguments)]
+///
+/// `rendered_content` maps hook names to the script content recorded at the
+/// last run; it provides the old side of the diff when the previous hook
+/// came from the state DB (where `script_content` is never persisted).
 fn print_script_changes(
     source_dir: &Path,
     prev: &guisu_engine::hooks::Hook,
     current: &guisu_engine::hooks::Hook,
     config: &Config,
+    rendered_content: &std::collections::HashMap<String, String>,
 ) {
-    // For non-template scripts, we can do an early return if content is identical
-    // For template scripts, we need to render and compare since dependencies might have changed
+    // For non-template scripts with the same path, we can do an early return if
+    // content is identical. For template scripts, we need to render and compare
+    // since dependencies might have changed.
     let is_template = current
         .script
         .as_ref()
@@ -1061,88 +1068,142 @@ fn print_script_changes(
         return;
     }
 
-    // Different script paths
     if current.script != prev.script {
-        match (&prev.script, &current.script) {
-            (Some(old_script), Some(new_script)) if old_script != new_script => {
-                let display_old = display_script_name(old_script);
-                let display_new = display_script_name(new_script);
+        print_script_path_change(source_dir, prev, current, config, rendered_content);
+    } else if let Some(script) = &current.script {
+        // Same script path - compare rendered content to also catch changes
+        // in template dependencies
+        let old_rendered = hook_script_content(source_dir, prev, config, rendered_content);
+        let new_rendered = current
+            .script
+            .as_ref()
+            .zip(current.script_content.as_ref())
+            .map(|(script, raw)| render_script_content(source_dir, script, raw, config));
+
+        if let (Some(old), Some(new)) = (&old_rendered, &new_rendered)
+            && old != new
+        {
+            let display_script = display_script_name(script);
+            println!(
+                "    {} script content changed: {}",
+                "~".yellow().bold(),
+                display_script
+            );
+
+            let diff_output = generate_text_diff(old, new);
+            for line in diff_output.lines() {
+                println!("      {line}");
+            }
+        }
+    }
+}
+
+/// Print the diff when the resolved script path changed.
+fn print_script_path_change(
+    source_dir: &Path,
+    prev: &guisu_engine::hooks::Hook,
+    current: &guisu_engine::hooks::Hook,
+    config: &Config,
+    rendered_content: &std::collections::HashMap<String, String>,
+) {
+    let old_rendered = hook_script_content(source_dir, prev, config, rendered_content);
+
+    let new_rendered = current
+        .script
+        .as_ref()
+        .zip(current.script_content.as_ref())
+        .map(|(script, raw)| render_script_content(source_dir, script, raw, config));
+
+    match (&prev.script, &current.script) {
+        (Some(old_script), Some(new_script)) if old_script != new_script => {
+            let display_old = display_script_name(old_script);
+            let display_new = display_script_name(new_script);
+            if display_old == display_new {
+                // Only the .j2 suffix differs (e.g. the script became a
+                // template) — the script itself did not move, so show a
+                // content diff instead of a no-op rename.
+                match (&old_rendered, &new_rendered) {
+                    (Some(old), Some(new)) if old != new => {
+                        println!(
+                            "    {} script content changed: {}",
+                            "~".yellow().bold(),
+                            display_new
+                        );
+                        let diff_output = generate_text_diff(old, new);
+                        for line in diff_output.lines() {
+                            println!("      {line}");
+                        }
+                    }
+                    (Some(_), Some(_)) => {
+                        // Cosmetic .j2 change only; nothing to show.
+                    }
+                    _ => {
+                        // Old content unavailable; fall back to the arrow.
+                        println!(
+                            "    {} script: {} -> {}",
+                            "~".yellow().bold(),
+                            display_old.red(),
+                            display_new.green()
+                        );
+                    }
+                }
+            } else {
                 println!(
                     "    {} script: {} -> {}",
                     "~".yellow().bold(),
                     display_old.red(),
                     display_new.green()
                 );
-
-                if let (Some(old_content), Some(new_content)) =
-                    (&prev.script_content, &current.script_content)
-                {
-                    let old_rendered =
-                        render_script_content(source_dir, old_script, old_content, config);
-                    let new_rendered =
-                        render_script_content(source_dir, new_script, new_content, config);
-                    let diff_output = generate_text_diff(&old_rendered, &new_rendered);
+                if let (Some(old), Some(new)) = (&old_rendered, &new_rendered) {
+                    let diff_output = generate_text_diff(old, new);
                     for line in diff_output.lines() {
                         println!("      {line}");
                     }
                 }
             }
-            (Some(old_script), None) => {
-                let display_old = display_script_name(old_script);
-                println!(
-                    "    {} script removed: {}",
-                    "-".red().bold(),
-                    display_old.red()
-                );
-                if let Some(old_content) = &prev.script_content {
-                    let rendered =
-                        render_script_content(source_dir, old_script, old_content, config);
-                    for line in rendered.lines() {
-                        println!("      - {}", line.red());
-                    }
-                }
-            }
-            (None, Some(new_script)) => {
-                let display_new = display_script_name(new_script);
-                println!(
-                    "    {} script added: {}",
-                    "+".green().bold(),
-                    display_new.green()
-                );
-                if let Some(new_content) = &current.script_content {
-                    let rendered =
-                        render_script_content(source_dir, new_script, new_content, config);
-                    for line in rendered.lines() {
-                        println!("      + {}", line.green());
-                    }
-                }
-            }
-            _ => {}
         }
-    } else if let Some(script) = &current.script {
-        // Same script path - check if content changed (compare rendered content for templates)
-        if let (Some(old_content), Some(new_content)) =
-            (&prev.script_content, &current.script_content)
-        {
-            // Render both versions to detect changes in template dependencies
-            let old_rendered = render_script_content(source_dir, script, old_content, config);
-            let new_rendered = render_script_content(source_dir, script, new_content, config);
-
-            // Compare rendered content instead of raw template content
-            if old_rendered != new_rendered {
-                let display_script = display_script_name(script);
-                println!(
-                    "    {} script content changed: {}",
-                    "~".yellow().bold(),
-                    display_script
-                );
-
-                let diff_output = generate_text_diff(&old_rendered, &new_rendered);
-                for line in diff_output.lines() {
-                    println!("      {line}");
+        (Some(old_script), None) => {
+            let display_old = display_script_name(old_script);
+            println!(
+                "    {} script removed: {}",
+                "-".red().bold(),
+                display_old.red()
+            );
+            if let Some(old) = &old_rendered {
+                for line in old.lines() {
+                    println!("      - {}", line.red());
                 }
             }
         }
+        (None, Some(new_script)) => {
+            let display_new = display_script_name(new_script);
+            println!(
+                "    {} script added: {}",
+                "+".green().bold(),
+                display_new.green()
+            );
+            if let Some(new) = &new_rendered {
+                for line in new.lines() {
+                    println!("      + {}", line.green());
+                }
+            }
+        }
+        _ => {}
+    }
+}
+
+/// Rendered content of a hook's script: the persisted raw content rendered,
+/// or — when unavailable (`script_content` is `#[serde(skip)]` and never
+/// round-trips through the state DB) — the content recorded at the last run.
+fn hook_script_content(
+    source_dir: &Path,
+    hook: &guisu_engine::hooks::Hook,
+    config: &Config,
+    rendered_content: &std::collections::HashMap<String, String>,
+) -> Option<String> {
+    match (&hook.script, &hook.script_content) {
+        (Some(script), Some(raw)) => Some(render_script_content(source_dir, script, raw, config)),
+        _ => rendered_content.get(hook.name.as_str()).cloned(),
     }
 }
 
@@ -1174,6 +1235,7 @@ fn print_hook_diff(
     stage: &str,
     platform: &str,
     config: &Config,
+    rendered_content: &std::collections::HashMap<String, String>,
 ) {
     let is_active = current.should_run_on(platform);
 
@@ -1190,7 +1252,7 @@ fn print_hook_diff(
             println!("  {} hook: {}", stage, current.name.yellow());
 
             print_cmd_changes(prev.cmd.as_deref(), current.cmd.as_deref());
-            print_script_changes(source_dir, prev, current, config);
+            print_script_changes(source_dir, prev, current, config, rendered_content);
             print_other_changes(prev, current);
         }
     }
@@ -1288,7 +1350,6 @@ pub fn compare_and_print_hooks(
     stage: &str,
     platform: &str,
     config: &Config,
-    onchange_hashes: &std::collections::HashMap<String, [u8; 32]>,
     onchange_rendered: &std::collections::HashMap<String, String>,
 ) -> bool {
     let last_names: HashSet<_> = last_hooks.iter().map(|h| h.name.as_str()).collect();
@@ -1298,7 +1359,15 @@ pub fn compare_and_print_hooks(
     // New hooks
     for hook in current_hooks {
         if !last_names.contains(hook.name.as_str()) {
-            print_hook_diff(source_dir, hook, None, stage, platform, config);
+            print_hook_diff(
+                source_dir,
+                hook,
+                None,
+                stage,
+                platform,
+                config,
+                onchange_rendered,
+            );
             any_printed = true;
         }
     }
@@ -1314,107 +1383,46 @@ pub fn compare_and_print_hooks(
     // Modified hooks
     for hook in current_hooks {
         if let Some(last_hook) = last_hooks.iter().find(|h| h.name == hook.name) {
-            // For template scripts (.j2), check rendered content hash for mode=onchange
-            let is_template = hook
-                .script
-                .as_ref()
-                .is_some_and(|s| s.to_lowercase().ends_with(".j2"));
-            // `script_content` is intentionally excluded: it's a runtime-only
-            // field (#[serde(skip)]) that never round-trips through the
-            // persistent `last_collections`, so comparing it would always
-            // register a false change after any run.
+            // `script_content` is intentionally excluded from the metadata
+            // comparison: it's a runtime-only field (#[serde(skip)]) that
+            // never round-trips through the persistent `last_collections`, so
+            // comparing it would always register a false change after any run.
             let mut has_changes = hook.order != last_hook.order
                 || hook.mode != last_hook.mode
                 || hook.cmd != last_hook.cmd
                 || hook.script != last_hook.script;
 
-            // For mode=onchange templates, check if rendered content hash changed
+            // Metadata alone can't see script content edits, so compare the
+            // old side — recovered from the state DB by `hook_script_content`
+            // — against the freshly rendered current content. This covers
+            // template and plain scripts in every mode, including onchange
+            // hooks whose diff comes from a template dependency change.
             if !has_changes
-                && is_template
-                && hook.mode == HookMode::OnChange
-                && let Some(content) = &hook.script_content
+                && let (Some(script), Some(raw)) = (&hook.script, &hook.script_content)
+                && let Some(old_content) =
+                    hook_script_content(source_dir, last_hook, config, onchange_rendered)
             {
-                // Render current content and compute hash
-                let rendered = render_script_content(
-                    source_dir,
-                    hook.script
-                        .as_ref()
-                        .expect("script must exist for template hook"),
-                    content,
-                    config,
-                );
-                let current_hash = guisu_engine::hash_content(rendered.as_bytes());
-
-                // Compare with saved hash
-                if let Some(saved_hash) = onchange_hashes.get(hook.name.as_str()) {
-                    if current_hash != *saved_hash {
-                        has_changes = true;
-                    }
-                } else {
-                    // No saved hash means first run or hook was added
+                let new_content = render_script_content(source_dir, script, raw, config);
+                if old_content != new_content {
                     has_changes = true;
                 }
             }
 
-            // Only show hooks that have actual changes
+            // Only show hooks that have actual changes. The old side of any
+            // script content diff is recovered from the state DB inside
+            // print_hook_diff, which covers both plain script edits and
+            // onchange dependency changes.
             if has_changes {
-                // Check if this is specifically an onchange dependency change.
-                // `script_content` is `#[serde(skip)]` and never persisted, so we
-                // cannot compare it directly — instead we hash the *rendered*
-                // content, which `HookState::onchange_rendered` does persist.
-                let current_rendered_hash = if is_template && hook.mode == HookMode::OnChange {
-                    hook.script.as_ref().zip(hook.script_content.as_ref()).map(
-                        |(script, content)| {
-                            let rendered =
-                                render_script_content(source_dir, script, content, config);
-                            guisu_engine::hash_content(rendered.as_bytes())
-                        },
-                    )
-                } else {
-                    None
-                };
-                let saved_rendered_hash = current_rendered_hash.and_then(|_h| {
-                    onchange_rendered
-                        .get(hook.name.as_str())
-                        .map(|r| guisu_engine::hash_content(r.as_bytes()))
-                });
-                let is_onchange_dep_change = is_template
-                    && hook.mode == HookMode::OnChange
-                    && hook.order == last_hook.order
-                    && hook.mode == last_hook.mode
-                    && hook.cmd == last_hook.cmd
-                    && hook.script == last_hook.script
-                    && current_rendered_hash == saved_rendered_hash;
-
-                if is_onchange_dep_change {
-                    // Special handling for onchange dependency changes - show unified diff
-                    if let (Some(script), Some(content)) = (&hook.script, &hook.script_content) {
-                        // Render current content
-                        let new_rendered =
-                            render_script_content(source_dir, script, content, config);
-
-                        // Get old rendered content from state
-                        if let Some(old_rendered) = onchange_rendered.get(hook.name.as_str()) {
-                            // Generate unified diff
-                            let display_script = display_script_name(script);
-                            let diff = generate_unified_diff(
-                                old_rendered,
-                                &new_rendered,
-                                &format!("a/{display_script}"),
-                                &format!("b/{display_script}"),
-                                None,
-                                None,
-                            );
-
-                            // Print the diff
-                            print!("{diff}");
-                            any_printed = true;
-                        }
-                    }
-                } else {
-                    print_hook_diff(source_dir, hook, Some(last_hook), stage, platform, config);
-                    any_printed = true;
-                }
+                print_hook_diff(
+                    source_dir,
+                    hook,
+                    Some(last_hook),
+                    stage,
+                    platform,
+                    config,
+                    onchange_rendered,
+                );
+                any_printed = true;
             }
         }
     }
@@ -1450,7 +1458,6 @@ fn print_hooks_status(source_dir: &Path, config: &Config, db: &mut RedbPersisten
                     "pre",
                     platform,
                     config,
-                    &state.onchange_hashes,
                     &state.onchange_rendered,
                 );
                 any_hooks_printed = any_hooks_printed || printed;
@@ -1465,7 +1472,6 @@ fn print_hooks_status(source_dir: &Path, config: &Config, db: &mut RedbPersisten
                     "post",
                     platform,
                     config,
-                    &state.onchange_hashes,
                     &state.onchange_rendered,
                 );
                 any_hooks_printed = any_hooks_printed || printed;

@@ -85,6 +85,8 @@ guisu diff [FILES]... [FLAGS]
 
 Shows a diff between target and destination. The format follows `[ui] diffFormat` (`unified` / `split` / `inline`). Honours the same source/destination overrides as `apply`.
 
+For hooks, the section after "Processing hooks" compares the current hooks against the state from the last run and shows script content diffs (rendered for `.j2` templates) alongside attribute changes. Content for the old side comes from the last run, so hooks must have run at least once with the new script before a content diff appears.
+
 ### `guisu status`
 
 ```bash

@@ -79,8 +79,9 @@ pub struct HookState {
     /// Maps hook name to blake3 hash of its content (cmd or script, fixed 32-byte array)
     #[serde(default)]
     pub onchange_hashes: std::collections::HashMap<String, [u8; 32]>,
-    /// Rendered content for hooks with mode=onchange (for diff display)
-    /// Maps hook name to rendered script content
+    /// Script content from the last run, per hook (for diff display)
+    /// Maps hook name to rendered (template) or raw (plain) script content.
+    /// Field name kept for state-DB compatibility.
     #[serde(default)]
     pub onchange_rendered: std::collections::HashMap<String, String>,
     /// Snapshot of hooks from last execution (for diff display)
@@ -131,7 +132,7 @@ impl HookState {
         self.onchange_hashes.insert(hook_name, content_hash);
     }
 
-    /// Update the rendered content for a hook with mode=onchange (for diff display)
+    /// Update the script content recorded for a hook (for diff display)
     pub fn update_onchange_rendered(&mut self, hook_name: String, rendered_content: String) {
         self.onchange_rendered.insert(hook_name, rendered_content);
     }

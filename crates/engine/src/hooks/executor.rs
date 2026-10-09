@@ -75,7 +75,8 @@ where
     persistent_onchange: std::collections::HashMap<String, [u8; 32]>,
     /// Content hashes for onchange hooks executed in this session (thread-safe, blake3 hashes, 32 bytes)
     onchange_hashes: std::sync::Arc<std::sync::Mutex<std::collections::HashMap<String, [u8; 32]>>>,
-    /// Rendered content for onchange hooks executed in this session (thread-safe)
+    /// Rendered (or raw) script content from the last run, per hook, for diff
+    /// display (thread-safe; keeps the historical "onchange" name)
     onchange_rendered: std::sync::Arc<std::sync::Mutex<std::collections::HashMap<String, String>>>,
 }
 
@@ -163,7 +164,7 @@ where
             .clone()
     }
 
-    /// Get the rendered content for hooks with mode=onchange from this session
+    /// Get the script content used by hooks in this session, per hook name
     ///
     /// This should be saved to persistent state after running hooks for diff display
     ///
@@ -293,7 +294,10 @@ where
 
     /// Mark a hook as executed based on its mode
     ///
-    /// Accepts a `cached_hash` and `rendered_content` from `should_skip_hook` to avoid redundant work
+    /// Accepts a `cached_hash` and `rendered_content` from `should_skip_hook` to avoid redundant work.
+    /// The rendered (or raw) script content is persisted for ALL modes so
+    /// `guisu diff` can show a real old-vs-new script diff; the state field
+    /// keeps its historical `onchange_rendered` name.
     fn mark_hook_executed(
         &self,
         hook: &Hook,
@@ -323,15 +327,16 @@ where
                     .lock()
                     .expect("OnChange hashes mutex poisoned")
                     .insert(hook.name.to_string(), content_hash);
-
-                // Save rendered content if available (for diff display)
-                if let Some(content) = rendered_content {
-                    self.onchange_rendered
-                        .lock()
-                        .expect("OnChange rendered mutex poisoned")
-                        .insert(hook.name.to_string(), content);
-                }
             }
+        }
+
+        // Save rendered/raw script content if available (for diff display),
+        // regardless of mode.
+        if let Some(content) = rendered_content {
+            self.onchange_rendered
+                .lock()
+                .expect("OnChange rendered mutex poisoned")
+                .insert(hook.name.to_string(), content);
         }
     }
 
@@ -415,7 +420,7 @@ where
                 .map(|(hook, skip_result)| {
                     // Reuse cached hash and rendered content from skip check
                     let cached_hash = skip_result.cached_hash;
-                    let rendered_content = skip_result.rendered_content.clone();
+                    let skip_rendered = skip_result.rendered_content.clone();
 
                     // Create a span for this hook execution with structured fields
                     let span = tracing::info_span!(
@@ -431,8 +436,12 @@ where
                     let start = std::time::Instant::now();
                     tracing::debug!("Starting hook execution");
 
-                    // Execute hook
-                    let result = self.execute_hook(hook);
+                    // Execute hook; capture the content it ran with so it can
+                    // be persisted for diff display on any mode.
+                    let (result, executed_content) = match self.execute_hook(hook) {
+                        Ok(content) => (Ok(()), content),
+                        Err(e) => (Err(e), None),
+                    };
 
                     let elapsed = start.elapsed();
                     match &result {
@@ -459,7 +468,9 @@ where
                         }
                     }
 
-                    (cached_hash, rendered_content, result)
+                    // Prefer the content computed during the skip check
+                    // (OnChange); fall back to what execution actually used.
+                    (cached_hash, skip_rendered.or(executed_content), result)
                 })
                 .collect();
 
@@ -491,12 +502,17 @@ where
     }
 
     /// Execute a single hook
-    fn execute_hook(&self, hook: &Hook) -> Result<()> {
+    ///
+    /// Returns the script content used for execution (rendered for templates,
+    /// raw for plain scripts), or `None` for command hooks. The content is
+    /// persisted in the state DB so `guisu diff` can show a real old-vs-new
+    /// diff on the next run.
+    fn execute_hook(&self, hook: &Hook) -> Result<Option<String>> {
         // If hook uses 'script' and is a template (.j2 extension), process it specially
         if let Some(script) = &hook.script
             && script.to_lowercase().ends_with(".j2")
         {
-            return self.execute_template_script(hook);
+            return self.execute_template_script(hook).map(Some);
         }
 
         // Determine working directory
@@ -522,6 +538,7 @@ where
             (Some(cmd), None) => {
                 // Direct command execution (no shell)
                 self.execute_command(cmd, &working_dir, &env, hook.timeout)
+                    .map(|()| None)
                     .map_err(|e| {
                         Error::HookExecution(format!("Hook '{}' command failed: {}", hook.name, e))
                     })
@@ -533,12 +550,17 @@ where
                 } else {
                     self.source_dir.join(script_path)
                 };
-                script::execute_script(&script_abs, &working_dir, &env, hook.timeout).map_err(|e| {
-                    Error::HookExecution(format!(
-                        "Hook '{}' script '{}' failed: {}",
-                        hook.name, script_path, e
-                    ))
-                })
+                // Read the content so it can be persisted for diff display;
+                // a failed read is reported by execute_script itself.
+                let content = fs::read_to_string(&script_abs).ok();
+                script::execute_script(&script_abs, &working_dir, &env, hook.timeout)
+                    .map(|()| content)
+                    .map_err(|e| {
+                        Error::HookExecution(format!(
+                            "Hook '{}' script '{}' failed: {}",
+                            hook.name, script_path, e
+                        ))
+                    })
             }
             (None, None) => Err(Error::HookExecution(format!(
                 "Hook '{}' has neither cmd nor script (validation should have caught this)",
@@ -625,7 +647,7 @@ where
     }
 
     /// Execute a template script by rendering it first
-    fn execute_template_script(&self, hook: &Hook) -> Result<()> {
+    fn execute_template_script(&self, hook: &Hook) -> Result<String> {
         let script_path = hook
             .script
             .as_ref()
@@ -672,6 +694,7 @@ where
         };
 
         script::execute_processed_script(&processed_content, &working_dir, &env, hook.timeout)
+            .map(|()| processed_content)
     }
 }
 
