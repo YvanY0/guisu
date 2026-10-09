@@ -751,8 +751,24 @@ fn generate_unified_diff(
         new_mode_str.dimmed()
     );
 
-    // Use similar's UnifiedDiff to generate hunks, but manually color each line
-    // based on ChangeTag instead of parsing string output
+    // Hunk body shared with the hook script renderer (`generate_text_diff`)
+    // so file and hook diffs stay visually identical.
+    output.push_str(&render_diff_hunks(&diff));
+
+    output
+}
+
+/// Render a line diff as git-style hunks: up to 3 lines of context around
+/// each change, `@@` hunk headers, and a blank line between hunks. Unchanged
+/// regions far from any change are omitted, like `git diff`.
+///
+/// Shared by the file renderer (`generate_unified_diff`) and the hook script
+/// renderer (`generate_text_diff`); line coloring matches `ChangeTag` instead
+/// of parsing string output, which avoids ambiguity when lines naturally
+/// start with diff markers like `---`.
+fn render_diff_hunks(diff: &TextDiff<'_, '_, str>) -> String {
+    let mut output = String::new();
+
     for (idx, group) in diff.grouped_ops(3).iter().enumerate() {
         if idx > 0 {
             output.push('\n'); // Add blank line between hunks
@@ -1265,28 +1281,7 @@ fn print_hook_diff(
 /// Generate unified diff for text content
 fn generate_text_diff(old: &str, new: &str) -> String {
     let diff = TextDiff::from_lines(old, new);
-    let mut output = String::new();
-
-    for change in diff.iter_all_changes() {
-        let sign = match change.tag() {
-            ChangeTag::Delete => "-",
-            ChangeTag::Insert => "+",
-            ChangeTag::Equal => " ",
-        };
-        let line = format!("{}{}", sign, change.value());
-        let colored_line = match change.tag() {
-            ChangeTag::Delete => line.red().to_string(),
-            ChangeTag::Insert => line.green().to_string(),
-            ChangeTag::Equal => line,
-        };
-        let _ = write!(output, "{colored_line}");
-
-        if !change.value().ends_with('\n') {
-            output.push('\n');
-        }
-    }
-
-    output
+    render_diff_hunks(&diff)
 }
 
 /// Print removed hook with content
@@ -1770,7 +1765,8 @@ mod tests {
         assert!(result.contains("@@ -0,0 +1,5 @@"));
     }
 
-    // Tests for generate_text_diff
+    // Tests for generate_text_diff (git-style hunked output via
+    // render_diff_hunks, shared with the file renderer)
 
     #[test]
     fn test_generate_text_diff_no_change() {
@@ -1779,9 +1775,8 @@ mod tests {
 
         let result = generate_text_diff(old, new);
 
-        // Should show equal lines with space prefix
-        assert!(result.contains(" line1"));
-        assert!(result.contains(" line2"));
+        // Identical content produces no hunks
+        assert_eq!(result, "");
     }
 
     #[test]
@@ -1791,8 +1786,10 @@ mod tests {
 
         let result = generate_text_diff(old, new);
 
-        assert!(result.contains("line1"));
-        assert!(result.contains("line2"));
+        assert!(result.contains("@@"));
+        assert!(result.contains(" line1\n")); // context
+        assert!(result.contains("+line2\n"));
+        assert!(!result.contains("-line1"));
     }
 
     #[test]
@@ -1802,8 +1799,8 @@ mod tests {
 
         let result = generate_text_diff(old, new);
 
-        assert!(result.contains("line1"));
-        assert!(result.contains("line2")); // Will be in output with - prefix
+        assert!(result.contains(" line1\n")); // context
+        assert!(result.contains("-line2\n"));
     }
 
     #[test]
@@ -1813,10 +1810,10 @@ mod tests {
 
         let result = generate_text_diff(old, new);
 
-        assert!(result.contains("line1"));
-        assert!(result.contains("old line"));
-        assert!(result.contains("new line"));
-        assert!(result.contains("line3"));
+        assert!(result.contains("-old line\n"));
+        assert!(result.contains("+new line\n"));
+        assert!(result.contains(" line1\n")); // context
+        assert!(result.contains(" line3\n")); // context
     }
 
     #[test]
@@ -1826,7 +1823,7 @@ mod tests {
 
         let result = generate_text_diff(old, new);
 
-        assert!(result.contains("new content"));
+        assert!(result.contains("+new content\n"));
     }
 
     #[test]
@@ -1836,7 +1833,7 @@ mod tests {
 
         let result = generate_text_diff(old, new);
 
-        assert!(result.contains("old content"));
+        assert!(result.contains("-old content\n"));
     }
 
     #[test]
@@ -1846,12 +1843,24 @@ mod tests {
 
         let result = generate_text_diff(old, new);
 
-        assert!(result.contains("keep1"));
-        assert!(result.contains("remove"));
-        assert!(result.contains("keep2"));
-        assert!(result.contains("modify_old"));
-        assert!(result.contains("modify_new"));
-        assert!(result.contains("add"));
+        assert!(result.contains("-remove\n"));
+        assert!(result.contains("+modify_new\n"));
+        assert!(result.contains("+add\n"));
+        assert!(result.contains(" keep2\n")); // shared context
+    }
+
+    #[test]
+    fn test_generate_text_diff_omits_distant_context() {
+        // Unchanged lines far from any change are not printed, like git diff
+        let old = "a\nb\nc\nd\ne\nf\ng\nh\ni\nold tail\n";
+        let new = "a\nb\nc\nd\ne\nf\ng\nh\ni\nnew tail\n";
+
+        let result = generate_text_diff(old, new);
+
+        assert!(result.contains("-old tail\n"));
+        assert!(result.contains("+new tail\n"));
+        assert!(!result.contains(" a\n"));
+        assert!(result.contains(" g\n")); // only nearby context survives
     }
 
     #[test]
