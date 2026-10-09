@@ -118,13 +118,19 @@ pub(crate) fn execute_processed_script(
             .map_err(|e| Error::HookExecution(format!("Failed to set permissions: {e}")))?;
     }
 
-    let temp_path = temp_file.path();
+    // Drop the write handle before exec: a file that is still open for
+    // writing cannot be executed (ETXTBSY). `into_temp_path` closes the fd
+    // while keeping automatic cleanup via `TempPath`.
+    let temp_path = temp_file.into_temp_path();
     tracing::debug!("Executing processed script: {}", temp_path.display());
     tracing::debug!("Working directory: {}", working_dir.display());
 
     // Execute script using shebang (same as regular scripts)
-    // temp_file is automatically deleted when dropped
-    execute_script(temp_path, working_dir, env, timeout)
+    let result = execute_script(temp_path.as_ref(), working_dir, env, timeout);
+    temp_path
+        .close()
+        .map_err(|e| Error::HookExecution(format!("Failed to clean up temp script: {e}")))?;
+    result
 }
 
 /// Parse shebang line from a script file
