@@ -553,14 +553,20 @@ where
                 // Read the content so it can be persisted for diff display;
                 // a failed read is reported by execute_script itself.
                 let content = fs::read_to_string(&script_abs).ok();
-                script::execute_script(&script_abs, &working_dir, &env, hook.timeout)
-                    .map(|()| content)
-                    .map_err(|e| {
-                        Error::HookExecution(format!(
-                            "Hook '{}' script '{}' failed: {}",
-                            hook.name, script_path, e
-                        ))
-                    })
+                script::execute_script(
+                    &script_abs,
+                    Path::new(script_path),
+                    &working_dir,
+                    &env,
+                    hook.timeout,
+                )
+                .map(|()| content)
+                .map_err(|e| {
+                    Error::HookExecution(format!(
+                        "Hook '{}' script '{}' failed: {}",
+                        hook.name, script_path, e
+                    ))
+                })
             }
             (None, None) => Err(Error::HookExecution(format!(
                 "Hook '{}' has neither cmd nor script (validation should have caught this)",
@@ -590,8 +596,6 @@ where
         env: &IndexMap<String, String>,
         timeout: u64,
     ) -> Result<()> {
-        use std::time::Duration;
-
         // Expand environment variables in command
         let expanded_cmd = env::expand_env_vars(cmd, &self.env_vars);
 
@@ -613,37 +617,12 @@ where
             tracing::debug!("Timeout: {} seconds", timeout);
         }
 
-        // Build command - inherits parent env by default
-        let mut cmd_builder = duct::cmd(program, args).dir(working_dir).stderr_to_stdout();
-
-        // Add custom environment variables (guisu-specific + hook-specific)
+        let mut cmd_builder = duct::cmd(program, args).dir(working_dir);
         for (key, value) in env {
             cmd_builder = cmd_builder.env(key, value);
         }
 
-        let cmd_builder = cmd_builder;
-
-        // Execute with or without timeout
-        if timeout > 0 {
-            let handle = cmd_builder.start().map_err(|e| {
-                Error::HookExecution(format!("Failed to start command '{program}': {e}"))
-            })?;
-
-            match handle.wait_timeout(Duration::from_secs(timeout)) {
-                Ok(Some(_output)) => Ok(()),
-                Ok(None) => Err(Error::HookExecution(format!(
-                    "Command '{program}' timed out after {timeout} seconds"
-                ))),
-                Err(e) => Err(Error::HookExecution(format!(
-                    "Command '{program}' failed: {e}"
-                ))),
-            }
-        } else {
-            cmd_builder
-                .run()
-                .map(|_| ())
-                .map_err(|e| Error::HookExecution(format!("Command '{program}' failed: {e}")))
-        }
+        script::execute_hook_process(&cmd_builder, timeout, &format!("Command '{program}'"))
     }
 
     /// Execute a template script by rendering it first
@@ -693,8 +672,20 @@ where
             std::sync::Arc::new(env)
         };
 
-        script::execute_processed_script(&processed_content, &working_dir, &env, hook.timeout)
-            .map(|()| processed_content)
+        script::execute_processed_script(
+            &processed_content,
+            Path::new(script_path),
+            &working_dir,
+            &env,
+            hook.timeout,
+        )
+        .map(|()| processed_content)
+        .map_err(|e| {
+            Error::HookExecution(format!(
+                "Hook '{}' script '{}' failed: {}",
+                hook.name, script_path, e
+            ))
+        })
     }
 }
 

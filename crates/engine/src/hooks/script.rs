@@ -8,20 +8,69 @@ use indexmap::IndexMap;
 use std::fs;
 use std::io::Write;
 use std::path::{Path, PathBuf};
+use std::time::{Duration, Instant};
+
+/// Run a hook process with stdout and stderr connected directly to the parent.
+pub(crate) fn execute_hook_process(
+    command: &duct::Expression,
+    timeout: u64,
+    display_name: &str,
+) -> Result<()> {
+    let process = command.unchecked().start().map_err(|error| {
+        Error::HookExecution(format!("Failed to start {display_name}: {error}"))
+    })?;
+    let started_at = Instant::now();
+    let timeout_duration = Duration::from_secs(timeout);
+    let mut timed_out = false;
+
+    loop {
+        match process.try_wait() {
+            Ok(Some(_)) if timed_out => {
+                return Err(Error::HookExecution(format!(
+                    "{display_name} timed out after {timeout} seconds"
+                )));
+            }
+            Ok(Some(output)) => return finish_hook_process(display_name, output.status),
+            Ok(None) => {}
+            Err(error) => {
+                return Err(Error::HookExecution(format!(
+                    "Failed while waiting for {display_name}: {error}"
+                )));
+            }
+        }
+
+        if timeout > 0 && !timed_out && started_at.elapsed() >= timeout_duration {
+            timed_out = true;
+        }
+        if timed_out && let Err(error) = process.kill() {
+            tracing::debug!(%error, "Failed to stop timed-out hook process");
+        }
+        std::thread::sleep(Duration::from_millis(25));
+    }
+}
+
+fn finish_hook_process(display_name: &str, status: std::process::ExitStatus) -> Result<()> {
+    if status.success() {
+        return Ok(());
+    }
+
+    Err(Error::HookExecution(format!(
+        "{display_name} exited with {status}"
+    )))
+}
 
 /// Execute a script using its shebang interpreter
 ///
 /// Reads the script's shebang line to determine the interpreter,
 /// then executes the script with that interpreter.
-#[tracing::instrument(skip(env), fields(script_path = %script_path.display(), working_dir = %working_dir.display(), timeout))]
+#[tracing::instrument(skip(env, script_path), fields(script_path = %display_path.display(), working_dir = %working_dir.display(), timeout))]
 pub(crate) fn execute_script(
     script_path: &Path,
+    display_path: &Path,
     working_dir: &Path,
     env: &IndexMap<String, String>,
     timeout: u64,
 ) -> Result<()> {
-    use std::time::Duration;
-
     if !script_path.exists() {
         return Err(Error::HookExecution(format!(
             "Script not found: {}",
@@ -29,14 +78,14 @@ pub(crate) fn execute_script(
         )));
     }
 
-    tracing::debug!("Executing script: {}", script_path.display());
+    tracing::debug!("Executing script: {}", display_path.display());
     tracing::debug!("Working directory: {}", working_dir.display());
     if timeout > 0 {
         tracing::debug!("Timeout: {} seconds", timeout);
     }
 
     // Parse shebang to get interpreter
-    let (interpreter, args) = parse_shebang(script_path)?;
+    let (interpreter, args) = parse_shebang_for_display(script_path, display_path)?;
 
     // Build command: interpreter + args + script_path
     let mut cmd_args = args;
@@ -45,45 +94,18 @@ pub(crate) fn execute_script(
     tracing::debug!("Using interpreter: {} {:?}", interpreter, cmd_args);
 
     // Build command - inherits parent env by default
-    let mut cmd_builder = duct::cmd(&interpreter, &cmd_args)
-        .dir(working_dir)
-        .stderr_to_stdout();
+    let mut cmd_builder = duct::cmd(&interpreter, &cmd_args).dir(working_dir);
 
     // Add custom environment variables (guisu-specific + hook-specific)
     for (key, value) in env {
         cmd_builder = cmd_builder.env(key, value);
     }
 
-    let cmd_builder = cmd_builder;
-
-    // Execute with or without timeout
-    if timeout > 0 {
-        let handle = cmd_builder.start().map_err(|e| {
-            Error::HookExecution(format!(
-                "Failed to start script '{}': {}",
-                script_path.display(),
-                e
-            ))
-        })?;
-
-        match handle.wait_timeout(Duration::from_secs(timeout)) {
-            Ok(Some(_output)) => Ok(()),
-            Ok(None) => Err(Error::HookExecution(format!(
-                "Script '{}' timed out after {} seconds",
-                script_path.display(),
-                timeout
-            ))),
-            Err(e) => Err(Error::HookExecution(format!(
-                "Script '{}' failed: {}",
-                script_path.display(),
-                e
-            ))),
-        }
-    } else {
-        cmd_builder.run().map(|_| ()).map_err(|e| {
-            Error::HookExecution(format!("Script '{}' failed: {}", script_path.display(), e))
-        })
-    }
+    execute_hook_process(
+        &cmd_builder,
+        timeout,
+        &format!("Script '{}'", display_path.display()),
+    )
 }
 
 /// Execute processed script content via a temporary file
@@ -92,6 +114,7 @@ pub(crate) fn execute_script(
 /// and executes it using its shebang interpreter.
 pub(crate) fn execute_processed_script(
     content: &str,
+    display_path: &Path,
     working_dir: &Path,
     env: &IndexMap<String, String>,
     timeout: u64,
@@ -122,11 +145,11 @@ pub(crate) fn execute_processed_script(
     // writing cannot be executed (ETXTBSY). `into_temp_path` closes the fd
     // while keeping automatic cleanup via `TempPath`.
     let temp_path = temp_file.into_temp_path();
-    tracing::debug!("Executing processed script: {}", temp_path.display());
+    tracing::debug!("Executing processed script: {}", display_path.display());
     tracing::debug!("Working directory: {}", working_dir.display());
 
     // Execute script using shebang (same as regular scripts)
-    let result = execute_script(temp_path.as_ref(), working_dir, env, timeout);
+    let result = execute_script(temp_path.as_ref(), display_path, working_dir, env, timeout);
     temp_path
         .close()
         .map_err(|e| Error::HookExecution(format!("Failed to clean up temp script: {e}")))?;
@@ -142,13 +165,21 @@ pub(crate) fn execute_processed_script(
 /// - `#!/bin/bash` -> ("bash", [])
 /// - `#!/usr/bin/env python3` -> ("python3", [])
 /// - `#!/bin/bash -e` -> ("bash", [`"-e"`])
+#[cfg(test)]
 pub(crate) fn parse_shebang(script_path: &Path) -> Result<(String, Vec<String>)> {
+    parse_shebang_for_display(script_path, script_path)
+}
+
+fn parse_shebang_for_display(
+    script_path: &Path,
+    display_path: &Path,
+) -> Result<(String, Vec<String>)> {
     use std::io::{BufRead, BufReader};
 
     let file = fs::File::open(script_path).map_err(|e| {
         Error::HookExecution(format!(
             "Failed to open script {}: {}",
-            script_path.display(),
+            display_path.display(),
             e
         ))
     })?;
@@ -158,21 +189,16 @@ pub(crate) fn parse_shebang(script_path: &Path) -> Result<(String, Vec<String>)>
     reader.read_line(&mut first_line).map_err(|e| {
         Error::HookExecution(format!(
             "Failed to read script {}: {}",
-            script_path.display(),
+            display_path.display(),
             e
         ))
     })?;
 
-    // Check for shebang
     if !first_line.starts_with("#!") {
-        // No shebang, try to infer from extension or use default
-        return infer_interpreter(script_path);
+        return infer_interpreter(display_path);
     }
 
-    // Parse shebang line
     let shebang = first_line[2..].trim();
-
-    // Handle "#! /usr/bin/env interpreter"
     if shebang.starts_with("/usr/bin/env") || shebang.starts_with("/bin/env") {
         let parts: Vec<&str> = shebang.split_whitespace().collect();
         if parts.len() < 2 {
@@ -186,13 +212,11 @@ pub(crate) fn parse_shebang(script_path: &Path) -> Result<(String, Vec<String>)>
         return Ok((interpreter, args));
     }
 
-    // Handle "#! /bin/bash" or "#! /bin/bash -e"
     let parts: Vec<&str> = shebang.split_whitespace().collect();
     if parts.is_empty() {
         return Err(Error::HookExecution(format!("Empty shebang: {first_line}")));
     }
 
-    // Extract interpreter name from path
     let interpreter_path = PathBuf::from(parts[0]);
     let interpreter = interpreter_path
         .file_name()
@@ -201,7 +225,6 @@ pub(crate) fn parse_shebang(script_path: &Path) -> Result<(String, Vec<String>)>
         .to_string();
 
     let args = parts[1..].iter().map(|s| (*s).to_string()).collect();
-
     Ok((interpreter, args))
 }
 
@@ -425,5 +448,65 @@ mod tests {
         let (interpreter, args) = infer_interpreter(&script_path).unwrap();
         assert_eq!(interpreter, "sh");
         assert_eq!(args.len(), 0);
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn test_execute_hook_process_kills_timed_out_process() {
+        let command = duct::cmd("sh", ["-c", "exec sleep 5"]);
+        let error = execute_hook_process(&command, 1, "hook command")
+            .unwrap_err()
+            .to_string();
+
+        assert!(error.contains("hook command timed out after 1 seconds"));
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn test_execute_hook_process_keeps_monitoring_after_output_closes() {
+        use std::time::{Duration, Instant};
+
+        let command = duct::cmd("sh", ["-c", "exec 1>&- 2>&-; exec sleep 3"]);
+        let started_at = Instant::now();
+        let error = execute_hook_process(&command, 1, "hook command")
+            .unwrap_err()
+            .to_string();
+
+        assert!(error.contains("hook command timed out after 1 seconds"));
+        assert!(started_at.elapsed() < Duration::from_secs(2));
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn test_execute_hook_process_reports_exit_status() {
+        let command = duct::cmd(
+            "sh",
+            [
+                "-c",
+                "printf 'package-manager original error\\n' >&2; exit 7",
+            ],
+        );
+        let error = execute_hook_process(&command, 0, "hook command")
+            .unwrap_err()
+            .to_string();
+
+        assert!(error.contains("hook command exited with exit status: 7"));
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn test_execute_processed_script_uses_display_path_on_failure() {
+        let temp = TempDir::new().unwrap();
+        let display_path = Path::new("hooks/install-packages.sh");
+        let content = "#!/bin/sh\nexit 7\n";
+
+        let error =
+            execute_processed_script(content, display_path, temp.path(), &IndexMap::new(), 0)
+                .unwrap_err()
+                .to_string();
+
+        assert!(error.contains("install-packages.sh"));
+        assert!(error.contains("exit status: 7"));
+        assert!(!error.contains(temp.path().to_str().unwrap()));
     }
 }

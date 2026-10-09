@@ -10,7 +10,7 @@ use guisu_engine::adapters::crypto::CryptoDecryptorAdapter;
 use guisu_engine::adapters::template::TemplateRendererAdapter;
 use guisu_engine::entry::TargetEntry;
 use guisu_engine::processor::ContentProcessor;
-use guisu_engine::state::{DestinationState, RedbPersistentState, SourceState, TargetState};
+use guisu_engine::state::{DestinationState, PersistentState, SourceState, TargetState};
 use owo_colors::OwoColorize;
 use rayon::prelude::*;
 use std::collections::BTreeMap;
@@ -252,7 +252,7 @@ fn build_status_target_state(
 /// Run the status command implementation
 #[allow(clippy::too_many_arguments)]
 fn run_impl(
-    database: &mut guisu_engine::state::RedbPersistentState,
+    database: &mut dyn guisu_engine::state::PersistentState,
     source_dir: &Path,
     dest_dir: &Path,
     config: &Config,
@@ -401,7 +401,7 @@ fn run_impl(
 
 /// Parameters for collecting file information
 struct CollectParams<'a> {
-    database: &'a mut guisu_engine::state::RedbPersistentState,
+    database: &'a mut dyn guisu_engine::state::PersistentState,
     source_state: &'a SourceState,
     target_state: &'a TargetState,
     dest_state: &'a mut DestinationState,
@@ -464,7 +464,7 @@ mod format_display_path_tests {
 
 /// Determine file status based on three-way comparison
 fn determine_entry_status(
-    database: &mut guisu_engine::state::RedbPersistentState,
+    database: &mut dyn guisu_engine::state::PersistentState,
     target_entry: &TargetEntry,
     dest_entry: &guisu_engine::entry::DestEntry,
     path_str: &str,
@@ -534,7 +534,7 @@ fn determine_entry_status(
 /// Process a single entry for status display
 #[allow(clippy::too_many_arguments)]
 fn process_entry_for_status(
-    database: &mut guisu_engine::state::RedbPersistentState,
+    database: &mut dyn guisu_engine::state::PersistentState,
     entry: &guisu_engine::entry::SourceEntry,
     dest_state_mutex: &std::sync::Mutex<&mut DestinationState>,
     target_state: &TargetState,
@@ -661,7 +661,7 @@ fn collect_file_info(params: CollectParams) -> Vec<FileInfo> {
             // Lock the database briefly for each entry's read.
             let mut database = database_mutex.lock().expect("database mutex poisoned");
             process_entry_for_status(
-                &mut database,
+                *database,
                 entry,
                 &dest_state_mutex,
                 target_state,
@@ -1081,7 +1081,7 @@ fn render_script_content(
 /// Check and print hooks status
 fn print_hooks_status(
     source_dir: &Path,
-    db: &mut RedbPersistentState,
+    db: &mut dyn PersistentState,
     show_all: bool,
     config: &Config,
 ) {

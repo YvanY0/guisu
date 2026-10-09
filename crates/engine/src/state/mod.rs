@@ -27,7 +27,7 @@ use walkdir::WalkDir;
 // `crate::state::*` without churning their imports.
 pub use persistence::{
     CONFIG_METADATA_BUCKET, ENTRY_STATE_BUCKET, HOOK_STATE_BUCKET, PersistentState,
-    RedbPersistentState, hash_data,
+    PersistentStateVisitor, RedbPersistentState, hash_data,
 };
 
 /// Custom serde module for `SystemTime` serialization
@@ -281,11 +281,11 @@ impl Default for HookState {
 }
 
 /// Hook state persistence wrapper
-pub struct HookStatePersistence<'a, T: PersistentState> {
+pub struct HookStatePersistence<'a, T: PersistentState + ?Sized> {
     db: &'a mut T,
 }
 
-impl<'a, T: PersistentState> HookStatePersistence<'a, T> {
+impl<'a, T: PersistentState + ?Sized> HookStatePersistence<'a, T> {
     /// Create new hook state persistence
     #[must_use]
     pub fn new(db: &'a mut T) -> Self {

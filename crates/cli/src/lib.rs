@@ -17,7 +17,6 @@ use anyhow::{Context, Result};
 use clap::{Parser, Subcommand};
 use owo_colors::OwoColorize;
 use std::path::{Path, PathBuf};
-use std::sync::Arc;
 
 use command::Command;
 use common::RuntimeContext;
@@ -623,26 +622,18 @@ pub fn run(cli: Cli) -> Result<()> {
 
     // For all other commands, create database first to enable config caching
     let db_path = guisu_engine::get_db_path().context("Failed to get database path")?;
-    let mut database = std::sync::Arc::new(
-        guisu_engine::state::RedbPersistentState::new(&db_path)
-            .context("Failed to create database instance")?,
-    );
+    let mut database = guisu_engine::state::RedbPersistentState::new(&db_path)
+        .context("Failed to create database instance")?;
 
-    // Load config with database caching enabled. We just constructed
-    // this Arc and only hold one reference, so unwrapping with
-    // `Arc::get_mut` is safe.
-    let config = load_config_with_template_support(
-        cli.config.as_deref(),
-        &source_dir,
-        Arc::get_mut(&mut database).map(|db| db as &mut _),
-    )?;
+    let config =
+        load_config_with_template_support(cli.config.as_deref(), &source_dir, Some(&mut database))?;
 
-    // Create RuntimeContext for commands (reuses the database instance)
+    // Redb is selected at the application composition root.
     let paths = crate::common::ResolvedPaths::resolve(&source_dir, &dest_dir, &config)?;
     let mut context = crate::common::RuntimeContext::from_parts_with_db(
         std::sync::Arc::new(config),
         paths,
-        database,
+        Box::new(database),
     );
 
     // Execute the command
@@ -792,7 +783,7 @@ pub(crate) fn resolve_absolute_path(path: &std::path::Path) -> Result<guisu_core
 pub(crate) fn load_config_with_template_support(
     _config_path: Option<&std::path::Path>,
     source_dir: &std::path::Path,
-    database: Option<&mut guisu_engine::state::RedbPersistentState>,
+    database: Option<&mut dyn guisu_engine::state::PersistentState>,
 ) -> Result<guisu_config::Config> {
     use std::fs;
 

@@ -71,7 +71,7 @@ pub struct ApplyCommand {
 /// Returns the content hash if the entry is a file and has state in the database.
 /// Returns None for non-file entries or if no state exists.
 fn get_last_written_hash(
-    db: &guisu_engine::state::RedbPersistentState,
+    db: &dyn guisu_engine::state::PersistentState,
     entry: &TargetEntry,
 ) -> Option<[u8; 32]> {
     match entry {
@@ -392,7 +392,7 @@ fn entry_needs_update(
 /// Handle interactive conflict resolution
 #[allow(clippy::too_many_arguments)]
 fn handle_interactive_conflict(
-    db: &guisu_engine::state::RedbPersistentState,
+    db: &dyn guisu_engine::state::PersistentState,
     entry: &TargetEntry,
     dest_abs: &AbsPath,
     dest_path: &AbsPath,
@@ -446,7 +446,7 @@ fn handle_interactive_conflict(
 /// every remaining entry in this run.
 #[allow(clippy::too_many_arguments)]
 fn handle_non_interactive_conflict(
-    db: &guisu_engine::state::RedbPersistentState,
+    db: &dyn guisu_engine::state::PersistentState,
     entry: &TargetEntry,
     dest_abs: &AbsPath,
     dest_path: &AbsPath,
@@ -663,7 +663,7 @@ fn apply_entry_with_error_handling(
 /// Process entries sequentially (for interactive mode or dry run)
 #[allow(clippy::too_many_arguments, clippy::fn_params_excessive_bools)]
 fn process_entries_sequential(
-    db: &mut guisu_engine::state::RedbPersistentState,
+    db: &mut dyn guisu_engine::state::PersistentState,
     entries: Vec<&TargetEntry>,
     dest_abs: &AbsPath,
     identities: &[guisu_crypto::Identity],
@@ -846,12 +846,11 @@ impl Command for ApplyCommand {
         }
 
         // Check for configuration drift (files modified by user AND source updated).
-        // Scope the Arc clone so it drops before we take &mut on the database below;
-        // otherwise Arc::get_mut would observe the extra strong reference and panic.
+        // The read-only backend borrow is scoped before sequential writes below.
         if !self.dry_run && !has_named_target {
             let drift_warnings = {
-                let database = Arc::clone(context.database());
-                detect_config_drift(&database, &entries_to_apply, &dest_abs)
+                let database = context.database();
+                detect_config_drift(database, &entries_to_apply, &dest_abs)
             };
             display_drift_warnings(&drift_warnings);
         }
@@ -1180,7 +1179,7 @@ fn print_error_entry(entry: &TargetEntry, error: &anyhow::Error, use_nerd_fonts:
 ///
 /// This indicates potential conflict where both local and source changes exist.
 fn detect_config_drift(
-    db: &guisu_engine::state::RedbPersistentState,
+    db: &dyn guisu_engine::state::PersistentState,
     entries: &[&TargetEntry],
     dest_abs: &AbsPath,
 ) -> Vec<String> {
@@ -1721,7 +1720,7 @@ mod tests {
             .find("create_spinner(\"Reading source state...\")")
             .expect("read-source spinner must exist");
         let drift_gate = src
-            .find("detect_config_drift(&database, &entries_to_apply, &dest_abs)")
+            .find("detect_config_drift(database, &entries_to_apply, &dest_abs)")
             .expect("drift detection call must exist");
         let target_state_spinner = src
             .find("create_spinner(\n            \"Processing templates and encrypted files...\",\n        )")

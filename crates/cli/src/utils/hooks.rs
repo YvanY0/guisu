@@ -5,7 +5,7 @@
 
 use guisu_core::platform::CURRENT_PLATFORM;
 use guisu_engine::hooks::{HookCollections, HookLoader};
-use guisu_engine::state::{HookState, HookStatePersistence, RedbPersistentState};
+use guisu_engine::state::{HookState, HookStatePersistence, PersistentState};
 use std::path::Path;
 
 use super::path::SourceDirExt;
@@ -32,7 +32,7 @@ use super::path::SourceDirExt;
 #[must_use]
 pub fn load_hooks_and_state(
     source_dir: &Path,
-    db: &mut RedbPersistentState,
+    db: &mut dyn PersistentState,
 ) -> Option<(HookCollections, HookState)> {
     let hooks_dir = source_dir.hooks_dir();
 

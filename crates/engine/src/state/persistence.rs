@@ -21,6 +21,9 @@ pub const HOOK_STATE_BUCKET: &str = "hookState";
 /// Database bucket name for config metadata (tracks rendered config and template hash)
 pub const CONFIG_METADATA_BUCKET: &str = "configMetadata";
 
+/// Callback used to visit key/value pairs in a persistent-state bucket.
+pub type PersistentStateVisitor<'a> = dyn FnMut(&[u8], &[u8]) -> Result<()> + 'a;
+
 /// Trait for persistent state storage
 ///
 /// # Thread safety
@@ -33,14 +36,11 @@ pub const CONFIG_METADATA_BUCKET: &str = "configMetadata";
 /// (e.g. by holding a `Mutex` over the instance, or by ensuring a
 /// single thread owns it and others receive messages).
 ///
-/// Read methods (`get`, `for_each`, `close`) are safe to call from
-/// multiple threads concurrently against the same instance, subject
-/// to the backend's own guarantees.
+/// Read methods (`get`, `for_each`) are safe to call from multiple threads
+/// concurrently against the same instance, subject to the backend's own guarantees.
 ///
 /// Write methods (`set`, `set_batch`, `delete`, `delete_bucket`) take
-/// `&mut self` so the borrow checker enforces single-writer at
-/// compile time. Callers that previously held a shared reference
-/// (e.g. via `Arc<RedbPersistentState>`) must now pass `&mut`.
+/// `&mut self` so the borrow checker enforces single-writer access.
 pub trait PersistentState: Send + Sync {
     /// Get a value from a bucket
     ///
@@ -85,16 +85,7 @@ pub trait PersistentState: Send + Sync {
     /// # Errors
     ///
     /// Returns an error if iteration fails or the callback returns an error (e.g., database error, read failure, callback error)
-    fn for_each<F>(&self, bucket: &str, f: F) -> Result<()>
-    where
-        F: FnMut(&[u8], &[u8]) -> Result<()>;
-
-    /// Close the database
-    ///
-    /// # Errors
-    ///
-    /// Returns an error if the database cannot be closed properly (e.g., outstanding transactions, I/O error)
-    fn close(self) -> Result<()>;
+    fn for_each(&self, bucket: &str, f: &mut PersistentStateVisitor<'_>) -> Result<()>;
 }
 
 /// Persistent state implementation using redb
@@ -337,10 +328,7 @@ impl PersistentState for RedbPersistentState {
         Ok(())
     }
 
-    fn for_each<F>(&self, bucket: &str, mut f: F) -> Result<()>
-    where
-        F: FnMut(&[u8], &[u8]) -> Result<()>,
-    {
+    fn for_each(&self, bucket: &str, f: &mut PersistentStateVisitor<'_>) -> Result<()> {
         let read_txn = self
             .db
             .begin_read()
@@ -378,12 +366,6 @@ impl PersistentState for RedbPersistentState {
             f(key.value(), value.value())?;
         }
 
-        Ok(())
-    }
-
-    fn close(self) -> Result<()> {
-        // redb closes automatically when dropped
-        drop(self.db);
         Ok(())
     }
 }
@@ -444,8 +426,9 @@ mod tests {
                 ..
             }
         ));
+        let mut callback = |_: &[u8], _: &[u8]| Ok(());
         let for_each_error = db
-            .for_each(ENTRY_STATE_BUCKET, |_, _| Ok(()))
+            .for_each(ENTRY_STATE_BUCKET, &mut callback)
             .expect_err("for_each table type mismatch must propagate");
         assert!(matches!(
             for_each_error,
@@ -546,11 +529,12 @@ mod tests {
             .expect("failed to set batch");
 
         let mut collected = std::collections::HashMap::new();
-        db.for_each(ENTRY_STATE_BUCKET, |k, v| {
+        let mut collect = |k: &[u8], v: &[u8]| {
             collected.insert(k.to_vec(), v.to_vec());
             Ok(())
-        })
-        .expect("for_each failed");
+        };
+        db.for_each(ENTRY_STATE_BUCKET, &mut collect)
+            .expect("for_each failed");
 
         assert_eq!(collected.len(), 2);
         assert_eq!(collected.get(b"key1".as_slice()), Some(&b"value1".to_vec()));
@@ -725,10 +709,11 @@ mod tests {
                 Ok(())
             }
 
-            fn for_each<F>(&self, bucket: &str, mut f: F) -> super::Result<()>
-            where
-                F: FnMut(&[u8], &[u8]) -> super::Result<()>,
-            {
+            fn for_each(
+                &self,
+                bucket: &str,
+                f: &mut super::PersistentStateVisitor<'_>,
+            ) -> super::Result<()> {
                 let data = self
                     .data
                     .read()
@@ -738,10 +723,6 @@ mod tests {
                         f(key, value)?;
                     }
                 }
-                Ok(())
-            }
-
-            fn close(self) -> super::Result<()> {
                 Ok(())
             }
         }

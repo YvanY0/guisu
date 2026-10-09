@@ -63,17 +63,15 @@ impl ResolvedPaths {
 /// Runtime context for CLI commands
 ///
 /// Consolidates config, paths, database, and caches to reduce parameter passing.
-#[derive(Clone)]
 pub struct RuntimeContext {
     /// Application configuration
     pub config: Arc<Config>,
     /// Resolved and canonicalized paths
     pub paths: ResolvedPaths,
-    /// Database instance for persistent state
-    pub database: Arc<RedbPersistentState>,
-    identities_cache: Arc<std::sync::OnceLock<Arc<[guisu_crypto::Identity]>>>,
-    guisu_dir_cache: Arc<std::sync::OnceLock<PathBuf>>,
-    templates_dir_cache: Arc<std::sync::OnceLock<Option<PathBuf>>>,
+    database: Box<dyn guisu_engine::state::PersistentState>,
+    identities_cache: std::sync::OnceLock<Arc<[guisu_crypto::Identity]>>,
+    guisu_dir_cache: std::sync::OnceLock<PathBuf>,
+    templates_dir_cache: std::sync::OnceLock<Option<PathBuf>>,
 }
 
 impl RuntimeContext {
@@ -89,14 +87,13 @@ impl RuntimeContext {
         let db_path = guisu_engine::get_db_path().context("Failed to get database path")?;
         let database =
             RedbPersistentState::new(&db_path).context("Failed to create database instance")?;
-
         Ok(Self {
             config: Arc::new(config),
             paths,
-            database: Arc::new(database),
-            identities_cache: Arc::new(std::sync::OnceLock::new()),
-            guisu_dir_cache: Arc::new(std::sync::OnceLock::new()),
-            templates_dir_cache: Arc::new(std::sync::OnceLock::new()),
+            database: Box::new(database),
+            identities_cache: std::sync::OnceLock::new(),
+            guisu_dir_cache: std::sync::OnceLock::new(),
+            templates_dir_cache: std::sync::OnceLock::new(),
         })
     }
 
@@ -112,34 +109,30 @@ impl RuntimeContext {
         let db_path = guisu_engine::get_db_path().expect("Failed to get database path");
         let database =
             RedbPersistentState::new(&db_path).expect("Failed to create database instance");
-
         Self {
             config,
             paths,
-            database: Arc::new(database),
-            identities_cache: Arc::new(std::sync::OnceLock::new()),
-            guisu_dir_cache: Arc::new(std::sync::OnceLock::new()),
-            templates_dir_cache: Arc::new(std::sync::OnceLock::new()),
+            database: Box::new(database),
+            identities_cache: std::sync::OnceLock::new(),
+            guisu_dir_cache: std::sync::OnceLock::new(),
+            templates_dir_cache: std::sync::OnceLock::new(),
         }
     }
 
-    /// Create context from already-resolved paths and existing database
-    ///
-    /// Use this when you've already created a database instance (e.g., for config caching)
-    /// to avoid creating the database twice.
+    /// Create context from already-resolved paths and existing persistent state
     #[must_use]
     pub fn from_parts_with_db(
         config: Arc<Config>,
         paths: ResolvedPaths,
-        database: Arc<RedbPersistentState>,
+        database: Box<dyn guisu_engine::state::PersistentState>,
     ) -> Self {
         Self {
             config,
             paths,
             database,
-            identities_cache: Arc::new(std::sync::OnceLock::new()),
-            guisu_dir_cache: Arc::new(std::sync::OnceLock::new()),
-            templates_dir_cache: Arc::new(std::sync::OnceLock::new()),
+            identities_cache: std::sync::OnceLock::new(),
+            guisu_dir_cache: std::sync::OnceLock::new(),
+            templates_dir_cache: std::sync::OnceLock::new(),
         }
     }
 
@@ -164,29 +157,17 @@ impl RuntimeContext {
         &self.paths.dotfiles_dir
     }
 
-    /// Get the database instance
+    /// Get the persistent state backend
     #[inline]
     #[must_use]
-    pub fn database(&self) -> &Arc<RedbPersistentState> {
-        &self.database
+    pub fn database(&self) -> &dyn guisu_engine::state::PersistentState {
+        self.database.as_ref()
     }
 
-    /// Get a `&mut RedbPersistentState` for write operations
-    ///
-    /// This requires sole ownership of the `Arc` (i.e. no other strong
-    /// references in flight). All CLI commands are sequential and never
-    /// clone the Arc, so this is always safe at runtime. If a caller
-    /// introduces concurrent cloning, this will panic.
-    ///
-    /// # Panics
-    ///
-    /// Panics if another `Arc<RedbPersistentState>` reference exists.
-    /// This shouldn't happen in the CLI's sequential command flow, but
-    /// the panic surfaces a logic bug if it ever does.
+    /// Get mutable access to the persistent state backend
     #[inline]
-    pub fn database_mut(&mut self) -> &mut RedbPersistentState {
-        Arc::get_mut(&mut self.database)
-            .expect("RuntimeContext::database_mut called while another Arc reference exists")
+    pub fn database_mut(&mut self) -> &mut dyn guisu_engine::state::PersistentState {
+        self.database.as_mut()
     }
 
     /// Load age identities (cached)
@@ -268,14 +249,13 @@ impl RuntimeContext {
         // Initialize database with custom path
         let database =
             RedbPersistentState::new(db_path).context("Failed to create database instance")?;
-
         Ok(Self {
             config: Arc::new(config),
             paths,
-            database: Arc::new(database),
-            identities_cache: Arc::new(std::sync::OnceLock::new()),
-            guisu_dir_cache: Arc::new(std::sync::OnceLock::new()),
-            templates_dir_cache: Arc::new(std::sync::OnceLock::new()),
+            database: Box::new(database),
+            identities_cache: std::sync::OnceLock::new(),
+            guisu_dir_cache: std::sync::OnceLock::new(),
+            templates_dir_cache: std::sync::OnceLock::new(),
         })
     }
 }
@@ -366,7 +346,59 @@ mod tests {
     #![allow(clippy::unwrap_used, clippy::panic)]
     use super::*;
     use guisu_engine::state::{ENTRY_STATE_BUCKET, PersistentState};
+    use std::collections::HashMap;
     use tempfile::TempDir;
+
+    #[derive(Default)]
+    struct MemoryPersistentState {
+        values: HashMap<(String, Vec<u8>), Vec<u8>>,
+    }
+
+    impl PersistentState for MemoryPersistentState {
+        fn get(&self, bucket: &str, key: &[u8]) -> guisu_core::Result<Option<Vec<u8>>> {
+            Ok(self.values.get(&(bucket.to_owned(), key.to_vec())).cloned())
+        }
+
+        fn set(&mut self, bucket: &str, key: &[u8], value: &[u8]) -> guisu_core::Result<()> {
+            self.values
+                .insert((bucket.to_owned(), key.to_vec()), value.to_vec());
+            Ok(())
+        }
+
+        fn set_batch(
+            &mut self,
+            bucket: &str,
+            entries: &[(&[u8], &[u8])],
+        ) -> guisu_core::Result<()> {
+            for (key, value) in entries {
+                self.set(bucket, key, value)?;
+            }
+            Ok(())
+        }
+
+        fn delete(&mut self, bucket: &str, key: &[u8]) -> guisu_core::Result<()> {
+            self.values.remove(&(bucket.to_owned(), key.to_vec()));
+            Ok(())
+        }
+
+        fn delete_bucket(&mut self, bucket: &str) -> guisu_core::Result<()> {
+            self.values.retain(|(name, _), _| name != bucket);
+            Ok(())
+        }
+
+        fn for_each(
+            &self,
+            bucket: &str,
+            f: &mut guisu_engine::state::PersistentStateVisitor<'_>,
+        ) -> guisu_core::Result<()> {
+            for ((name, key), value) in &self.values {
+                if name == bucket {
+                    f(key, value)?;
+                }
+            }
+            Ok(())
+        }
+    }
 
     // Helper to create test config
     fn test_config() -> Config {
@@ -672,18 +704,22 @@ mod tests {
 
     #[test]
     fn test_runtime_context_database_mut_write() {
-        // `database_mut()` should expose the underlying redb state so a
-        // round-trip write+read works without ever cloning the Arc.
         let temp = TempDir::new().expect("Failed to create temp dir");
         let temp_canon = std::fs::canonicalize(temp.path()).expect("Failed to canonicalize");
         let source_dir = temp_canon.join("src");
         let dest_dir = temp_canon.join("dst");
         std::fs::create_dir_all(&source_dir).expect("Failed to create source dir");
         std::fs::create_dir_all(&dest_dir).expect("Failed to create dest dir");
+        std::fs::create_dir_all(source_dir.join("home")).expect("Failed to create home dir");
 
         let config = test_config();
-        let temp_db = TempDir::new().expect("Failed to create temp db dir");
-        let mut context = test_runtime_context(config, &source_dir, &dest_dir, &temp_db);
+        let paths = ResolvedPaths::resolve(&source_dir, &dest_dir, &config)
+            .expect("failed to resolve test paths");
+        let mut context = RuntimeContext::from_parts_with_db(
+            Arc::new(config),
+            paths,
+            Box::<MemoryPersistentState>::default(),
+        );
 
         {
             let db = context.database_mut();
@@ -691,8 +727,6 @@ mod tests {
                 .expect("database_mut write should succeed");
         }
 
-        // Read through the shared `&database()` view to confirm the write
-        // is observable from another reference.
         let value = context
             .database()
             .get(ENTRY_STATE_BUCKET, b"key")
@@ -719,27 +753,6 @@ mod tests {
         let working_tree = context.working_tree();
         // Should fallback to source_dir when no git repo found
         assert_eq!(working_tree, source_dir);
-    }
-
-    #[test]
-    fn test_runtime_context_clone() {
-        let temp = TempDir::new().expect("Failed to create temp dir");
-        let temp_canon = std::fs::canonicalize(temp.path()).expect("Failed to canonicalize");
-
-        let source_dir = temp_canon.join("src");
-        let dest_dir = temp_canon.join("dst");
-
-        std::fs::create_dir_all(&source_dir).expect("Failed to create source dir");
-        std::fs::create_dir_all(&dest_dir).expect("Failed to create dest dir");
-        std::fs::create_dir_all(source_dir.join("home")).expect("Failed to create home dir");
-
-        let config = test_config();
-        let temp_db = TempDir::new().expect("Failed to create temp db dir");
-        let context = test_runtime_context(config, &source_dir, &dest_dir, &temp_db);
-
-        let cloned = context.clone();
-        assert_eq!(context.source_dir(), cloned.source_dir());
-        assert_eq!(context.dest_dir(), cloned.dest_dir());
     }
 
     #[test]

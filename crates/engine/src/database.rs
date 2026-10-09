@@ -5,7 +5,6 @@
 
 use crate::state::{
     CONFIG_METADATA_BUCKET, ConfigMetadata, ENTRY_STATE_BUCKET, EntryState, PersistentState,
-    RedbPersistentState,
 };
 use guisu_config::dirs;
 use guisu_core::{Error, Result};
@@ -34,7 +33,7 @@ pub fn get_db_path() -> Result<PathBuf> {
 ///
 /// Returns an error if the state cannot be saved (e.g., serialization failure, write error)
 pub fn save_entry_state(
-    db: &mut RedbPersistentState,
+    db: &mut dyn PersistentState,
     path: &str,
     content: &[u8],
     mode: Option<u32>,
@@ -58,7 +57,7 @@ pub fn save_entry_state(
 ///
 /// Returns an error if any state cannot be saved (e.g., serialization failure, write error)
 pub fn save_entry_states_batch(
-    db: &mut RedbPersistentState,
+    db: &mut dyn PersistentState,
     entries: &[(String, Vec<u8>, Option<u32>)],
 ) -> Result<()> {
     if entries.is_empty() {
@@ -98,7 +97,7 @@ pub fn save_entry_states_batch(
 /// # Errors
 ///
 /// Returns an error if the state cannot be retrieved (e.g., deserialization failure, read error)
-pub fn get_entry_state(db: &RedbPersistentState, path: &str) -> Result<Option<EntryState>> {
+pub fn get_entry_state(db: &dyn PersistentState, path: &str) -> Result<Option<EntryState>> {
     let bytes =
         db.get(ENTRY_STATE_BUCKET, path.as_bytes())
             .map_err(|e| Error::BucketOperation {
@@ -115,7 +114,7 @@ pub fn get_entry_state(db: &RedbPersistentState, path: &str) -> Result<Option<En
 /// # Errors
 ///
 /// Returns an error if the state cannot be deleted (e.g., write error)
-pub fn delete_entry_state(db: &mut RedbPersistentState, path: &str) -> Result<()> {
+pub fn delete_entry_state(db: &mut dyn PersistentState, path: &str) -> Result<()> {
     db.delete(ENTRY_STATE_BUCKET, path.as_bytes())
         .map_err(|e| Error::BucketOperation {
             operation: "delete",
@@ -134,14 +133,13 @@ pub fn delete_entry_state(db: &mut RedbPersistentState, path: &str) -> Result<()
 ///
 /// Returns an error if entries cannot be retrieved from the database
 pub fn get_all_entry_states(
-    db: &RedbPersistentState,
+    db: &dyn PersistentState,
 ) -> Result<std::collections::HashMap<String, EntryState>> {
-    use crate::state::PersistentState;
     use std::collections::HashMap;
 
     let mut entries = HashMap::new();
 
-    db.for_each(ENTRY_STATE_BUCKET, |key, value| {
+    db.for_each(ENTRY_STATE_BUCKET, &mut |key, value| {
         let path = String::from_utf8_lossy(key).to_string();
         if let Some(state) = EntryState::from_bytes(value) {
             entries.insert(path, state);
@@ -161,7 +159,7 @@ pub fn get_all_entry_states(
 ///
 /// Returns an error if the metadata cannot be saved (e.g., serialization failure, write error)
 pub fn save_config_metadata(
-    db: &mut RedbPersistentState,
+    db: &mut dyn PersistentState,
     template_source: &str,
     rendered_config: String,
 ) -> Result<()> {
@@ -183,7 +181,7 @@ pub fn save_config_metadata(
 /// # Errors
 ///
 /// Returns an error if the metadata cannot be retrieved (e.g., deserialization failure, read error)
-pub fn get_config_metadata(db: &RedbPersistentState) -> Result<Option<ConfigMetadata>> {
+pub fn get_config_metadata(db: &dyn PersistentState) -> Result<Option<ConfigMetadata>> {
     let bytes = db
         .get(CONFIG_METADATA_BUCKET, b"config")
         .map_err(|e| Error::BucketOperation {
@@ -202,7 +200,7 @@ pub fn get_config_metadata(db: &RedbPersistentState) -> Result<Option<ConfigMeta
 /// # Errors
 ///
 /// Returns an error if the metadata cannot be deleted (e.g., write error)
-pub fn delete_config_metadata(db: &mut RedbPersistentState) -> Result<()> {
+pub fn delete_config_metadata(db: &mut dyn PersistentState) -> Result<()> {
     db.delete(CONFIG_METADATA_BUCKET, b"config")
         .map_err(|e| Error::BucketOperation {
             operation: "delete",
@@ -216,6 +214,7 @@ pub fn delete_config_metadata(db: &mut RedbPersistentState) -> Result<()> {
 mod tests {
     #![allow(clippy::unwrap_used, clippy::panic)]
     use super::*;
+    use crate::state::RedbPersistentState;
     use tempfile::TempDir;
 
     /// Create an isolated test database in a temporary directory

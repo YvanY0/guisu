@@ -9,7 +9,7 @@ use guisu_engine::adapters::crypto::CryptoDecryptorAdapter;
 use guisu_engine::adapters::template::TemplateRendererAdapter;
 use guisu_engine::entry::{SourceEntry, TargetEntry};
 use guisu_engine::processor::ContentProcessor;
-use guisu_engine::state::{RedbPersistentState, SourceState, TargetState};
+use guisu_engine::state::{PersistentState, SourceState, TargetState};
 use guisu_template::TemplateContext;
 use owo_colors::OwoColorize;
 use rayon::prelude::*;
@@ -385,7 +385,7 @@ fn display_diff_output(
     stats: &DiffStats,
     pager: bool,
     config: &Config,
-    db: &mut RedbPersistentState,
+    db: &mut dyn PersistentState,
 ) -> Result<()> {
     // Check and display hooks status first
     let hooks_displayed = print_hooks_status(source_dir, config, db);
@@ -421,7 +421,7 @@ fn run_impl(
     pager: bool,
     interactive: bool,
     config: &Config,
-    db: &mut RedbPersistentState,
+    db: &mut dyn PersistentState,
 ) -> Result<()> {
     // Resolve all paths (handles root_entry and canonicalization)
     let paths = crate::common::ResolvedPaths::resolve(source_dir, dest_dir, config)?;
@@ -1427,7 +1427,7 @@ pub fn compare_and_print_hooks(
 
 /// Check and print hooks status
 /// Returns true if any hooks were displayed
-fn print_hooks_status(source_dir: &Path, config: &Config, db: &mut RedbPersistentState) -> bool {
+fn print_hooks_status(source_dir: &Path, config: &Config, db: &mut dyn PersistentState) -> bool {
     // Load hooks and state using shared helper
     let Some((collections, state)) = crate::utils::hooks::load_hooks_and_state(source_dir, db)
     else {

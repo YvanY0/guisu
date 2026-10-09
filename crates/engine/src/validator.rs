@@ -3,7 +3,7 @@
 //! This module provides tools for validating the integrity of the persistent state
 //! and repairing inconsistencies that may arise from unexpected failures or data corruption.
 
-use crate::state::{EntryState, RedbPersistentState};
+use crate::state::{EntryState, PersistentState};
 use guisu_core::Result;
 use std::collections::HashMap;
 
@@ -83,7 +83,7 @@ impl StateValidator {
     ///
     /// # Returns
     /// A validation report containing all detected issues
-    pub fn validate(db: &RedbPersistentState) -> Result<ValidationReport> {
+    pub fn validate(db: &dyn PersistentState) -> Result<ValidationReport> {
         let mut report = ValidationReport::default();
 
         // Get all entries from database
@@ -124,7 +124,7 @@ impl StateValidator {
     ///
     /// # Returns
     /// Number of entries repaired
-    pub fn repair(db: &mut RedbPersistentState) -> Result<usize> {
+    pub fn repair(db: &mut dyn PersistentState) -> Result<usize> {
         let report = Self::validate(db)?;
         let mut repaired = 0;
 
@@ -153,7 +153,7 @@ impl StateValidator {
     }
 
     /// Get all entries from the database
-    fn get_all_entries(db: &RedbPersistentState) -> Result<HashMap<String, EntryState>> {
+    fn get_all_entries(db: &dyn PersistentState) -> Result<HashMap<String, EntryState>> {
         crate::database::get_all_entry_states(db)
     }
 

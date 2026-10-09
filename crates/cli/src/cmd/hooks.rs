@@ -8,7 +8,7 @@ use dialoguer::{Confirm, theme::ColorfulTheme};
 use guisu_config::Config;
 use guisu_core::platform::CURRENT_PLATFORM;
 use guisu_engine::hooks::{HookLoader, HookRunner, HookStage, TemplateRenderer};
-use guisu_engine::state::{HookStatePersistence, RedbPersistentState};
+use guisu_engine::state::{HookStatePersistence, PersistentState};
 use owo_colors::OwoColorize;
 use std::io::IsTerminal;
 use std::path::{Path, PathBuf};
@@ -29,7 +29,7 @@ use crate::utils::path::SourceDirExt;
 pub fn run_hooks(
     source_dir: &Path,
     config: &Config,
-    db: &mut RedbPersistentState,
+    db: &mut dyn PersistentState,
     skip_confirm: bool,
     hook_filter: Option<&str>,
 ) -> Result<()> {
@@ -145,7 +145,7 @@ fn confirm_run(skip_confirm: bool) -> Result<bool> {
 fn execute_and_persist(
     source_dir: &Path,
     config: &Config,
-    db: &mut RedbPersistentState,
+    db: &mut dyn PersistentState,
     collections: &guisu_engine::hooks::HookCollections,
 ) -> Result<()> {
     let mut persistence = HookStatePersistence::new(db);
@@ -307,7 +307,7 @@ pub fn run_list(source_dir: &Path, _config: &Config, format: &str) -> Result<()>
 pub fn run_check(
     source_dir: &Path,
     config: &Config,
-    db: &mut RedbPersistentState,
+    db: &mut dyn PersistentState,
     format: &str,
 ) -> Result<()> {
     let is_tty = std::io::stdout().is_terminal();
@@ -557,7 +557,7 @@ fn display_hook_not_found(hook_name: &str, use_nerd_fonts: bool) {
 pub fn handle_hooks_pre(
     source_dir: &Path,
     config: &Config,
-    db: &mut RedbPersistentState,
+    db: &mut dyn PersistentState,
 ) -> Result<()> {
     use guisu_engine::hooks::config::HookMode;
 
@@ -647,7 +647,7 @@ pub fn handle_hooks_pre(
 pub fn handle_hooks_post(
     source_dir: &Path,
     config: &Config,
-    db: &mut RedbPersistentState,
+    db: &mut dyn PersistentState,
 ) -> Result<()> {
     use guisu_engine::hooks::config::HookMode;
 
