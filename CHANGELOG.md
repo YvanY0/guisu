@@ -5,6 +5,25 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.3.0](https://github.com/YvanY0/guisu/compare/v0.2.12...v0.3.0) - 2026-10-10
+
+### Added
+
+- *(diff)* show script content diffs from persisted state
+- *(hooks)* [**breaking**] resolve scripts from platform subdirectories
+- *(vault)* accept a binary path for the Bitwarden provider
+
+### Fixed
+
+- *(reliability)* harden filesystem and persistence handling
+- *(diff)* show hook script changes as hunks like file diffs
+- *(status)* report hook content changes and hooks in empty repos
+- *(hooks)* close temp script before exec to avoid ETXTBSY
+
+### Other
+
+- *(engine)* streamline hook execution and state access
+
 ## [0.2.12](https://github.com/YvanY0/guisu/compare/v0.2.11...v0.2.12) - 2026-10-03
 
 ### Added
