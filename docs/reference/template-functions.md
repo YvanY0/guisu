@@ -7,20 +7,14 @@ The full list of functions and filters registered with the minijinja environment
 > A function is called with parentheses: `fn(arg)`. A filter is applied with the pipe operator: `value | filter`. The same underlying operation may exist as both — see the encryption row below.
 
 > [!NOTE]
-> **`os()` and `system.os` agree**
-> Both return `"darwin"` (macOS), `"linux"`, `"windows"`, or `"unknown"` — they share a single source of truth in `guisu_core::platform`. `os()` is the function form; `system.os` is the context field.
+> **System info lives on `system.*`**
+> OS, architecture, hostname, username, and home directory are exposed as
+> context fields (`system.os`, `system.arch`, `system.hostname`,
+> `system.username`, `system.homeDir`). There is no separate function form —
+> templates must read these from the context so there is exactly one source
+> of truth per value.
 
 
-
-## System
-
-| Function | Returns | Notes |
-| --- | --- | --- |
-| `os()` | string | `"darwin"`, `"linux"`, `"windows"`, or `"unknown"`. |
-| `arch()` | string | `env::consts::ARCH` — `x86_64`, `aarch64`, `arm`, … |
-| `hostname()` | string | Machine hostname. |
-| `username()` | string | Current OS user. |
-| `home_dir()` | string | `$HOME`. |
 
 ## Environment
 

@@ -67,13 +67,13 @@ The script interpreter is auto-detected from the shebang line. `#!/bin/bash`, `#
 
 ## Template rendering
 
-Hook scripts ending in `.j2` (and `cmd` strings are always rendered) are rendered as templates before execution. `{{ os() }}`, `{{ guisu.srcDir }}`, `{{ guisu.workingTree }}`, `{{ guisu.dstDir }}`, etc. are available. Branch on platform inside a single hook file:
+Hook scripts ending in `.j2` (and `cmd` strings are always rendered) are rendered as templates before execution. `{{ system.os }}`, `{{ guisu.srcDir }}`, `{{ guisu.workingTree }}`, `{{ guisu.dstDir }}`, etc. are available. Branch on platform inside a single hook file:
 
 ```bash
 #!/bin/bash
-{% if os() == "darwin" %}
+{% if system.os == "darwin" %}
 brew update
-{% elif os() == "linux" %}
+{% elif system.os == "linux" %}
 sudo apt-get update
 {% endif %}
 ```

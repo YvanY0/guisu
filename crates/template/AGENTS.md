@@ -20,7 +20,7 @@ Each category gets its own file with one or more `pub fn` definitions, **each wi
 |------|----------|
 | `strings.rs` | String manipulation (upper, lower, trim, replace, …) |
 | `files.rs` | File-system queries (exists, is_file, is_dir, read_file, …) |
-| `system.rs` | Host info (hostname, os, arch, env) |
+| `system.rs` | Host helpers that don't map to a context field (`env`, `joinPath`, `lookPath`). Host info (OS, arch, hostname, …) lives on `system.*` in `TemplateContext` — there is no separate function form so there is exactly one source of truth per value. |
 | `data.rs` | Data structures (dict, list, json) |
 | `vault.rs` | Vault lookups (`vault('github')`, `vault_field(...)`) — requires `guisu-vault` |
 | `crypto.rs` | Encryption / decryption helpers — requires `guisu-crypto` |

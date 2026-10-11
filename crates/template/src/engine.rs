@@ -138,11 +138,6 @@ impl TemplateEngine {
 
         // Register custom functions
         env.add_function("env", functions::env);
-        env.add_function("os", functions::os);
-        env.add_function("arch", functions::arch);
-        env.add_function("hostname", functions::hostname);
-        env.add_function("username", functions::username);
-        env.add_function("home_dir", functions::home_dir);
         env.add_function("joinPath", functions::join_path);
         env.add_function("lookPath", functions::look_path);
         env.add_function("include", functions::include);
@@ -264,7 +259,7 @@ impl TemplateEngine {
     /// let engine = TemplateEngine::new();
     /// let context = TemplateContext::new();
     ///
-    /// let template = "Hello {{ username }}!";
+    /// let template = "Hello {{ system.username }}!";
     /// let result = engine.render_str(template, &context).unwrap();
     /// println!("{}", result);
     /// ```
@@ -292,7 +287,7 @@ impl TemplateEngine {
     /// let engine = TemplateEngine::new();
     /// let context = TemplateContext::new();
     ///
-    /// let template = "Hello {{ username }}!";
+    /// let template = "Hello {{ system.username }}!";
     /// let result = engine.render_named_str("greeting.txt", template, &context).unwrap();
     /// println!("{}", result);
     /// ```
@@ -399,7 +394,7 @@ mod tests {
         let engine = TemplateEngine::new();
         let ctx = TemplateContext::new();
 
-        let result = engine.render_str("Hello {{ username }}!", &ctx);
+        let result = engine.render_str("Hello {{ system.username }}!", &ctx);
         assert!(result.is_ok());
     }
 
@@ -418,7 +413,7 @@ mod tests {
         let engine = TemplateEngine::with_identities(vec![identity]);
         let ctx = TemplateContext::new();
 
-        let result = engine.render_str("{{ username }}", &ctx);
+        let result = engine.render_str("{{ system.username }}", &ctx);
         assert!(result.is_ok());
     }
 
@@ -433,7 +428,7 @@ mod tests {
         );
 
         let ctx = TemplateContext::new();
-        let result = engine.render_str("{{ os }}", &ctx);
+        let result = engine.render_str("{{ system.os }}", &ctx);
         assert!(result.is_ok());
     }
 
@@ -445,7 +440,7 @@ mod tests {
         let engine = TemplateEngine::with_identities_arc_and_template_dir(&identities, None);
 
         let ctx = TemplateContext::new();
-        let result = engine.render_str("{{ arch }}", &ctx);
+        let result = engine.render_str("{{ system.arch }}", &ctx);
         assert!(result.is_ok());
     }
 
@@ -461,7 +456,7 @@ mod tests {
         );
 
         let ctx = TemplateContext::new();
-        let result = engine.render_str("{{ hostname }}", &ctx);
+        let result = engine.render_str("{{ system.hostname }}", &ctx);
         assert!(result.is_ok());
     }
 
@@ -470,7 +465,7 @@ mod tests {
         let engine = TemplateEngine::new();
         let ctx = TemplateContext::new();
 
-        let template = "Hello {{ username }}!";
+        let template = "Hello {{ system.username }}!";
         let result = engine.render_str(template, &ctx).unwrap();
 
         assert!(result.contains("Hello"));
@@ -512,11 +507,11 @@ mod tests {
     }
 
     #[test]
-    fn test_render_str_system_functions() {
+    fn test_render_str_system_fields() {
         let engine = TemplateEngine::new();
         let ctx = TemplateContext::new();
 
-        let template = "OS: {{ os() }}, Arch: {{ arch() }}";
+        let template = "OS: {{ system.os }}, Arch: {{ system.arch }}";
         let result = engine.render_str(template, &ctx).unwrap();
 
         assert!(result.contains("OS:"));
@@ -528,7 +523,7 @@ mod tests {
         let engine = TemplateEngine::new();
         let ctx = TemplateContext::new();
 
-        let template = "Hello from {{ username }}";
+        let template = "Hello from {{ system.username }}";
         let result = engine
             .render_named_str("greeting.txt", template, &ctx)
             .unwrap();
@@ -553,7 +548,7 @@ mod tests {
         let engine = TemplateEngine::new();
         let ctx = TemplateContext::new();
 
-        let template = b"Hello {{ username }}!";
+        let template = b"Hello {{ system.username }}!";
         let result = engine.render(template, &ctx).unwrap();
 
         assert_ne!(result, [] as [u8; 0]);
@@ -922,7 +917,7 @@ mod tests {
             TemplateEngine::with_identities_and_template_dir(vec![], Some(nonexistent_dir));
         let ctx = TemplateContext::new();
 
-        let result = engine.render_str("{{ username }}", &ctx);
+        let result = engine.render_str("{{ system.username }}", &ctx);
         assert!(result.is_ok());
     }
 
@@ -937,7 +932,7 @@ mod tests {
         let engine = TemplateEngine::with_identities_and_template_dir(vec![], Some(file_path));
         let ctx = TemplateContext::new();
 
-        let result = engine.render_str("{{ arch }}", &ctx);
+        let result = engine.render_str("{{ system.arch }}", &ctx);
         assert!(result.is_ok());
     }
 }

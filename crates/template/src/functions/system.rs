@@ -1,18 +1,18 @@
 //! System information functions
 //!
-//! Provides functions for accessing system information like OS, architecture,
-//! hostname, username, home directory, and PATH operations.
+//! Read-only helpers that are not expressible as plain context fields:
+//!
+//! - `env("NAME")` — look up a single environment variable by name.
+//! - `joinPath(...)` — join path components portably.
+//! - `lookPath("cmd")` — resolve a binary on `$PATH` with input validation.
+//!
+//! Host information (OS, arch, hostname, username, home directory) lives on
+//! the `system.*` fields of [`crate::TemplateContext`] — there is no separate
+//! function form so there is exactly one source of truth per value.
 
 use guisu_config::Env;
 use minijinja::Value;
-use std::env;
 use std::path::PathBuf;
-use std::sync::OnceLock;
-
-// Cached system information
-static HOSTNAME_CACHE: OnceLock<String> = OnceLock::new();
-static USERNAME_CACHE: OnceLock<String> = OnceLock::new();
-static HOME_DIR_CACHE: OnceLock<String> = OnceLock::new();
 
 /// Get an environment variable
 ///
@@ -21,62 +21,6 @@ pub fn env(name: &str) -> std::borrow::Cow<'static, str> {
     Env::system()
         .get(name)
         .map_or(std::borrow::Cow::Borrowed(""), std::borrow::Cow::Owned)
-}
-
-/// Get the operating system name
-///
-/// Returns the same value as `system.os` and the platform subdirectories
-/// (`templates/darwin/`, `variables/darwin/`): `"darwin"` (macOS), `"linux"`,
-/// `"windows"`, or `"unknown"`. Delegates to `guisu_core::platform` so there
-/// is a single source of truth across the codebase.
-///
-/// Usage: `{{ os() }}`
-#[must_use]
-pub fn os() -> &'static str {
-    guisu_core::platform::CURRENT_PLATFORM.os
-}
-
-/// Get the system architecture
-///
-/// Usage: `{{ arch() }}`
-#[must_use]
-pub fn arch() -> &'static str {
-    env::consts::ARCH
-}
-
-/// Get the system hostname
-///
-/// Usage: `{{ hostname() }}`
-pub fn hostname() -> &'static str {
-    HOSTNAME_CACHE.get_or_init(|| {
-        hostname::get()
-            .ok()
-            .and_then(|h| h.into_string().ok())
-            .unwrap_or_else(|| "unknown".to_string())
-    })
-}
-
-/// Get the current username
-///
-/// Usage: `{{ username() }}`
-pub fn username() -> &'static str {
-    USERNAME_CACHE.get_or_init(|| {
-        Env::system()
-            .username()
-            .unwrap_or_else(|| "unknown".to_string())
-    })
-}
-
-/// Get the home directory
-///
-/// Usage: `{{ home_dir() }}`
-pub fn home_dir() -> &'static str {
-    HOME_DIR_CACHE.get_or_init(|| {
-        dirs::home_dir().map_or_else(
-            || "/home/unknown".to_string(),
-            |p| p.to_string_lossy().into_owned(),
-        )
-    })
 }
 
 /// Join path components

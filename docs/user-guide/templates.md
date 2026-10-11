@@ -8,7 +8,7 @@ The template context is composed from four sources:
 
 | Source | Keys |
 | --- | --- |
-| **System** | `system.os`, `system.arch`, `system.hostname`, `system.username`, `system.homeDir`, … (the `os()` / `arch()` / `hostname()` / `username()` / `home_dir()` functions return the same values without the `system.` prefix) |
+| **System** | `system.os`, `system.arch`, `system.hostname`, `system.username`, `system.homeDir`, `system.osFamily`, `system.distro`, `system.distroId`, `system.distroVersion`, `system.uid`, `system.gid`, `system.group` |
 | **Environment** | (read with the `env` function: `env("HOME")`) |
 | **Guisu** | `guisu.srcDir`, `guisu.workingTree`, `guisu.dstDir`, `guisu.rootEntry`, `guisu.config` |
 | **User** | every key from `.guisu.toml` `[variables]` and from `.guisu/variables/*.toml` and platform-specific subdirectories |
@@ -16,18 +16,16 @@ The template context is composed from four sources:
 ## Example
 
 ```jinja
-# ~/.bashrc — rendered on {{ os() }} ({{ arch() }})
-{% if os() == "darwin" %}
+# ~/.bashrc — rendered on {{ system.os }} ({{ system.arch }})
+{% if system.os == "darwin" %}
 export HOMEBREW_PREFIX="/opt/homebrew"
-{% elif os() == "linux" %}
+{% elif system.os == "linux" %}
 export HOMEBREW_PREFIX="/home/linuxbrew/.linuxbrew"
 {% endif %}
 
 export EDITOR="{{ editor }}"
 export EMAIL="{{ email }}"
 ```
-
-`os()` and `system.os` return the same value (`"darwin"` on macOS).
 
 ## Built-in template functions
 
@@ -36,7 +34,6 @@ The full list is in [Reference — Template Functions](../reference/template-fun
 | Function | Purpose |
 | --- | --- |
 | `env("NAME")` | Read an environment variable (empty string if unset). |
-| `os()`, `arch()`, `hostname()`, `username()`, `home_dir()` | System info. |
 | `lookPath("cmd")` | Absolute path of `cmd` on `$PATH`, or empty. |
 | `bitwarden("Item")` | Fetch a Bitwarden item as an object. |
 | `bitwardenFields("Item", "Field")` | Fetch a specific field. |

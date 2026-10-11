@@ -57,14 +57,14 @@ A `.guisu.toml.j2` is rendered with the same context as a regular template. Use 
 editor = "{{ env("EDITOR") | default(value="nvim") }}"
 
 [variables]
-hostname = "{{ hostname }}"
+hostname = "{{ system.hostname }}"
 ```
 
 The file is rendered before being parsed, so the resulting TOML is what the rest of the system sees. The config crate itself does not render templates — the CLI layer renders `.guisu.toml.j2` and caches the result (keyed by template hash) in the state DB.
 
 > [!NOTE]
 > **Config file is rendered with the same context as templates**
-> `hostname`, `os()`, `arch()`, env vars, and user variables are all available in `.guisu.toml.j2`. This means a config file can be both a config and a small template at the same time.
+> `system.*` fields (`system.hostname`, `system.os`, `system.arch`, …), env vars, and user variables are all available in `.guisu.toml.j2`. This means a config file can be both a config and a small template at the same time.
 
 
 
