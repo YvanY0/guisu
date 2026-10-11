@@ -28,7 +28,7 @@ Internal modules are `pub(crate)` — use top-level re-exports from `lib.rs`:
 | `database.rs` | `RedbPersistentState` implementation, batch operations (pub(crate)) |
 | `attr.rs` | `FileAttributes` plain struct (`is_template`, `is_encrypted`, `mode`) — extension-only parsing |
 | `entry.rs` | `SourceEntry`, `TargetEntry` (`File` / `Directory` / `Symlink`), `DestEntry` types |
-| `hooks/` | Hook system (6 files): config, loader, executor, state, types |
+| `hooks/` | Hook system: `config` (types), `loader` (discovery + `load_for_comparison`), `selection` (platform filter, diff, lifecycle classify — display-agnostic), `executor` (runner), `script` (shebang + `render_script_body`), `state`, `types` |
 | `system.rs` | `System` trait, `RealSystem`, `DryRunSystem` (pub(crate)) |
 
 ## Removing a destination path

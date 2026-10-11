@@ -14,6 +14,8 @@
 //!
 //! - `config`: Hook configuration structures (Hook, `HookCollections`, etc.)
 //! - `loader`: Hook discovery and loading from filesystem
+//! - `selection`: Display-agnostic filtering, diffing, and lifecycle status
+//!   (the single source of truth shared by `diff`, `status`, and `hooks`)
 //! - `executor`: Hook execution engine with parallel support
 //! - `state`: Hook configuration state tracking (separate from execution state)
 
@@ -22,12 +24,18 @@ pub(crate) mod env;
 pub mod executor;
 pub mod loader;
 pub mod script;
+pub mod selection;
 pub mod state;
 pub mod types;
 
 // Re-export main types for convenience
 pub use config::{Hook, HookCollections, HookMode, HookStage};
 pub use executor::{HookRunner, HookRunnerBuilder, NoOpRenderer, TemplateRenderer};
-pub use loader::HookLoader;
+pub use loader::{HookLoader, load_for_comparison};
+pub use script::{display_script_name, is_template_script, render_script_body};
+pub use selection::{
+    HookChange, HookLifecycle, classify, diff_collections, filter_for_platform, metadata_changed,
+    will_run,
+};
 pub use state::HookConfigState;
 pub use types::{HookName, HookScript, PlatformName};

@@ -10,6 +10,48 @@ use std::io::Write;
 use std::path::{Path, PathBuf};
 use std::time::{Duration, Instant};
 
+/// Whether a hook script path points at a template (`.j2` suffix,
+/// case-insensitive).
+///
+/// Single source of truth for the question previously asked with three
+/// different idioms across `loader`, `executor`, `diff`, and `status`.
+#[must_use]
+pub fn is_template_script(script: &str) -> bool {
+    script.to_lowercase().ends_with(".j2")
+}
+
+/// Display name for a hook script: the trailing `.j2` suffix is hidden,
+/// matching how dotfile targets strip their template extension.
+#[must_use]
+pub fn display_script_name(script: &str) -> &str {
+    script.strip_suffix(".j2").unwrap_or(script)
+}
+
+/// Render a hook script body, expanding `.j2` paths through `render`.
+///
+/// Template failures degrade to the raw content (with a warning) so diff
+/// and status still show something instead of erroring out the whole run.
+/// The caller owns the template engine; this layer just dispatches on the
+/// extension. This is the single implementation that `diff`, `status`, and
+/// `hooks show` previously each carried their own copy of.
+#[must_use]
+pub fn render_script_body(
+    script: &str,
+    raw: &str,
+    render: &dyn Fn(&str) -> Result<String>,
+) -> String {
+    if is_template_script(script) {
+        return match render(raw) {
+            Ok(rendered) => rendered,
+            Err(e) => {
+                tracing::warn!("Failed to render hook template: {e}");
+                raw.to_string()
+            }
+        };
+    }
+    raw.to_string()
+}
+
 /// Run a hook process with stdout and stderr connected directly to the parent.
 pub(crate) fn execute_hook_process(
     command: &duct::Expression,
@@ -274,6 +316,41 @@ pub(crate) fn infer_interpreter(script_path: &Path) -> Result<(String, Vec<Strin
 mod tests {
     #![allow(clippy::unwrap_used, clippy::panic)]
     use super::*;
+
+    #[test]
+    fn is_template_script_recognizes_j2_case_insensitively() {
+        assert!(is_template_script("scripts/setup.sh.j2"));
+        assert!(is_template_script("scripts/SETUP.J2"));
+        assert!(!is_template_script("scripts/setup.sh"));
+        assert!(!is_template_script("scripts/j2"));
+    }
+
+    #[test]
+    fn display_script_name_strips_exact_j2_suffix() {
+        assert_eq!(
+            display_script_name("scripts/setup.sh.j2"),
+            "scripts/setup.sh"
+        );
+        assert_eq!(display_script_name("scripts/setup.sh"), "scripts/setup.sh");
+        // Uppercase suffix is rendered but not stripped (matches historical
+        // `strip_suffix(".j2")` behavior across diff/status/show).
+        assert_eq!(display_script_name("scripts/setup.J2"), "scripts/setup.J2");
+    }
+
+    #[test]
+    fn render_script_body_dispatches_and_falls_back() {
+        let ok_render = |_: &str| -> Result<String> { Ok("rendered".to_string()) };
+        let fail_render = |_: &str| -> Result<String> { Err(Error::Message("boom".to_string())) };
+
+        assert_eq!(
+            render_script_body("a.sh.j2", "{{ x }}", &ok_render),
+            "rendered"
+        );
+        // Failed template render degrades to raw content.
+        assert_eq!(render_script_body("a.sh.j2", "{{ x", &fail_render), "{{ x");
+        // Plain scripts never touch the renderer.
+        assert_eq!(render_script_body("a.sh", "plain", &fail_render), "plain");
+    }
     use std::fs;
     use tempfile::TempDir;
 

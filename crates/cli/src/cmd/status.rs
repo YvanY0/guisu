@@ -1018,66 +1018,6 @@ fn render_tree(
     }
 }
 
-/// Render hook template content
-fn render_hook_template(source_dir: &Path, content: &str, config: &Config) -> Result<String> {
-    use guisu_template::TemplateContext;
-    use std::sync::Arc;
-
-    // Load age identities for encryption support in templates
-    let identities = Arc::new(config.age_identities().unwrap_or_else(|_| Vec::new()));
-
-    // Create template engine with bitwarden provider support
-    let engine = crate::create_template_engine(source_dir, &identities, config);
-
-    // Get destination directory
-    let dst_dir = config
-        .general
-        .dst_dir
-        .clone()
-        .or_else(dirs::home_dir)
-        .unwrap_or_else(|| std::path::PathBuf::from("~"));
-
-    // Create template context with guisu info and all variables
-    let working_tree = guisu_engine::git::find_working_tree(source_dir)
-        .unwrap_or_else(|| source_dir.to_path_buf());
-    let dotfiles_dir = config.dotfiles_dir(source_dir);
-    let template_ctx = TemplateContext::new()
-        .with_guisu_info(
-            crate::path_to_string(&dotfiles_dir),
-            crate::path_to_string(&working_tree),
-            crate::path_to_string(&dst_dir),
-            crate::path_to_string(&config.general.root_entry),
-        )
-        .with_loaded_variables(source_dir, config)
-        .map_err(|e| anyhow::anyhow!("Failed to load variables: {e}"))?;
-
-    // Render template
-    engine
-        .render_str(content, &template_ctx)
-        .map_err(|e| anyhow::anyhow!("Template rendering error: {e}"))
-}
-
-/// Render script content, handling templates if needed
-fn render_script_content(
-    source_dir: &Path,
-    script: &str,
-    content: &str,
-    config: &Config,
-) -> String {
-    let is_template = Path::new(script)
-        .extension()
-        .is_some_and(|ext| ext.eq_ignore_ascii_case("j2"));
-
-    if is_template {
-        render_hook_template(source_dir, content, config).unwrap_or_else(|e| {
-            tracing::warn!("Failed to render hook template: {}", e);
-            content.to_string()
-        })
-    } else {
-        content.to_string()
-    }
-}
-
 /// Check and print hooks status
 fn print_hooks_status(
     source_dir: &Path,
@@ -1085,101 +1025,48 @@ fn print_hooks_status(
     show_all: bool,
     config: &Config,
 ) {
-    use guisu_engine::hooks::config::HookMode;
+    use guisu_engine::hooks::{HookLifecycle, classify, filter_for_platform, load_for_comparison};
 
-    // Load hooks and state using shared helper
-    let Some((collections, state)) = crate::utils::hooks::load_hooks_and_state(source_dir, db)
-    else {
+    // Load hooks and state using the shared engine helper
+    let Some((collections, state)) = load_for_comparison(source_dir, db) else {
         return;
     };
 
     let platform = guisu_core::platform::CURRENT_PLATFORM.os;
+    let bodies = crate::utils::hooks::HookBodies::with_fallback(source_dir, config);
+
+    // Hooks relevant on this platform — one list feeds both body resolution
+    // and the status loop.
+    let current_hooks: Vec<&guisu_engine::hooks::Hook> =
+        filter_for_platform(&collections.pre, platform)
+            .into_iter()
+            .chain(filter_for_platform(&collections.post, platform))
+            .collect();
+
+    // Rendered bodies keyed by hook name. The snapshot lookup spans both
+    // stages, matching `diff`.
+    let current_bodies = bodies.current_bodies(current_hooks.iter().copied());
+    let previous_bodies = state
+        .last_collections
+        .as_ref()
+        .map(|last| {
+            bodies.previous_bodies(
+                last.pre.iter().chain(last.post.iter()),
+                &state.onchange_rendered,
+            )
+        })
+        .unwrap_or_default();
 
     // Check hook execution status and display
     let mut hooks_to_display = Vec::new();
 
-    // Check if we have last_collections to compare against
-    let has_previous_state = state.last_collections.is_some();
-
-    for hook in collections.pre.iter().chain(collections.post.iter()) {
-        // Skip hooks that don't run on this platform
-        if !hook.should_run_on(platform) {
-            continue;
-        }
-
-        // Determine hook status based on hook definition changes
-        // This matches diff.rs logic
-        let status = if has_previous_state {
-            // Find the corresponding hook in last_collections
-            let last_hook = state.last_collections.as_ref().and_then(|last| {
-                last.pre
-                    .iter()
-                    .chain(last.post.iter())
-                    .find(|h| h.name == hook.name)
-            });
-
-            if let Some(last_hook) = last_hook {
-                // Check if hook definition changed (same logic as diff.rs).
-                // `script_content` is intentionally excluded: it's a runtime-only
-                // field (#[serde(skip)]) that never round-trips through the
-                // persistent `last_collections`, so comparing it would always
-                // register a false change after any run.
-                let mut has_changes = hook.order != last_hook.order
-                    || hook.mode != last_hook.mode
-                    || hook.cmd != last_hook.cmd
-                    || hook.script != last_hook.script;
-
-                // Content-level changes are invisible to the metadata
-                // comparison above (`script_content` is a runtime-only field
-                // that never round-trips through `last_collections`), so
-                // compare the old side — recovered from the state DB —
-                // against the freshly rendered current content. This covers
-                // template and plain scripts in every mode, including
-                // onchange hooks whose diff comes from a dependency change.
-                if !has_changes
-                    && let (Some(script), Some(raw)) = (&hook.script, &hook.script_content)
-                {
-                    let old_content = match (&last_hook.script, &last_hook.script_content) {
-                        (Some(old_script), Some(old_raw)) => Some(render_script_content(
-                            source_dir, old_script, old_raw, config,
-                        )),
-                        _ => state.onchange_rendered.get(hook.name.as_str()).cloned(),
-                    };
-                    if let Some(old_content) = old_content {
-                        let new_content = render_script_content(source_dir, script, raw, config);
-                        if old_content != new_content {
-                            has_changes = true;
-                        }
-                    }
-                }
-
-                if has_changes {
-                    FileStatus::Behind
-                } else {
-                    // Hook definition matches the last run AND (if mode=onchange)
-                    // the rendered content hash matches. For mode=once, also
-                    // require that the hook has been executed; otherwise the
-                    // first-run signal would be hidden behind a matching
-                    // definition. Without this check, a never-run `mode=once`
-                    // hook would show as Steady as soon as its definition
-                    // round-trips through `last_collections`.
-                    if (hook.mode == HookMode::OnChange
-                        && !state.onchange_hashes.contains_key(hook.name.as_str()))
-                        || (hook.mode == HookMode::Once
-                            && !state.once_executed.contains(hook.name.as_str()))
-                    {
-                        FileStatus::Latent
-                    } else {
-                        FileStatus::Steady
-                    }
-                }
-            } else {
-                // New hook
-                FileStatus::Latent
-            }
-        } else {
-            // No previous state, this is first run
-            FileStatus::Latent
+    for hook in &current_hooks {
+        // Steady / Latent / Behind via the shared engine classification —
+        // the same decision logic `diff` reads from.
+        let status = match classify(hook, &state, &current_bodies, &previous_bodies) {
+            HookLifecycle::Steady => FileStatus::Steady,
+            HookLifecycle::Latent => FileStatus::Latent,
+            HookLifecycle::Behind => FileStatus::Behind,
         };
 
         // Skip Steady hooks if not in --all mode

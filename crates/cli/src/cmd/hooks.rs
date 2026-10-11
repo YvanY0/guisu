@@ -7,13 +7,15 @@ use anyhow::{Context, Result};
 use dialoguer::{Confirm, theme::ColorfulTheme};
 use guisu_config::Config;
 use guisu_core::platform::CURRENT_PLATFORM;
-use guisu_engine::hooks::{HookLoader, HookRunner, HookStage, TemplateRenderer};
-use guisu_engine::state::{HookStatePersistence, PersistentState};
+use guisu_engine::hooks::{HookLoader, HookRunner, HookStage, TemplateRenderer, will_run};
+use guisu_engine::state::{HookState, HookStatePersistence, PersistentState};
 use owo_colors::OwoColorize;
 use std::io::IsTerminal;
-use std::path::{Path, PathBuf};
+use std::path::Path;
 
+use crate::ui::hooks::format_hook_list;
 use crate::ui::icons::StatusIcon;
+use crate::utils::hooks::HookBodies;
 use crate::utils::path::SourceDirExt;
 
 /// Run hooks
@@ -72,14 +74,12 @@ fn prepare_collections(
     source_dir: &Path,
     hook_filter: Option<&str>,
 ) -> Result<Option<guisu_engine::hooks::HookCollections>> {
-    let loader = HookLoader::new(source_dir, CURRENT_PLATFORM.os);
+    let loader = HookLoader::current_platform(source_dir);
 
-    if !loader.exists() {
+    let Some(mut collections) = loader.load_if_exists().context("Failed to load hooks")? else {
         print_no_hooks_directory();
         return Ok(None);
-    }
-
-    let mut collections = loader.load().context("Failed to load hooks")?;
+    };
 
     if let Some(filter_name) = hook_filter {
         collections.pre.retain(|h| h.name.as_str() == filter_name);
@@ -106,24 +106,11 @@ fn print_overview(collections: &guisu_engine::hooks::HookCollections, use_nerd_f
 
     if !collections.pre.is_empty() {
         println!("\n{} ({}):", "Pre hooks".bold(), collections.pre.len());
-        print_hook_names(&collections.pre, platform);
+        format_hook_list(&collections.pre, platform, StatusIcon::Hook.get(false));
     }
     if !collections.post.is_empty() {
         println!("\n{} ({}):", "Post hooks".bold(), collections.post.len());
-        print_hook_names(&collections.post, platform);
-    }
-}
-
-/// Print one `  • <name> (order: N)` line per hook, dimming platform-skipped entries.
-fn print_hook_names(hooks: &[guisu_engine::hooks::config::Hook], platform: &str) {
-    let icon = StatusIcon::Hook.get(false);
-    for hook in hooks {
-        let line = format!("{icon} {} (order: {})", hook.name, hook.order);
-        if hook.should_run_on(platform) {
-            println!("  {line}");
-        } else {
-            println!("  {} {}", line.dimmed(), "[skipped]".dimmed());
-        }
+        format_hook_list(&collections.post, platform, StatusIcon::Hook.get(false));
     }
 }
 
@@ -151,7 +138,7 @@ fn execute_and_persist(
     let mut persistence = HookStatePersistence::new(db);
     let mut state = persistence.load()?;
 
-    let renderer = create_template_engine(source_dir, config)?;
+    let renderer = HookBodies::new(source_dir, config)?;
 
     let runner = HookRunner::builder(collections, source_dir)
         .template_renderer(renderer)
@@ -170,15 +157,7 @@ fn execute_and_persist(
             .context("Post hooks failed")?;
     }
 
-    for hook_name in runner.get_once_executed() {
-        state.mark_executed_once(hook_name);
-    }
-    for (hook_name, content_hash) in runner.get_onchange_hashes() {
-        state.update_onchange_hash(hook_name, content_hash);
-    }
-    for (hook_name, rendered_content) in runner.get_onchange_rendered() {
-        state.update_onchange_rendered(hook_name, rendered_content);
-    }
+    merge_runner_state(&runner, &mut state);
 
     let hooks_dir = source_dir.hooks_dir();
     // Persist the FULL collection (not the filter-narrowed `collections`) so that
@@ -228,14 +207,12 @@ fn print_no_hooks_directory() {
 /// - JSON serialization fails (when format is "json")
 pub fn run_list(source_dir: &Path, _config: &Config, format: &str) -> Result<()> {
     // Load hooks using HookLoader
-    let loader = HookLoader::new(source_dir, CURRENT_PLATFORM.os);
+    let loader = HookLoader::current_platform(source_dir);
 
-    if !loader.exists() {
+    let Some(collections) = loader.load_if_exists().context("Failed to load hooks")? else {
         println!("{}", "No hooks directory found.".yellow());
         return Ok(());
-    }
-
-    let collections = loader.load().context("Failed to load hooks")?;
+    };
 
     let platform = CURRENT_PLATFORM.os;
 
@@ -260,36 +237,14 @@ pub fn run_list(source_dir: &Path, _config: &Config, format: &str) -> Result<()>
         println!();
 
         println!("{} ({} hooks)", "Pre hooks:".bold(), collections.pre.len());
-        for hook in &collections.pre {
-            if hook.should_run_on(platform) {
-                println!("  • {} (order: {})", hook.name.green(), hook.order);
-            } else {
-                println!(
-                    "  • {} (order: {}) {}",
-                    hook.name.dimmed(),
-                    hook.order,
-                    "[skipped]".dimmed()
-                );
-            }
-        }
+        format_hook_list(&collections.pre, platform, "•");
 
         println!(
             "\n{} ({} hooks)",
             "Post hooks:".bold(),
             collections.post.len()
         );
-        for hook in &collections.post {
-            if hook.should_run_on(platform) {
-                println!("  • {} (order: {})", hook.name.green(), hook.order);
-            } else {
-                println!(
-                    "  • {} (order: {}) {}",
-                    hook.name.dimmed(),
-                    hook.order,
-                    "[skipped]".dimmed()
-                );
-            }
-        }
+        format_hook_list(&collections.post, platform, "•");
     }
 
     Ok(())
@@ -313,14 +268,12 @@ pub fn run_check(
     let is_tty = std::io::stdout().is_terminal();
     let use_nerd_fonts = config.ui.icons.should_show_icons(is_tty);
     // Load hooks using HookLoader
-    let loader = HookLoader::new(source_dir, CURRENT_PLATFORM.os);
+    let loader = HookLoader::current_platform(source_dir);
 
-    if !loader.exists() {
+    let Some(collections) = loader.load_if_exists().context("Failed to load hooks")? else {
         println!("{}", "No hooks directory found.".yellow());
         return Ok(());
-    }
-
-    let collections = loader.load().context("Failed to load hooks")?;
+    };
 
     // Load state from database (using provided database)
     let mut persistence = HookStatePersistence::new(db);
@@ -405,14 +358,14 @@ pub fn run_show(source_dir: &Path, config: &Config, hook_name: &str) -> Result<(
 
 /// Load hooks from directory or return early if directory doesn't exist
 fn load_hooks_or_return(source_dir: &Path) -> Result<guisu_engine::hooks::HookCollections> {
-    let loader = HookLoader::new(source_dir, CURRENT_PLATFORM.os);
+    let loader = HookLoader::current_platform(source_dir);
 
-    if !loader.exists() {
+    let Some(collections) = loader.load_if_exists().context("Failed to load hooks")? else {
         println!("{}", "No hooks directory found.".yellow());
         return Ok(guisu_engine::hooks::HookCollections::default());
-    }
+    };
 
-    loader.load().context("Failed to load hooks")
+    Ok(collections)
 }
 
 /// Determine whether hook is in pre or post stage
@@ -503,8 +456,8 @@ fn display_script_file_content(
 
 /// Render template content or return error message with raw template
 fn render_template_or_show_error(content: &str, source_dir: &Path, config: &Config) -> String {
-    match create_template_engine(source_dir, config) {
-        Ok(template_renderer) => match template_renderer.render(content) {
+    match HookBodies::new(source_dir, config) {
+        Ok(bodies) => match bodies.render(content) {
             Ok(rendered) => rendered,
             Err(e) => format!("Template rendering failed: {e}\n\nRaw template:\n{content}"),
         },
@@ -545,7 +498,89 @@ fn display_hook_not_found(hook_name: &str, use_nerd_fonts: bool) {
     );
 }
 
-/// Handle hooks during apply (auto-run if hooks changed)
+/// Handle a hook stage during apply (auto-run if hooks changed).
+///
+/// Shared body for [`handle_hooks_pre`] / [`handle_hooks_post`] — the two
+/// used to be separate copies that drifted only in their stage name.
+fn handle_hooks_stage(
+    source_dir: &Path,
+    config: &Config,
+    db: &mut dyn PersistentState,
+    hook_stage: HookStage,
+) -> Result<()> {
+    // Load hooks using HookLoader
+    let loader = HookLoader::current_platform(source_dir);
+
+    let Some(collections) = loader.load_if_exists().context("Failed to load hooks")? else {
+        tracing::debug!("No hooks directory found, skipping");
+        return Ok(());
+    };
+
+    let stage_hooks = match hook_stage {
+        HookStage::Pre => &collections.pre,
+        HookStage::Post => &collections.post,
+    };
+    if stage_hooks.is_empty() {
+        tracing::debug!(stage = hook_stage.name(), "No hooks configured, skipping");
+        return Ok(());
+    }
+
+    // Load persistent state for hook execution tracking (using provided database)
+    let mut persistence = HookStatePersistence::new(db);
+    let mut state = persistence.load()?;
+
+    // Which hooks will actually run: platform-compatible and not a
+    // already-executed `mode=once`. `mode=onchange` needs template
+    // rendering, which the executor decides; selection defers to it.
+    let platform = guisu_core::platform::CURRENT_PLATFORM.os;
+    let active_count = stage_hooks
+        .iter()
+        .filter(|h| will_run(h, platform, &state.once_executed))
+        .count();
+
+    // Only run hooks if there are active ones, but always update state
+    if active_count > 0 {
+        // Create hook runner with builder pattern and run the stage.
+        // Pass persistent state to respect mode=once and mode=onchange.
+        let runner = HookRunner::builder(&collections, source_dir)
+            .template_renderer(HookBodies::new(source_dir, config)?)
+            .persistent_state(state.once_executed.clone(), state.onchange_hashes.clone())
+            .build();
+        runner.run_stage(hook_stage)?;
+
+        // Get newly executed hooks and merge with state
+        merge_runner_state(&runner, &mut state);
+    }
+
+    // Always update state in database, even if no hooks ran
+    // This marks the hooks directory as "checked" and prevents repeated warnings
+    state.update_with_collections(loader.hooks_dir(), collections)?;
+    persistence.save(&state)?;
+
+    Ok(())
+}
+
+/// Fold the runner's execution records into the persisted hook state.
+///
+/// Shared by `execute_and_persist` (`guisu hooks run`) and
+/// `handle_hooks_stage` (apply), which previously repeated the same three
+/// merge loops.
+fn merge_runner_state<R: TemplateRenderer + Sync>(
+    runner: &HookRunner<'_, R>,
+    state: &mut HookState,
+) {
+    for hook_name in runner.get_once_executed() {
+        state.mark_executed_once(hook_name);
+    }
+    for (hook_name, content_hash) in runner.get_onchange_hashes() {
+        state.update_onchange_hash(hook_name, content_hash);
+    }
+    for (hook_name, rendered_content) in runner.get_onchange_rendered() {
+        state.update_onchange_rendered(hook_name, rendered_content);
+    }
+}
+
+/// Handle hooks before apply.
 ///
 /// # Errors
 ///
@@ -559,83 +594,10 @@ pub fn handle_hooks_pre(
     config: &Config,
     db: &mut dyn PersistentState,
 ) -> Result<()> {
-    use guisu_engine::hooks::config::HookMode;
-
-    // Load hooks using HookLoader
-    let loader = HookLoader::new(source_dir, CURRENT_PLATFORM.os);
-
-    if !loader.exists() {
-        tracing::debug!("No hooks directory found, skipping");
-        return Ok(());
-    }
-
-    let collections = loader.load().context("Failed to load hooks")?;
-
-    if collections.pre.is_empty() {
-        tracing::debug!("No pre hooks configured, skipping");
-        return Ok(());
-    }
-
-    // Load persistent state for hook execution tracking (using provided database)
-    let mut persistence = HookStatePersistence::new(db);
-    let mut state = persistence.load()?;
-
-    // Show which hooks will run
-    let platform = guisu_core::platform::CURRENT_PLATFORM.os;
-    let active_hooks: Vec<_> = collections
-        .pre
-        .iter()
-        .filter(|h| {
-            // Check platform compatibility
-            if !h.should_run_on(platform) {
-                return false;
-            }
-
-            // Check if hook will actually execute based on mode
-            // Note: OnChange mode requires template rendering, which is done in the executor
-            // We skip the pre-check here and let the executor handle it
-            match h.mode {
-                HookMode::Once => !state.once_executed.contains(h.name.as_str()),
-                HookMode::Always | HookMode::OnChange => true, // Let executor decide after rendering templates
-            }
-        })
-        .collect();
-
-    // Only run hooks if there are active ones, but always update state
-    if !active_hooks.is_empty() {
-        // Create template renderer
-        let renderer = create_template_engine(source_dir, config)?;
-
-        // Create hook runner with builder pattern and run pre hooks
-        // Pass persistent state to respect mode=once and mode=onchange
-        let runner = HookRunner::builder(&collections, source_dir)
-            .template_renderer(renderer)
-            .persistent_state(state.once_executed.clone(), state.onchange_hashes.clone())
-            .build();
-        runner.run_stage(HookStage::Pre)?;
-
-        // Get newly executed hooks and merge with state
-        for hook_name in runner.get_once_executed() {
-            state.mark_executed_once(hook_name);
-        }
-        for (hook_name, content_hash) in runner.get_onchange_hashes() {
-            state.update_onchange_hash(hook_name, content_hash);
-        }
-        for (hook_name, rendered_content) in runner.get_onchange_rendered() {
-            state.update_onchange_rendered(hook_name, rendered_content);
-        }
-    }
-
-    // Always update state in database, even if no hooks ran
-    // This marks the hooks directory as "checked" and prevents repeated warnings
-    let hooks_dir = source_dir.hooks_dir();
-    state.update_with_collections(&hooks_dir, collections)?;
-    persistence.save(&state)?;
-
-    Ok(())
+    handle_hooks_stage(source_dir, config, db, HookStage::Pre)
 }
 
-/// Handle hooks after apply
+/// Handle hooks after apply.
 ///
 /// # Errors
 ///
@@ -649,122 +611,7 @@ pub fn handle_hooks_post(
     config: &Config,
     db: &mut dyn PersistentState,
 ) -> Result<()> {
-    use guisu_engine::hooks::config::HookMode;
-
-    // Load hooks using HookLoader
-    let loader = HookLoader::new(source_dir, CURRENT_PLATFORM.os);
-
-    if !loader.exists() {
-        tracing::debug!("No hooks directory found, skipping");
-        return Ok(());
-    }
-
-    let collections = loader.load().context("Failed to load hooks")?;
-
-    if collections.post.is_empty() {
-        tracing::debug!("No post hooks configured, skipping");
-        return Ok(());
-    }
-
-    // Load persistent state for hook execution tracking (using provided database)
-    let mut persistence = HookStatePersistence::new(db);
-    let mut state = persistence.load()?;
-
-    // Show which hooks will run
-    let platform = guisu_core::platform::CURRENT_PLATFORM.os;
-    let active_hooks: Vec<_> = collections
-        .post
-        .iter()
-        .filter(|h| {
-            // Check platform compatibility
-            if !h.should_run_on(platform) {
-                return false;
-            }
-
-            // Check if hook will actually execute based on mode
-            // Note: OnChange mode requires template rendering, which is done in the executor
-            // We skip the pre-check here and let the executor handle it
-            match h.mode {
-                HookMode::Once => !state.once_executed.contains(h.name.as_str()),
-                HookMode::Always | HookMode::OnChange => true, // Let executor decide after rendering templates
-            }
-        })
-        .collect();
-
-    // Only run hooks if there are active ones, but always update state
-    if !active_hooks.is_empty() {
-        // Create template renderer
-        let renderer = create_template_engine(source_dir, config)?;
-
-        // Create hook runner with builder pattern and run post hooks
-        // Pass persistent state to respect mode=once and mode=onchange
-        let runner = HookRunner::builder(&collections, source_dir)
-            .template_renderer(renderer)
-            .persistent_state(state.once_executed.clone(), state.onchange_hashes.clone())
-            .build();
-        runner.run_stage(HookStage::Post)?;
-
-        // Get newly executed hooks and merge with state
-        for hook_name in runner.get_once_executed() {
-            state.mark_executed_once(hook_name);
-        }
-        for (hook_name, content_hash) in runner.get_onchange_hashes() {
-            state.update_onchange_hash(hook_name, content_hash);
-        }
-        for (hook_name, rendered_content) in runner.get_onchange_rendered() {
-            state.update_onchange_rendered(hook_name, rendered_content);
-        }
-    }
-
-    // Always update state in database, even if no hooks ran
-    // This marks the hooks directory as "checked" and prevents repeated warnings
-    let hooks_dir = source_dir.hooks_dir();
-    state.update_with_collections(&hooks_dir, collections)?;
-    persistence.save(&state)?;
-
-    Ok(())
-}
-
-/// Create a template renderer closure for hooks
-fn create_template_engine(source_dir: &Path, config: &Config) -> Result<impl TemplateRenderer> {
-    use guisu_template::TemplateContext;
-    use std::sync::Arc;
-
-    // Load age identities for encryption support in templates
-    let identities = Arc::new(config.age_identities().unwrap_or_else(|_| Vec::new()));
-
-    // Create template engine with bitwarden provider support
-    let engine = crate::create_template_engine(source_dir, &identities, config);
-
-    // Get destination directory (use home_dir as default if not configured)
-    let dst_dir = config
-        .general
-        .dst_dir
-        .clone()
-        .or_else(dirs::home_dir)
-        .unwrap_or_else(|| PathBuf::from("~"));
-
-    // Create template context with guisu info and all variables
-    let working_tree = guisu_engine::git::find_working_tree(source_dir)
-        .unwrap_or_else(|| source_dir.to_path_buf());
-    let dotfiles_dir = config.dotfiles_dir(source_dir);
-    let context = TemplateContext::new()
-        .with_guisu_info(
-            crate::path_to_string(&dotfiles_dir),
-            crate::path_to_string(&working_tree),
-            crate::path_to_string(&dst_dir),
-            crate::path_to_string(&config.general.root_entry),
-        )
-        .with_loaded_variables(source_dir, config)
-        .map_err(|e| anyhow::anyhow!("Failed to load variables: {e}"))?;
-
-    // Return a closure that captures both engine and context
-    // No Box needed - the closure implements TemplateRenderer directly
-    Ok(move |content: &str| {
-        engine
-            .render_str(content, &context)
-            .map_err(|e| guisu_core::Error::Message(format!("Template rendering error: {e}")))
-    })
+    handle_hooks_stage(source_dir, config, db, HookStage::Post)
 }
 
 #[cfg(test)]

@@ -233,7 +233,7 @@ where
             HookMode::OnChange => {
                 let content = hook.get_content();
                 let content_to_hash = if let Some(script) = &hook.script {
-                    if script.to_lowercase().ends_with(".j2") {
+                    if script::is_template_script(script) {
                         match self.template_renderer.render(&content) {
                             Ok(rendered) => rendered,
                             Err(e) => {
@@ -510,7 +510,7 @@ where
     fn execute_hook(&self, hook: &Hook) -> Result<Option<String>> {
         // If hook uses 'script' and is a template (.j2 extension), process it specially
         if let Some(script) = &hook.script
-            && script.to_lowercase().ends_with(".j2")
+            && script::is_template_script(script)
         {
             return self.execute_template_script(hook).map(Some);
         }

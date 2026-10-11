@@ -3,6 +3,7 @@
 //! Loads hook definitions from the .guisu/hooks directory structure.
 
 use super::config::{Hook, HookCollections, HookMode};
+use super::script::is_template_script;
 use super::types::HookName;
 use guisu_core::{Error, Result};
 use indexmap::IndexMap;
@@ -18,7 +19,7 @@ pub struct HookLoader {
 }
 
 impl HookLoader {
-    /// Create a new hook loader for the given source directory and platform.
+    /// Create a loader for the given source directory and platform.
     ///
     /// A hook that declares `platforms` resolves its script under
     /// `scripts/{platform}/` only (see [`Self::resolve_script_path`]);
@@ -29,6 +30,40 @@ impl HookLoader {
             hooks_dir: source_dir.join(".guisu/hooks"),
             platform: platform.to_string(),
         }
+    }
+
+    /// Create a loader bound to the current OS platform
+    /// (`guisu_core::platform::CURRENT_PLATFORM.os`).
+    ///
+    /// This is the form every CLI command wants; spelling the platform
+    /// out at each call site is what let the call sites drift.
+    #[must_use]
+    pub fn current_platform(source_dir: &Path) -> Self {
+        Self::new(source_dir, guisu_core::platform::CURRENT_PLATFORM.os)
+    }
+
+    /// The hooks directory this loader reads from (`.guisu/hooks`).
+    #[must_use]
+    pub fn hooks_dir(&self) -> &Path {
+        &self.hooks_dir
+    }
+
+    /// Load the collections if the hooks directory exists, `Ok(None)`
+    /// otherwise.
+    ///
+    /// Collapses the `exists()` + `load()` pair that every hook command
+    /// repeats, while still propagating load errors (the caller decides
+    /// what a missing directory means for its output).
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if hook loading fails (invalid TOML, I/O error,
+    /// validation failure).
+    pub fn load_if_exists(&self) -> Result<Option<HookCollections>> {
+        if !self.exists() {
+            return Ok(None);
+        }
+        self.load().map(Some)
     }
 
     /// Check if hooks directory exists
@@ -265,7 +300,7 @@ impl HookLoader {
                 .file_name()
                 .ok_or_else(|| Error::HookConfig(format!("Invalid script path: {script}")))?;
             let raw_name = raw_name.to_string_lossy();
-            let logical_name = if raw_name.to_lowercase().ends_with(".j2") {
+            let logical_name = if is_template_script(&raw_name) {
                 &raw_name[..raw_name.len() - 3]
             } else {
                 &raw_name
@@ -370,6 +405,44 @@ impl HookLoader {
 
         Ok(())
     }
+}
+
+/// Load the hook collections and persisted hook state for read-only
+/// comparison (`guisu diff`, `guisu status`).
+///
+/// Returns `None` — so the caller can silently skip its hooks section —
+/// when the hooks directory is missing, loading fails, the collections are
+/// empty, or the state cannot be read. Failures are logged at debug level
+/// rather than surfaced: a broken hook config must not drown the file diff.
+/// Commands that must report these errors (`hooks run/list/check`) keep
+/// their own [`HookLoader::load_if_exists`] + `HookStatePersistence` flow.
+///
+/// This replaces the `cli::utils::hooks::load_hooks_and_state` helper, which
+/// only diff and status used while every other command hand-rolled the same
+/// loader + state sequence.
+#[must_use]
+pub fn load_for_comparison(
+    source_dir: &Path,
+    db: &mut dyn crate::state::PersistentState,
+) -> Option<(HookCollections, crate::state::HookState)> {
+    let loader = HookLoader::current_platform(source_dir);
+    let collections = loader
+        .load_if_exists()
+        .inspect_err(|e| tracing::debug!("Failed to load hooks for diff/status: {e:#}"))
+        .ok()
+        .flatten()?;
+
+    if collections.is_empty() {
+        return None;
+    }
+
+    let mut persistence = crate::state::HookStatePersistence::new(db);
+    let state = persistence
+        .load()
+        .inspect_err(|e| tracing::debug!("Failed to load hook state for diff/status: {e:#}"))
+        .ok()?;
+
+    Some((collections, state))
 }
 
 /// Inject a platform subdirectory segment into a script path.

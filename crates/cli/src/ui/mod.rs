@@ -11,6 +11,8 @@
 pub mod diffviewer;
 /// Text editor integration
 pub mod editor;
+/// Shared hook list formatting
+pub(crate) mod hooks;
 /// Icon definitions and file type detection
 pub mod icons;
 /// Merge conflict resolution

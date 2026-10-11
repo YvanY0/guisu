@@ -9,6 +9,7 @@ Clap-based CLI with `Command` trait pattern.
 - **Conflict handling** — use `ConflictHandler` in `conflict.rs`, don't roll your own.
 - **Progress output** — use `stats.rs` types (`ApplyStats`, etc.) for structured output.
 - **File path arguments** — accept `Vec<PathBuf>`, resolve to `AbsPath` early.
+- **Hook selection decisions** (platform filter, change detection, lifecycle status) live in `guisu_engine::hooks::selection` — `diff`, `status`, and `hooks` all read from it; never re-implement `should_run_on` looping or hook diffing inside `cmd/*`.
 
 ## Adding a New Command
 

@@ -8,13 +8,12 @@ use guisu_core::path::AbsPath;
 use guisu_engine::adapters::crypto::CryptoDecryptorAdapter;
 use guisu_engine::adapters::template::TemplateRendererAdapter;
 use guisu_engine::entry::{SourceEntry, TargetEntry};
+use guisu_engine::hooks::display_script_name;
 use guisu_engine::processor::ContentProcessor;
 use guisu_engine::state::{PersistentState, SourceState, TargetState};
-use guisu_template::TemplateContext;
 use owo_colors::OwoColorize;
 use rayon::prelude::*;
 use similar::{ChangeTag, TextDiff};
-use std::collections::HashSet;
 use std::fmt::Write as FmtWrite;
 use std::fs;
 use std::io::Write;
@@ -937,96 +936,6 @@ fn print_stats(stats: &DiffStats) {
     }
 }
 
-/// Render hook template content
-fn render_hook_template(source_dir: &Path, content: &str, config: &Config) -> Result<String> {
-    // Load age identities for encryption support in templates
-    let identities = Arc::new(config.age_identities().unwrap_or_else(|_| Vec::new()));
-
-    // Create template engine with bitwarden provider support
-    let engine = crate::create_template_engine(source_dir, &identities, config);
-
-    // Get destination directory
-    let dst_dir = config
-        .general
-        .dst_dir
-        .clone()
-        .or_else(dirs::home_dir)
-        .unwrap_or_else(|| std::path::PathBuf::from("~"));
-
-    // Create template context with guisu info and all variables
-    let working_tree = guisu_engine::git::find_working_tree(source_dir)
-        .unwrap_or_else(|| source_dir.to_path_buf());
-    let dotfiles_dir = config.dotfiles_dir(source_dir);
-    let template_ctx = TemplateContext::new()
-        .with_guisu_info(
-            crate::path_to_string(&dotfiles_dir),
-            crate::path_to_string(&working_tree),
-            crate::path_to_string(&dst_dir),
-            crate::path_to_string(&config.general.root_entry),
-        )
-        .with_loaded_variables(source_dir, config)
-        .map_err(|e| anyhow::anyhow!("Failed to load variables: {e}"))?;
-
-    // Render template
-    engine
-        .render_str(content, &template_ctx)
-        .map_err(|e| anyhow::anyhow!("Template rendering error: {e}"))
-}
-
-/// Render script content, handling templates if needed
-fn render_script_content(
-    source_dir: &Path,
-    script: &str,
-    content: &str,
-    config: &Config,
-) -> String {
-    let is_template = Path::new(script)
-        .extension()
-        .is_some_and(|ext| ext.eq_ignore_ascii_case("j2"));
-
-    if is_template {
-        render_hook_template(source_dir, content, config).unwrap_or_else(|e| {
-            tracing::warn!("Failed to render hook template: {}", e);
-            content.to_string()
-        })
-    } else {
-        content.to_string()
-    }
-}
-
-/// Display script name without .j2 suffix
-fn display_script_name(script: &str) -> &str {
-    script.strip_suffix(".j2").unwrap_or(script)
-}
-
-/// Print a new (added) hook with its full content
-fn print_new_hook_content(source_dir: &Path, current: &guisu_engine::hooks::Hook, config: &Config) {
-    if let Some(ref cmd) = current.cmd {
-        println!("    {} cmd:", "+".bold());
-        for line in cmd.lines() {
-            println!("      + {}", line.green());
-        }
-    } else if let Some(ref script) = current.script {
-        let display_script = display_script_name(script);
-        println!("    {} script: {}", "+".bold(), display_script);
-
-        // Use stored script content or read from file
-        let raw_content = if let Some(ref stored_content) = current.script_content {
-            Some(stored_content.clone())
-        } else {
-            let script_path = source_dir.join(script);
-            std::fs::read_to_string(&script_path).ok()
-        };
-
-        if let Some(raw_content) = raw_content {
-            let content = render_script_content(source_dir, script, &raw_content, config);
-            for line in content.lines() {
-                println!("      + {}", line.green());
-            }
-        }
-    }
-}
-
 /// Print cmd changes between hooks
 fn print_cmd_changes(old_cmd: Option<&str>, new_cmd: Option<&str>) {
     if old_cmd == new_cmd {
@@ -1057,25 +966,23 @@ fn print_cmd_changes(old_cmd: Option<&str>, new_cmd: Option<&str>) {
     }
 }
 
-/// Print script changes between hooks
+/// Print script changes between hooks.
 ///
-/// `rendered_content` maps hook names to the script content recorded at the
-/// last run; it provides the old side of the diff when the previous hook
-/// came from the state DB (where `script_content` is never persisted).
+/// Script bodies are resolved once up front by `HookBodies` and carried on
+/// the change — display code no longer re-renders per hook.
 fn print_script_changes(
-    source_dir: &Path,
     prev: &guisu_engine::hooks::Hook,
     current: &guisu_engine::hooks::Hook,
-    config: &Config,
-    rendered_content: &std::collections::HashMap<String, String>,
+    previous_body: Option<&str>,
+    current_body: Option<&str>,
 ) {
     // For non-template scripts with the same path, we can do an early return if
-    // content is identical. For template scripts, we need to render and compare
-    // since dependencies might have changed.
+    // content is identical. For template scripts, we need the rendered-content
+    // compare since dependencies might have changed.
     let is_template = current
         .script
-        .as_ref()
-        .is_some_and(|s| s.to_lowercase().ends_with(".j2"));
+        .as_deref()
+        .is_some_and(guisu_engine::hooks::is_template_script);
 
     if !is_template
         && current.script == prev.script
@@ -1085,18 +992,11 @@ fn print_script_changes(
     }
 
     if current.script != prev.script {
-        print_script_path_change(source_dir, prev, current, config, rendered_content);
+        print_script_path_change(prev, current, previous_body, current_body);
     } else if let Some(script) = &current.script {
         // Same script path - compare rendered content to also catch changes
         // in template dependencies
-        let old_rendered = hook_script_content(source_dir, prev, config, rendered_content);
-        let new_rendered = current
-            .script
-            .as_ref()
-            .zip(current.script_content.as_ref())
-            .map(|(script, raw)| render_script_content(source_dir, script, raw, config));
-
-        if let (Some(old), Some(new)) = (&old_rendered, &new_rendered)
+        if let (Some(old), Some(new)) = (previous_body, current_body)
             && old != new
         {
             let display_script = display_script_name(script);
@@ -1116,20 +1016,11 @@ fn print_script_changes(
 
 /// Print the diff when the resolved script path changed.
 fn print_script_path_change(
-    source_dir: &Path,
     prev: &guisu_engine::hooks::Hook,
     current: &guisu_engine::hooks::Hook,
-    config: &Config,
-    rendered_content: &std::collections::HashMap<String, String>,
+    previous_body: Option<&str>,
+    current_body: Option<&str>,
 ) {
-    let old_rendered = hook_script_content(source_dir, prev, config, rendered_content);
-
-    let new_rendered = current
-        .script
-        .as_ref()
-        .zip(current.script_content.as_ref())
-        .map(|(script, raw)| render_script_content(source_dir, script, raw, config));
-
     match (&prev.script, &current.script) {
         (Some(old_script), Some(new_script)) if old_script != new_script => {
             let display_old = display_script_name(old_script);
@@ -1138,7 +1029,7 @@ fn print_script_path_change(
                 // Only the .j2 suffix differs (e.g. the script became a
                 // template) — the script itself did not move, so show a
                 // content diff instead of a no-op rename.
-                match (&old_rendered, &new_rendered) {
+                match (previous_body, current_body) {
                     (Some(old), Some(new)) if old != new => {
                         println!(
                             "    {} script content changed: {}",
@@ -1170,7 +1061,7 @@ fn print_script_path_change(
                     display_old.red(),
                     display_new.green()
                 );
-                if let (Some(old), Some(new)) = (&old_rendered, &new_rendered) {
+                if let (Some(old), Some(new)) = (previous_body, current_body) {
                     let diff_output = generate_text_diff(old, new);
                     for line in diff_output.lines() {
                         println!("      {line}");
@@ -1185,7 +1076,7 @@ fn print_script_path_change(
                 "-".red().bold(),
                 display_old.red()
             );
-            if let Some(old) = &old_rendered {
+            if let Some(old) = previous_body {
                 for line in old.lines() {
                     println!("      - {}", line.red());
                 }
@@ -1198,28 +1089,13 @@ fn print_script_path_change(
                 "+".green().bold(),
                 display_new.green()
             );
-            if let Some(new) = &new_rendered {
+            if let Some(new) = current_body {
                 for line in new.lines() {
                     println!("      + {}", line.green());
                 }
             }
         }
         _ => {}
-    }
-}
-
-/// Rendered content of a hook's script: the persisted raw content rendered,
-/// or — when unavailable (`script_content` is `#[serde(skip)]` and never
-/// round-trips through the state DB) — the content recorded at the last run.
-fn hook_script_content(
-    source_dir: &Path,
-    hook: &guisu_engine::hooks::Hook,
-    config: &Config,
-    rendered_content: &std::collections::HashMap<String, String>,
-) -> Option<String> {
-    match (&hook.script, &hook.script_content) {
-        (Some(script), Some(raw)) => Some(render_script_content(source_dir, script, raw, config)),
-        _ => rendered_content.get(hook.name.as_str()).cloned(),
     }
 }
 
@@ -1243,38 +1119,73 @@ fn print_other_changes(prev: &guisu_engine::hooks::Hook, current: &guisu_engine:
     }
 }
 
-/// Print hook diff with content changes
-fn print_hook_diff(
-    source_dir: &Path,
-    current: &guisu_engine::hooks::Hook,
-    previous: Option<&guisu_engine::hooks::Hook>,
-    stage: &str,
-    platform: &str,
-    config: &Config,
-    rendered_content: &std::collections::HashMap<String, String>,
-) {
-    let is_active = current.should_run_on(platform);
+/// Print one hook change detected by [`guisu_engine::hooks::diff_collections`].
+fn print_hook_change(change: &guisu_engine::hooks::HookChange<'_>, stage: &str) {
+    use guisu_engine::hooks::HookChange;
 
-    match previous {
-        None => {
-            // New hook (added) - show full content
+    match change {
+        HookChange::Added {
+            current,
+            current_body,
+        } => {
             println!();
             println!("  {} hook: {}", stage, current.name.green());
-            print_new_hook_content(source_dir, current, config);
+            if let Some(ref cmd) = current.cmd {
+                println!("    {} cmd:", "+".bold());
+                for line in cmd.lines() {
+                    println!("      + {}", line.green());
+                }
+            } else if let Some(ref script) = current.script {
+                println!("    {} script: {}", "+".bold(), display_script_name(script));
+                if let Some(body) = current_body {
+                    for line in body.lines() {
+                        println!("      + {}", line.green());
+                    }
+                }
+            }
         }
-        Some(prev) => {
-            // Modified hook - show unified diff
+        HookChange::Removed {
+            previous,
+            previous_body,
+        } => {
+            println!();
+            println!("  {} hook: {}", stage, previous.name.red());
+            if let Some(ref cmd) = previous.cmd {
+                println!("    {} cmd:", "-".red().bold());
+                for line in cmd.lines() {
+                    println!("      {} {}", "-".red(), line.red());
+                }
+            } else if let Some(ref script) = previous.script {
+                println!(
+                    "    {} script: {}",
+                    "-".red().bold(),
+                    display_script_name(script).red()
+                );
+                if let Some(body) = previous_body {
+                    for line in body.lines() {
+                        println!("      {} {}", "-".red(), line.red());
+                    }
+                }
+            }
+        }
+        HookChange::Modified {
+            previous,
+            current,
+            previous_body,
+            current_body,
+        } => {
             println!();
             println!("  {} hook: {}", stage, current.name.yellow());
 
-            print_cmd_changes(prev.cmd.as_deref(), current.cmd.as_deref());
-            print_script_changes(source_dir, prev, current, config, rendered_content);
-            print_other_changes(prev, current);
+            print_cmd_changes(previous.cmd.as_deref(), current.cmd.as_deref());
+            print_script_changes(
+                previous,
+                current,
+                previous_body.as_deref(),
+                current_body.as_deref(),
+            );
+            print_other_changes(previous, current);
         }
-    }
-
-    if !is_active {
-        println!("    {} (skipped on this platform)", "ℹ".dimmed());
     }
 }
 
@@ -1284,208 +1195,58 @@ fn generate_text_diff(old: &str, new: &str) -> String {
     render_diff_hunks(&diff)
 }
 
-/// Print removed hook with content
-fn print_removed_hook(
-    source_dir: &Path,
-    hook: &guisu_engine::hooks::Hook,
-    stage: &str,
-    platform: &str,
-    config: &Config,
-) {
-    let is_active = hook.should_run_on(platform);
-
-    println!();
-    println!("  {} hook: {}", stage, hook.name.red());
-
-    if let Some(ref cmd) = hook.cmd {
-        println!("    {} cmd:", "-".red().bold());
-        for line in cmd.lines() {
-            println!("      {} {}", "-".red(), line.red());
-        }
-    } else if let Some(ref script) = hook.script {
-        let display_script = script.strip_suffix(".j2").unwrap_or(script);
-        println!("    {} script: {}", "-".red().bold(), display_script.red());
-
-        // Use stored script content if available
-        if let Some(ref content) = hook.script_content {
-            // Render template if needed
-            let rendered = if Path::new(script)
-                .extension()
-                .is_some_and(|ext| ext.eq_ignore_ascii_case("j2"))
-            {
-                render_hook_template(source_dir, content, config)
-                    .unwrap_or_else(|_| content.clone())
-            } else {
-                content.clone()
-            };
-
-            for line in rendered.lines() {
-                println!("      {} {}", "-".red(), line.red());
-            }
-        }
-    }
-
-    if !is_active {
-        println!("    {} (skipped on this platform)", "ℹ".dimmed());
-    }
-}
-
-/// Compare and print hook changes for a specific stage
-/// Returns true if any hooks were printed
-#[must_use]
-#[allow(
-    clippy::too_many_arguments,
-    clippy::implicit_hasher,
-    clippy::missing_panics_doc
-)]
-pub fn compare_and_print_hooks(
-    source_dir: &Path,
-    current_hooks: &[guisu_engine::hooks::Hook],
-    last_hooks: &[guisu_engine::hooks::Hook],
-    stage: &str,
-    platform: &str,
-    config: &Config,
-    onchange_rendered: &std::collections::HashMap<String, String>,
-) -> bool {
-    let last_names: HashSet<_> = last_hooks.iter().map(|h| h.name.as_str()).collect();
-    let current_names: HashSet<_> = current_hooks.iter().map(|h| h.name.as_str()).collect();
-    let mut any_printed = false;
-
-    // New hooks
-    for hook in current_hooks {
-        if !last_names.contains(hook.name.as_str()) {
-            print_hook_diff(
-                source_dir,
-                hook,
-                None,
-                stage,
-                platform,
-                config,
-                onchange_rendered,
-            );
-            any_printed = true;
-        }
-    }
-
-    // Removed hooks
-    for hook in last_hooks {
-        if !current_names.contains(hook.name.as_str()) {
-            print_removed_hook(source_dir, hook, stage, platform, config);
-            any_printed = true;
-        }
-    }
-
-    // Modified hooks
-    for hook in current_hooks {
-        if let Some(last_hook) = last_hooks.iter().find(|h| h.name == hook.name) {
-            // `script_content` is intentionally excluded from the metadata
-            // comparison: it's a runtime-only field (#[serde(skip)]) that
-            // never round-trips through the persistent `last_collections`, so
-            // comparing it would always register a false change after any run.
-            let mut has_changes = hook.order != last_hook.order
-                || hook.mode != last_hook.mode
-                || hook.cmd != last_hook.cmd
-                || hook.script != last_hook.script;
-
-            // Metadata alone can't see script content edits, so compare the
-            // old side — recovered from the state DB by `hook_script_content`
-            // — against the freshly rendered current content. This covers
-            // template and plain scripts in every mode, including onchange
-            // hooks whose diff comes from a template dependency change.
-            if !has_changes
-                && let (Some(script), Some(raw)) = (&hook.script, &hook.script_content)
-                && let Some(old_content) =
-                    hook_script_content(source_dir, last_hook, config, onchange_rendered)
-            {
-                let new_content = render_script_content(source_dir, script, raw, config);
-                if old_content != new_content {
-                    has_changes = true;
-                }
-            }
-
-            // Only show hooks that have actual changes. The old side of any
-            // script content diff is recovered from the state DB inside
-            // print_hook_diff, which covers both plain script edits and
-            // onchange dependency changes.
-            if has_changes {
-                print_hook_diff(
-                    source_dir,
-                    hook,
-                    Some(last_hook),
-                    stage,
-                    platform,
-                    config,
-                    onchange_rendered,
-                );
-                any_printed = true;
-            }
-        }
-    }
-
-    any_printed
-}
-
 /// Check and print hooks status
 /// Returns true if any hooks were displayed
 fn print_hooks_status(source_dir: &Path, config: &Config, db: &mut dyn PersistentState) -> bool {
-    // Load hooks and state using shared helper
-    let Some((collections, state)) = crate::utils::hooks::load_hooks_and_state(source_dir, db)
+    use guisu_core::platform::CURRENT_PLATFORM;
+
+    // Load hooks and state using the shared engine helper
+    let Some((collections, state)) = guisu_engine::hooks::load_for_comparison(source_dir, db)
     else {
         return false;
     };
 
-    // Always check for hook changes if we have last_collections
-    // This handles both file system changes and template rendering changes (e.g., when Brewfile changes)
-    if state.last_collections.is_some() {
-        use guisu_core::platform::CURRENT_PLATFORM;
+    // Only compare if we have last_collections to compare against.
+    // This handles both file system changes and template rendering changes
+    // (e.g., when Brewfile changes).
+    let Some(last) = &state.last_collections else {
+        return false;
+    };
 
-        let platform = CURRENT_PLATFORM.os;
-        let mut any_hooks_printed = false;
+    let platform = CURRENT_PLATFORM.os;
+    let bodies = crate::utils::hooks::HookBodies::with_fallback(source_dir, config);
+    let mut any_hooks_printed = false;
 
-        // Only compare if we have last collections to compare against
-        if let Some(ref last) = state.last_collections {
-            // Pre hooks comparison
-            if !collections.pre.is_empty() || !last.pre.is_empty() {
-                let printed = compare_and_print_hooks(
-                    source_dir,
-                    &collections.pre,
-                    &last.pre,
-                    "pre",
-                    platform,
-                    config,
-                    &state.onchange_rendered,
-                );
-                any_hooks_printed = any_hooks_printed || printed;
-            }
-
-            // Post hooks comparison
-            if !collections.post.is_empty() || !last.post.is_empty() {
-                let printed = compare_and_print_hooks(
-                    source_dir,
-                    &collections.post,
-                    &last.post,
-                    "post",
-                    platform,
-                    config,
-                    &state.onchange_rendered,
-                );
-                any_hooks_printed = any_hooks_printed || printed;
-            }
+    for (stage, current, previous) in [
+        ("pre", &collections.pre, &last.pre),
+        ("post", &collections.post, &last.post),
+    ] {
+        if current.is_empty() && previous.is_empty() {
+            continue;
         }
-
-        // Add blank line after hooks only if we printed something
-        if any_hooks_printed {
-            println!();
+        let changes = guisu_engine::hooks::diff_collections(
+            current,
+            previous,
+            platform,
+            &bodies.current_bodies(current.iter()),
+            &bodies.previous_bodies(previous.iter(), &state.onchange_rendered),
+        );
+        for change in &changes {
+            print_hook_change(change, stage);
+            any_hooks_printed = true;
         }
-
-        // Note: We do NOT update database state here because `diff` is a read-only command.
-        // State updates should only happen during `apply` or `hooks run` commands.
-        // This prevents state pollution from read-only operations.
-
-        return any_hooks_printed;
     }
 
-    false
+    // Add blank line after hooks only if we printed something
+    if any_hooks_printed {
+        println!();
+    }
+
+    // Note: We do NOT update database state here because `diff` is a read-only command.
+    // State updates should only happen during `apply` or `hooks run` commands.
+    // This prevents state pollution from read-only operations.
+
+    any_hooks_printed
 }
 
 #[cfg(test)]
