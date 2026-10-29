@@ -73,9 +73,12 @@ ignore = [
   # RSA vulnerability - no fix available upstream
   # https://rustsec.org/advisories/RUSTSEC-2023-0071
   { id = "RUSTSEC-2023-0071", reason = "age crate depends on rsa 0.9.x with no fix available. Medium severity, low risk for dotfiles use case." },
-  # proc-macro-error2 is unmaintained - no safe upgrade available
-  # https://rustsec.org/advisories/RUSTSEC-2026-0173
-  { id = "RUSTSEC-2026-0173", reason = "age crate's i18n-embed-fl pulls proc-macro-error2, which the author confirmed is unmaintained. No safe upgrade available. Tracked at https://github.com/axodotdev/cargo-dist/issues/309 for upstream replacement." },
+  # basic-toml is unmaintained - no safe upgrade available
+  # https://rustsec.org/advisories/RUSTSEC-2026-0374
+  { id = "RUSTSEC-2026-0374", reason = "age pulls i18n-embed-fl -> i18n-config -> basic-toml as non-optional dependencies; basic-toml is archived with no replacement." },
+  # crypto-bigint timing variability - fixed upstream, not yet released
+  # https://rustsec.org/advisories/RUSTSEC-2026-0387
+  { id = "RUSTSEC-2026-0387", reason = "age pins p256 ^0.13 -> elliptic-curve ^0.13 -> crypto-bigint ^0.5; crypto-bigint >= 0.7.6 is semver-incompatible. Fixed upstream in str4d/rage#649, awaiting release." },
 ]
 # If this is true, then cargo deny will use the git executable to fetch advisory database.
 # If this is false, then it uses a built-in git library.
