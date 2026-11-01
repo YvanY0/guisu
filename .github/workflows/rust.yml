@@ -46,12 +46,12 @@ jobs:
           save-if: ${{ github.event_name == 'push' && github.ref == 'refs/heads/main' }}
 
       - name: Install cargo-deny
-        uses: taiki-e/install-action@v2.87.21
+        uses: taiki-e/install-action@v2.88.0
         with:
           tool: cargo-deny
 
       - name: Install cargo-outdated
-        uses: taiki-e/install-action@v2.87.21
+        uses: taiki-e/install-action@v2.88.0
         with:
           tool: cargo-outdated
 
@@ -68,7 +68,7 @@ jobs:
         run: cargo test --workspace --all-features
 
       - name: Install cargo-llvm-cov
-        uses: taiki-e/install-action@v2.87.21
+        uses: taiki-e/install-action@v2.88.0
         with:
           tool: cargo-llvm-cov
 
@@ -94,7 +94,7 @@ jobs:
         run: cargo deny check advisories licenses bans sources
 
       - name: Install cargo-shear
-        uses: taiki-e/install-action@v2.87.21
+        uses: taiki-e/install-action@v2.88.0
         with:
           tool: cargo-shear
 
