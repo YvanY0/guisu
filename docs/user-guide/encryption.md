@@ -14,7 +14,17 @@ Guisu uses [age](https://age-encryption.org/) for symmetric and asymmetric encry
 guisu age generate
 ```
 
-This writes a native age key to `~/.local/share/guisu/key.txt` (the default data directory) and prints the public key. Pass `-o PATH` to write elsewhere. To use an existing SSH key instead, point `.guisu.toml` at it:
+This writes a native age key to the identity configured in `.guisu.toml`
+(`[age] identity`), or to `~/.local/share/guisu/key.txt` (the default data
+directory) when no identity is configured, and prints the public key. Pass
+`-o PATH` to write elsewhere.
+
+> [!NOTE]
+> `guisu age generate` never overwrites an existing key and refuses to write an
+> age identity over an SSH key. Remove the old key first, or choose another
+> path with `-o`.
+
+To use an existing SSH key instead, point `.guisu.toml` at it:
 
 ```toml
 [age]

@@ -16,24 +16,56 @@ use guisu_config::Config;
 
 /// Generate a new age identity
 ///
+/// Without an explicit output path, the identity configured in `.guisu.toml`
+/// is used; only if none is configured does it fall back to the default
+/// location. An existing key is never overwritten.
+///
 /// # Errors
 ///
 /// Returns an error if:
 /// - The configuration directory cannot be determined (when no output path specified)
+/// - The target path holds an existing key
+/// - The configured identity points at an SSH key
 /// - Parent directory creation fails
 /// - Identity file cannot be saved
-pub fn generate(output: Option<PathBuf>) -> Result<()> {
+pub fn generate(output: Option<PathBuf>, config: &Config) -> Result<()> {
+    let (output_path, from_config) = if let Some(path) = output {
+        (path, false)
+    } else {
+        let configured = configured_identity_path(config);
+        let from_config = configured.is_some();
+        let path = configured
+            .or_else(guisu_config::dirs::default_age_identity)
+            .ok_or_else(|| {
+                anyhow::anyhow!(
+                    "Could not determine config directory. Please specify output path with --output."
+                )
+            })?;
+        (path, from_config)
+    };
+
     let identity = Identity::generate();
     let public_key = identity.to_public();
 
-    let output_path = match output {
-        Some(path) => path,
-        None => guisu_config::dirs::default_age_identity().ok_or_else(|| {
-            anyhow::anyhow!(
-                "Could not determine config directory. Please specify output path with --output."
-            )
-        })?,
-    };
+    if from_config && Config::is_ssh_identity(&output_path) {
+        return Err(anyhow::anyhow!(
+            "Configured identity is an SSH key: {}\n\
+             Refusing to write an age identity there. Use --output <path> to choose another location.",
+            output_path.display()
+        ));
+    }
+
+    // Overwriting the key in use would lock out every encrypted file.
+    if let Ok(metadata) = std::fs::metadata(&output_path)
+        && metadata.is_file()
+        && metadata.len() > 0
+    {
+        return Err(anyhow::anyhow!(
+            "Identity file already exists: {}\n\
+             Refusing to overwrite an existing key. Remove it first, or pass --output <path>.",
+            output_path.display()
+        ));
+    }
 
     // Ensure parent directory exists
     if let Some(parent) = output_path.parent() {
@@ -51,6 +83,20 @@ pub fn generate(output: Option<PathBuf>) -> Result<()> {
     println!("Share your public key with others to allow them to encrypt files for you.");
 
     Ok(())
+}
+
+/// The identity path configured in `.guisu.toml`, if any.
+fn configured_identity_path(config: &Config) -> Option<PathBuf> {
+    if let Some(identity) = &config.age.identity {
+        return Some(identity.clone());
+    }
+
+    config
+        .age
+        .identities
+        .as_ref()
+        .and_then(|identities| identities.first())
+        .cloned()
 }
 
 /// Show the public key for the current identity
@@ -562,7 +608,7 @@ mod tests {
         let temp = TempDir::new().expect("Failed to create temp dir");
         let output_path = temp.path().join("test-identity.txt");
 
-        let result = generate(Some(output_path.clone()));
+        let result = generate(Some(output_path.clone()), &Config::default());
         assert!(result.is_ok());
 
         // Verify file was created
@@ -578,12 +624,58 @@ mod tests {
         let temp = TempDir::new().expect("Failed to create temp dir");
         let output_path = temp.path().join("subdir").join("identity.txt");
 
-        let result = generate(Some(output_path.clone()));
+        let result = generate(Some(output_path.clone()), &Config::default());
         assert!(result.is_ok());
 
         // Verify parent directory was created
         assert!(output_path.parent().unwrap().exists());
         assert!(output_path.exists());
+    }
+
+    #[test]
+    fn test_generate_uses_configured_identity_path() {
+        let temp = TempDir::new().expect("Failed to create temp dir");
+        let identity_path = temp.path().join("configured-key.txt");
+
+        let mut config = Config::default();
+        config.age.identity = Some(identity_path.clone());
+
+        let result = generate(None, &config);
+        assert!(result.is_ok());
+        assert!(identity_path.exists());
+    }
+
+    #[test]
+    fn test_generate_refuses_to_overwrite_existing_identity() {
+        let temp = TempDir::new().expect("Failed to create temp dir");
+        let identity_path = temp.path().join("existing-key.txt");
+        std::fs::write(&identity_path, "AGE-SECRET-KEY-1EXISTING").expect("Failed to write key");
+
+        let mut config = Config::default();
+        config.age.identity = Some(identity_path.clone());
+
+        let result = generate(None, &config);
+        assert!(result.is_err());
+        assert!(
+            result
+                .unwrap_err()
+                .to_string()
+                .contains("Refusing to overwrite")
+        );
+
+        let content =
+            std::fs::read_to_string(&identity_path).expect("Failed to read identity file");
+        assert!(content.contains("AGE-SECRET-KEY-1EXISTING"));
+    }
+
+    #[test]
+    fn test_generate_refuses_ssh_identity_path() {
+        let mut config = Config::default();
+        config.age.identity = Some(PathBuf::from("/home/user/.ssh/id_ed25519"));
+
+        let result = generate(None, &config);
+        assert!(result.is_err());
+        assert!(result.unwrap_err().to_string().contains("SSH key"));
     }
 
     #[test]
@@ -843,7 +935,7 @@ mod tests {
         let output_path = temp.path().join("identity.txt");
 
         // Generate identity
-        generate(Some(output_path.clone())).expect("Generate failed");
+        generate(Some(output_path.clone()), &Config::default()).expect("Generate failed");
 
         // Load the generated identity
         let identities =

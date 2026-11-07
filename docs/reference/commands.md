@@ -146,6 +146,13 @@ Print the resolved source directory, working tree, destination directory, and ve
 > **Use info for first-time setup debugging**
 > If `guisu apply` cannot find your source dir, run `guisu info --all` to see what Guisu resolved. Most "why is nothing happening?" questions answer themselves in this output.
 
+> [!NOTE]
+> **How the age identity is reported**
+> The `Age` section lists the identities of the resolved configuration. When no
+> `[age] identity` is configured, it prints `not configured` — no built-in
+> default path is shown. `some files not found` means a *configured* identity
+> file is actually missing from disk.
+
 
 
 ### `guisu variables`
@@ -244,7 +251,7 @@ pull-then-forget workflows.
 
 | Subcommand | Purpose |
 | --- | --- |
-| `guisu age generate [-o FILE]` | Create a new age identity (default: `~/.local/share/guisu/key.txt`). |
+| `guisu age generate [-o FILE]` | Create a new age identity (default: the identity configured in `.guisu.toml`, else `~/.local/share/guisu/key.txt`). Existing keys are never overwritten. |
 | `guisu age show` | Print the public key for the current identity. |
 | `guisu age encrypt [VALUE]` | Encrypt a value to the inline `age:base64,...` format. |
 | `guisu age decrypt VALUE` | Decrypt an inline-encrypted value. |

@@ -16,6 +16,7 @@ use guisu_config::Config;
 use serde::Serialize;
 
 const NOT_FOUND: &str = "not found";
+const NOT_CONFIGURED: &str = "not configured";
 const SOME_FILES_NOT_FOUND: &str = "some files not found";
 const UNCOMMITTED_CHANGES: &str = "uncommitted changes";
 const BUILTIN: &str = "builtin";
@@ -329,10 +330,8 @@ fn get_age_info(config: &Config, all: bool) -> AgeInfo {
         .collect();
 
     if identity_paths.is_empty() {
-        let default_path = guisu_config::dirs::default_age_identity()
-            .unwrap_or_else(|| PathBuf::from("~/.config/guisu/key.txt"));
         return AgeInfo {
-            identities: vec![default_path.display().to_string()],
+            identities: vec![],
             all_files_exist: false,
             derive: config.age.derive.to_string(),
             public_keys: vec![],
@@ -492,6 +491,11 @@ fn display_age_section(age: &AgeInfo) {
 
 /// Display age identity files (single or multiple)
 fn display_age_identity_files(age: &AgeInfo) {
+    if age.identities.is_empty() {
+        print_row("Identity", NOT_CONFIGURED, false, None);
+        return;
+    }
+
     if age.identities.len() == 1 {
         print_row(
             "Identity",
@@ -953,5 +957,15 @@ mod tests {
 
         // Just verify it returns a non-empty string
         assert_ne!(kernel, "");
+    }
+
+    #[test]
+    fn test_get_age_info_without_configured_identity() {
+        let config = Config::default();
+
+        let age = get_age_info(&config, false);
+
+        assert_eq!(age.identities.len(), 0);
+        assert!(!age.all_files_exist);
     }
 }

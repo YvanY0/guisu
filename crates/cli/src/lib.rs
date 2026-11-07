@@ -182,7 +182,7 @@ Examples:
 pub enum AgeCommands {
     /// Generate a new age identity
     Generate {
-        /// Output file (default: ~/.config/guisu/key.txt)
+        /// Output file (default: the identity configured in .guisu.toml)
         #[arg(short, long)]
         output: Option<PathBuf>,
     },
@@ -490,7 +490,7 @@ fn execute_command(command: Commands, context: &mut RuntimeContext) -> Result<()
         Commands::Diff(diff_cmd) => dispatch_leaf(&diff_cmd, context)?,
         Commands::Age(age_cmd) => match age_cmd {
             AgeCommands::Generate { output } => {
-                cmd::age::generate(output)?;
+                cmd::age::generate(output, &context.config)?;
             }
             AgeCommands::Show => {
                 cmd::age::show(&context.config)?;
