@@ -177,7 +177,7 @@ impl IdentityFile {
     ///
     /// Returns error if file cannot be created or written to
     pub fn save<P: AsRef<Path>>(path: P, identities: &[Identity]) -> Result<()> {
-        use chrono::Utc;
+        use jiff::Timestamp;
         use std::fmt::Write as _;
 
         let path_ref = path.as_ref();
@@ -186,9 +186,8 @@ impl IdentityFile {
         let mut content = String::new();
 
         // Add creation timestamp in RFC3339 format (UTC for consistency across machines)
-        let now = Utc::now();
-        writeln!(content, "# created: {}", now.to_rfc3339())
-            .expect("writing to String cannot fail");
+        let now = Timestamp::now();
+        writeln!(content, "# created: {now}").expect("writing to String cannot fail");
 
         // Add public key(s) and secret key(s)
         for identity in identities {

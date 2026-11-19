@@ -126,9 +126,10 @@ fn gather_info(source_dir: &Path, config: &Config, all: bool) -> InfoData {
                 .unwrap_or(env!("CARGO_PKG_RUST_VERSION"))
                 .to_string(),
             timestamp: option_env!("VERGEN_BUILD_TIMESTAMP").and_then(|s| {
-                chrono::DateTime::parse_from_rfc3339(s)
-                    .ok()
-                    .map(|dt| dt.format("%Y-%m-%d %H:%M:%S UTC").to_string())
+                s.parse::<jiff::Timestamp>().ok().map(|ts| {
+                    let utc = ts.to_zoned_datetime(jiff::tz::TimeZone::UTC);
+                    utc.strftime("%Y-%m-%d %H:%M:%S UTC").to_string()
+                })
             }),
             git_sha: option_env!("VERGEN_GIT_SHA").map(str::to_string),
         })

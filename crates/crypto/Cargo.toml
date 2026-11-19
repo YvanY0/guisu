@@ -16,7 +16,7 @@ guisu-core = { workspace = true }
 
 age.workspace = true
 base64.workspace = true
-chrono.workspace = true
+jiff.workspace = true
 regex.workspace = true
 tracing.workspace = true
 

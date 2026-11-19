@@ -80,7 +80,7 @@ git2 = { version = "0.21", features = ["https", "ssh"] }
 git2_credentials = "0.16"
 similar = "3.1"
 os_info = "3.15"
-chrono = "0.4"
+jiff = "1"
 duct = "1.1"
 shell-words = "1.1"
 blake3 = { version = "1.8", features = ["rayon"] }

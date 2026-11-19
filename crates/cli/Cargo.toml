@@ -23,7 +23,7 @@ guisu-engine = { workspace = true }
 guisu-template = { workspace = true }
 
 anyhow.workspace = true
-chrono.workspace = true
+jiff.workspace = true
 clap.workspace = true
 clap_complete.workspace = true
 crossterm.workspace = true
