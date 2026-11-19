@@ -1,0 +1,6 @@
+# Hold back dependency versions published more recently than this during
+# resolution, reducing exposure to supply-chain attacks (malicious versions
+# are usually caught within days of publication). Override a specific update
+# with: CARGO_RESOLVER_INCOMPATIBLE_PUBLISH_AGE=allow cargo update <crate>
+[registry]
+global-min-publish-age = "3 days"
