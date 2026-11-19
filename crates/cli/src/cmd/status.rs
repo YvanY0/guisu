@@ -833,7 +833,7 @@ fn get_file_style(file: &FileInfo, lscolors: &LsColors) -> AnsiStyle {
     let style = lscolors.style_for_path(&file.path);
 
     // Convert to nu_ansi_term::Style
-    style.map(Style::to_nu_ansi_term_style).unwrap_or_default()
+    style.map_or_default(Style::to_nu_ansi_term_style)
 }
 
 /// Build nested tree structure from file list
@@ -1046,16 +1046,12 @@ fn print_hooks_status(
     // Rendered bodies keyed by hook name. The snapshot lookup spans both
     // stages, matching `diff`.
     let current_bodies = bodies.current_bodies(current_hooks.iter().copied());
-    let previous_bodies = state
-        .last_collections
-        .as_ref()
-        .map(|last| {
-            bodies.previous_bodies(
-                last.pre.iter().chain(last.post.iter()),
-                &state.onchange_rendered,
-            )
-        })
-        .unwrap_or_default();
+    let previous_bodies = state.last_collections.as_ref().map_or_default(|last| {
+        bodies.previous_bodies(
+            last.pre.iter().chain(last.post.iter()),
+            &state.onchange_rendered,
+        )
+    });
 
     // Check hook execution status and display
     let mut hooks_to_display = Vec::new();

@@ -134,8 +134,7 @@ pub fn run_list(source_dir: &Path, config: &Config) -> Result<()> {
             // Get color style for file based on its extension/type
             let file_style = lscolors
                 .style_for_path(&display_path)
-                .map(Style::to_nu_ansi_term_style)
-                .unwrap_or_default();
+                .map_or_default(Style::to_nu_ansi_term_style);
 
             // Apply style to both icon and path
             let styled_icon = file_style.paint(icon);

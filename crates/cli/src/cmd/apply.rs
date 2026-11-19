@@ -1088,8 +1088,7 @@ fn print_dry_run_entry(entry: &TargetEntry, use_nerd_fonts: bool) {
     // Get color style
     let file_style = lscolors
         .style_for_path(&display_path)
-        .map(Style::to_nu_ansi_term_style)
-        .unwrap_or_default();
+        .map_or_default(Style::to_nu_ansi_term_style);
 
     let styled_icon = file_style.paint(icon);
     let styled_path = file_style.paint(&display_path);
@@ -1122,8 +1121,7 @@ fn print_success_entry(entry: &TargetEntry, use_nerd_fonts: bool) {
     // Get color style
     let file_style = lscolors
         .style_for_path(&display_path)
-        .map(Style::to_nu_ansi_term_style)
-        .unwrap_or_default();
+        .map_or_default(Style::to_nu_ansi_term_style);
 
     let styled_icon = file_style.paint(icon);
     let styled_path = file_style.paint(&display_path);
@@ -1156,8 +1154,7 @@ fn print_error_entry(entry: &TargetEntry, error: &anyhow::Error, use_nerd_fonts:
     // Get color style
     let file_style = lscolors
         .style_for_path(&display_path)
-        .map(Style::to_nu_ansi_term_style)
-        .unwrap_or_default();
+        .map_or_default(Style::to_nu_ansi_term_style);
 
     let styled_icon = file_style.paint(icon);
     let styled_path = file_style.paint(&display_path);
