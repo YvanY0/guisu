@@ -3,7 +3,6 @@ site_description: Documentation for the Guisu dotfile manager
 # Empty by default so local serve and GH Pages deploys both work
 # without URL rewriting. Set to the Pages URL before a production build.
 site_url: ""
-site_language: en
 
 repo_url: https://github.com/YvanY0/guisu
 repo_name: guisu
