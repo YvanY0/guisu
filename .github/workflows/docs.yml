@@ -18,8 +18,9 @@ jobs:
         with:
           enable-cache: true
           python-version: '3.12'
+      # strict: true is set in mkdocs.yml
       - name: Build
-        run: uvx --from zensical zensical build --strict
+        run: uvx --from zensical zensical build
 
       # Generate llms.txt + llms-full.txt from the built site so LLM
       # tools (Claude/Cursor/...) can pull guisu docs as plain markdown

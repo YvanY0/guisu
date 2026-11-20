@@ -1,8 +1,8 @@
 site_name: Guisu
 site_description: Documentation for the Guisu dotfile manager
-# Empty by default so local serve and GH Pages deploys both work
-# without URL rewriting. Set to the Pages URL before a production build.
-site_url: ""
+# GH Pages project URL; also used for sitemap/canonical URLs.
+site_url: https://yvanyo.github.io/guisu/
+strict: true
 
 repo_url: https://github.com/YvanY0/guisu
 repo_name: guisu
