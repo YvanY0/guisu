@@ -27,6 +27,8 @@ const PERM_MASK: u32 = 0o7777; // Permission bits mask (rwxrwxrwx)
 /// Text-file callers pass `true` and handle the resulting `ConflictAction::Diff`
 /// by re-rendering the diff and looping.
 pub(crate) fn select_action(prompt: &str, with_diff: bool) -> Result<ConflictAction> {
+    use std::io::Write;
+
     use dialoguer::{Select, theme::ColorfulTheme};
 
     let mut options: Vec<&str> = vec![
@@ -40,12 +42,23 @@ pub(crate) fn select_action(prompt: &str, with_diff: bool) -> Result<ConflictAct
         options.insert(0, "Diff - view full changes");
     }
 
+    // console (dialoguer's input backend) only parses CSI arrow sequences
+    // ("ESC [ A"). Terminals left in application cursor mode (smkx) — e.g.
+    // inside tmux, or after a shell that leaves it enabled — send SS3
+    // sequences ("ESC O A") instead, which would make the menu
+    // unnavigable. Disable application cursor keys (rmkx) for the duration
+    // of the prompt, then restore (smkx) afterwards.
+    let mut stdout = std::io::stdout();
+    write!(stdout, "\x1b[?1l\x1b>").context("Failed to write to stdout")?;
+    stdout.flush().context("Failed to flush stdout")?;
     let selection = Select::with_theme(&ColorfulTheme::default())
         .with_prompt(prompt)
         .items(&options)
         .default(0)
-        .interact()
-        .context("Failed to read user input")?;
+        .interact();
+    write!(stdout, "\x1b[?1h\x1b=").context("Failed to write to stdout")?;
+    stdout.flush().context("Failed to flush stdout")?;
+    let selection = selection.context("Failed to read user input")?;
 
     Ok(map_select_index(selection, with_diff))
 }
