@@ -277,43 +277,29 @@ fn run_impl(context: &mut RuntimeContext, apply: bool, rebase: bool) -> Result<(
     Ok(())
 }
 
-/// Perform a fast-forward merge
+/// Fast-forward the current state to the fetched commit
+///
+/// The caller has already confirmed via merge analysis that the fetched
+/// commit descends from HEAD, so a hard reset produces exactly the
+/// fast-forward result (like `git reset --hard <fetched>` after `git fetch`):
+/// on a branch it advances that branch, with a detached HEAD it moves HEAD.
 fn perform_fast_forward(repo: &Repository, fetch_commit: &AnnotatedCommit) -> Result<()> {
     let commit_id = fetch_commit.id();
 
-    let main_ref_name = "refs/heads/main";
-    let master_ref_name = "refs/heads/master";
+    let object = repo
+        .find_object(commit_id, Some(git2::ObjectType::Commit))
+        .context("Failed to find fetched commit")?;
 
-    let reference = repo
-        .find_reference("HEAD")
-        .context("Failed to find HEAD reference")?;
-
-    let reference = if reference.is_branch() {
-        reference
-    } else {
-        repo.find_reference(main_ref_name)
-            .or_else(|_| repo.find_reference(master_ref_name))
-            .context("Failed to find main/master branch")?
-    };
-
-    let current_ref_name = reference
-        .name()
-        .map_err(|e| anyhow!("Invalid reference name: {e}"))?;
-
-    repo.reference(
-        current_ref_name,
-        commit_id,
-        true,
-        &format!("guisu update: fast-forward to {commit_id}"),
+    repo.reset(
+        &object,
+        git2::ResetType::Hard,
+        Some(
+            git2::build::CheckoutBuilder::new()
+                .force()
+                .remove_untracked(false),
+        ),
     )
-    .context("Failed to update reference")?;
-
-    repo.checkout_head(Some(
-        git2::build::CheckoutBuilder::new()
-            .force()
-            .remove_untracked(false),
-    ))
-    .context("Failed to checkout HEAD")?;
+    .context("Failed to fast-forward to fetched commit")?;
 
     debug!(commit = %commit_id, "Fast-forward complete");
     Ok(())
@@ -383,4 +369,104 @@ fn count_new_commits(repo: &Repository, new_commit: &AnnotatedCommit) -> Result<
 
     let count = revwalk.count();
     Ok(count)
+}
+
+#[cfg(test)]
+mod tests {
+    #![allow(clippy::unwrap_used, clippy::panic)]
+    use super::*;
+    use tempfile::TempDir;
+
+    /// Create a repo with two commits on the given initial branch and return
+    /// the ids of both commits (the second is the "fetched" commit).
+    fn repo_with_two_commits(dir: &Path, initial_head: &str) -> (Repository, git2::Oid, git2::Oid) {
+        let mut opts = git2::RepositoryInitOptions::new();
+        opts.initial_head(initial_head);
+        let repo = Repository::init_opts(dir, &opts).unwrap();
+
+        // Fixed signature — repo.signature() would fall back to the global
+        // git config (user.name/user.email), which CI environments lack.
+        let sig = git2::Signature::now("guisu test", "test@guisu.local").unwrap();
+        let (tree_id, tree_id2) = {
+            let odb = repo.odb().unwrap();
+            let blob_id = odb.write(git2::ObjectType::Blob, b"v1").unwrap();
+            let tree_id = {
+                let mut builder = repo.treebuilder(None).unwrap();
+                builder
+                    .insert("file.txt", blob_id, git2::FileMode::Blob.into())
+                    .unwrap();
+                builder.write().unwrap()
+            };
+
+            let blob_id2 = odb.write(git2::ObjectType::Blob, b"v2").unwrap();
+            let tree_id2 = {
+                let mut builder = repo.treebuilder(None).unwrap();
+                builder
+                    .insert("file.txt", blob_id2, git2::FileMode::Blob.into())
+                    .unwrap();
+                builder.write().unwrap()
+            };
+            (tree_id, tree_id2)
+        };
+
+        let first;
+        let second;
+        {
+            let tree = repo.find_tree(tree_id).unwrap();
+            let tree2 = repo.find_tree(tree_id2).unwrap();
+            first = repo
+                .commit(Some("HEAD"), &sig, &sig, "first", &tree, &[])
+                .unwrap();
+            let parent = repo.find_commit(first).unwrap();
+            second = repo
+                .commit(Some("HEAD"), &sig, &sig, "second", &tree2, &[&parent])
+                .unwrap();
+        }
+
+        (repo, first, second)
+    }
+
+    #[test]
+    fn test_fast_forward_detached_head() {
+        let temp = TempDir::new().unwrap();
+        let (repo, first_id, fetched_id) = repo_with_two_commits(temp.path(), "refs/heads/guisu");
+
+        // Detach HEAD at the first commit
+        repo.set_head_detached(first_id).unwrap();
+        repo.checkout_head(Some(git2::build::CheckoutBuilder::new().force()))
+            .unwrap();
+
+        let fetch_commit = repo.find_annotated_commit(fetched_id).unwrap();
+        perform_fast_forward(&repo, &fetch_commit).unwrap();
+
+        let head = repo.head().unwrap();
+        assert!(!head.is_branch());
+        assert_eq!(head.peel_to_commit().unwrap().id(), fetched_id);
+    }
+
+    #[test]
+    fn test_fast_forward_custom_branch_name() {
+        let temp = TempDir::new().unwrap();
+        let (repo, _, fetched_id) = repo_with_two_commits(temp.path(), "refs/heads/guisu");
+
+        let fetch_commit = repo.find_annotated_commit(fetched_id).unwrap();
+        perform_fast_forward(&repo, &fetch_commit).unwrap();
+
+        let head = repo.head().unwrap();
+        assert_eq!(head.shorthand().unwrap(), "guisu");
+        assert_eq!(head.peel_to_commit().unwrap().id(), fetched_id);
+    }
+
+    #[test]
+    fn test_fast_forward_main_branch() {
+        let temp = TempDir::new().unwrap();
+        let (repo, _, fetched_id) = repo_with_two_commits(temp.path(), "refs/heads/main");
+
+        let fetch_commit = repo.find_annotated_commit(fetched_id).unwrap();
+        perform_fast_forward(&repo, &fetch_commit).unwrap();
+
+        let head = repo.head().unwrap();
+        assert_eq!(head.shorthand().unwrap(), "main");
+        assert_eq!(head.peel_to_commit().unwrap().id(), fetched_id);
+    }
 }
