@@ -4,14 +4,12 @@ members = ["cargo:."]
 # Config for 'dist'
 [dist]
 # The preferred dist version to use in CI (Cargo.toml SemVer syntax)
-cargo-dist-version = "0.32.0"
+cargo-dist-version = "0.34.0"
 # CI backends to support
 ci = "github"
 # Allow CI workflow edits to bypass dist's dirty-working-tree check.
 # Editing .github/workflows/release.yml + bumping the dist binary in the same
 # PR otherwise trips dist's safety net.
-allow-dirty = ["ci"]
-# PRs only run `dist plan` (dry-run); tag push runs the full build matrix.
 # Personal dev: PR minute budget matters, tag-push stays fully automatic.
 pr-run-mode = "skip"
 # Publish jobs to run in CI
