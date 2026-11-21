@@ -6,7 +6,6 @@ authors.workspace = true
 license.workspace = true
 repository.workspace = true
 documentation.workspace = true
-homepage = "https://github.com/YvanY0/guisu"
 description = "CLI for guisu dotfile manager"
 
 [[bin]]
