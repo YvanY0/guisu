@@ -37,6 +37,7 @@ cargo fmt -- --check
 Recommended tools:
 
 - `pre-commit` (or `prek`) — see `.pre-commit-config.yaml`. Install once with `pre-commit install`.
+- `nixfmt` — provided by the official NixOS/nixfmt hook in `.pre-commit-config.yaml` (skipped on pre-commit.ci, whose runner image lacks cabal). Locally the hook needs `cabal`/`ghc`; otherwise skip it with `SKIP=nixfmt git commit`.
 - `cargo-shear` — installed by `rust.yml`; also runs locally via `cargo install cargo-shear --locked`.
 - `cargo-llvm-cov` — installed by `rust.yml`; produces `lcov.info` for Codecov uploads.
 - `cargo-dist` — installed by `release.yml`; `dist plan` / `dist build` simulate the release pipeline locally without pushing a tag.
@@ -45,7 +46,7 @@ Recommended tools:
 
 - `.github/workflows/rust.yml` runs `cargo fmt` / `check` / `clippy --all-features --locked` / `test --all-features` / `deny check` / `outdated` / `shear`. It auto-skips on PRs that don't touch Rust files. Cache uses `Swatinem/rust-cache@v2` with a `save-if` so PR forks don't write back to the shared cache namespace.
 - `.github/workflows/zizmor.yml` audits every `.github/workflows/*.yml` for unsafe GH Actions patterns (unpinned actions, script-injection sinks, excessive permissions). It only runs when the workflow directory itself changes.
-- `.pre-commit-config.yaml` runs local lint hooks (taplo, gitleaks, typos, commitlint) on the `pre-commit` stage and cargo `fmt` / `clippy` / `check` / `test` / `deny` on the `pre-push` stage. Run from a terminal via `prek` or `pre-commit`.
+- `.pre-commit-config.yaml` runs lint hooks (nixfmt, taplo, betterleaks, typos, commitlint) on the `pre-commit` stage and cargo `fmt` / `clippy` / `check` / `test` / `deny` on the `pre-push` stage. Run from a terminal via `prek` or `pre-commit`.
 
 ## Signing commits
 
