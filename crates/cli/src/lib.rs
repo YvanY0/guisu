@@ -525,7 +525,11 @@ fn execute_command(command: Commands, context: &mut RuntimeContext) -> Result<()
         Commands::Edit(edit_cmd) => dispatch_leaf(&edit_cmd, context)?,
         Commands::Ignored(ignored_cmd) => match ignored_cmd {
             IgnoredCommands::List => {
-                cmd::ignored::run_list(context.source_dir(), &context.config)?;
+                cmd::ignored::run_list(
+                    context.source_dir(),
+                    context.dest_dir().as_path(),
+                    &context.config,
+                )?;
             }
             IgnoredCommands::Rules { all } => {
                 cmd::ignored::run_show(context.source_dir(), &context.config, all)?;
@@ -572,6 +576,19 @@ fn execute_command(command: Commands, context: &mut RuntimeContext) -> Result<()
     Ok(())
 }
 
+/// Run the requested CLI command.
+///
+/// # Examples
+///
+/// ```no_run
+/// use clap::Parser;
+/// use guisu::{Cli, run};
+///
+/// let cli = Cli::parse_from(["guisu", "--verbose", "--log-file", "debug.log", "status"]);
+/// run(cli)?;
+/// # Ok::<(), anyhow::Error>(())
+/// ```
+///
 /// # Errors
 ///
 /// Returns an error if:

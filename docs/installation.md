@@ -1,5 +1,52 @@
 # Installation
 
+## Nix (without flakes)
+
+The `guisu` package builds from GitHub's `main` branch using `Cargo.lock`.
+No flakes or local checkout are needed. Use Nixpkgs with Rust 1.96 or newer
+(for example, `nixos-unstable`). The examples work once the package definition
+lands on `main`.
+
+### NixOS system-wide
+
+Add `guisuPackages.guisu` to your existing `environment.systemPackages`:
+
+```nix
+{ pkgs, ... }:
+let
+  guisuRepo = builtins.fetchTarball
+    "https://github.com/YvanY0/guisu/archive/refs/heads/main.tar.gz";
+  guisuPackages = import "${guisuRepo}/default.nix" { inherit pkgs; };
+in
+{
+  environment.systemPackages = [ guisuPackages.guisu ];
+}
+```
+
+This uses the `pkgs` already supplied by your NixOS configuration. Apply the
+configuration with `sudo nixos-rebuild switch` and run `guisu --version`.
+The branch is not pinned: Nix picks up changes to `main` when it refreshes
+its tarball cache.
+
+### User profile or local build
+
+Use the same GitHub `main` branch URL:
+
+```sh
+repo='https://github.com/YvanY0/guisu/archive/refs/heads/main.tar.gz'
+nix-env -f "$repo" -iA guisu   # install into your user profile
+```
+
+To build without installing into a profile:
+
+```sh
+nix-build "$repo" -A guisu
+./result/bin/guisu --version
+```
+
+These commands use `<nixpkgs>` from your Nix search path. If it is not set,
+add `-I nixpkgs=/path/to/nixpkgs`, pointing to a suitable Nixpkgs checkout.
+
 ## From source
 
 Requires the Rust toolchain (edition 2024, stable):
@@ -14,7 +61,10 @@ The resulting binary is at `~/.cargo/bin/guisu`. Add `~/.cargo/bin` to your `$PA
 
 ## Binary releases
 
-Pre-built binaries for macOS, Linux, and Windows are linked from the [releases page](https://github.com/YvanY0/guisu/releases) once they ship. Each release archives a static binary plus a SHA-256 checksum.
+Pre-built binaries for macOS, Linux, and Windows are available on the
+[releases page](https://github.com/YvanY0/guisu/releases) with SHA-256 checksums.
+On NixOS, use the source package above instead of running the Linux release
+binary directly.
 
 ## Verifying the install
 

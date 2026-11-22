@@ -31,7 +31,7 @@ use guisu_config::Config;
 /// - Resolving paths (source/destination directories) fails
 /// - Loading ignore patterns from .guisu/ignores.toml fails
 /// - Reading source state fails
-pub fn run_list(source_dir: &Path, config: &Config) -> Result<()> {
+pub fn run_list(source_dir: &Path, dest_dir: &Path, config: &Config) -> Result<()> {
     let platform = CURRENT_PLATFORM.os;
 
     // Detect if output is to a terminal for icon auto mode
@@ -39,12 +39,7 @@ pub fn run_list(source_dir: &Path, config: &Config) -> Result<()> {
     let show_icons = config.ui.icons.should_show_icons(is_tty);
 
     // Resolve dotfiles directory (handles root_entry and canonicalization)
-    // Note: We don't need dest_dir for this command, but we pass home_dir for consistency
-    let paths = crate::common::ResolvedPaths::resolve(
-        source_dir,
-        &dirs::home_dir().unwrap_or_default(),
-        config,
-    )?;
+    let paths = crate::common::ResolvedPaths::resolve(source_dir, dest_dir, config)?;
     let source_abs = &paths.dotfiles_dir;
 
     // Load ignore patterns from source_dir/.guisu/ignores.toml
@@ -304,7 +299,7 @@ windows = [
         let source_dir = temp.path();
 
         // run_list should succeed without errors
-        let result = run_list(source_dir, &config);
+        let result = run_list(source_dir, source_dir, &config);
         assert!(result.is_ok(), "run_list should succeed: {result:?}");
     }
 
@@ -324,7 +319,7 @@ windows = [
         let config = Config::default();
 
         // Should succeed with empty ignores (uses default)
-        let result = run_list(source_dir, &config);
+        let result = run_list(source_dir, source_dir, &config);
         assert!(
             result.is_ok(),
             "Should succeed with default empty ignores: {result:?}"
@@ -348,7 +343,7 @@ windows = [
         let config = Config::default();
 
         // Should succeed with no ignored files
-        let result = run_list(source_dir, &config);
+        let result = run_list(source_dir, source_dir, &config);
         assert!(result.is_ok(), "Should succeed with empty directory");
     }
 
@@ -492,7 +487,7 @@ global = [
 
         let config = Config::default();
 
-        let result = run_list(source_dir, &config);
+        let result = run_list(source_dir, source_dir, &config);
         assert!(result.is_ok(), "Should handle subdirectories: {result:?}");
     }
 
@@ -524,7 +519,7 @@ global = [
 
         let config = Config::default();
 
-        let result = run_list(source_dir, &config);
+        let result = run_list(source_dir, source_dir, &config);
         assert!(
             result.is_ok(),
             "Should handle .j2 and .age files: {result:?}"
@@ -605,7 +600,7 @@ windows = ["Thumbs.db"]
         let mut config = Config::default();
         config.general.root_entry = std::path::PathBuf::from("dotfiles");
 
-        let result = run_list(source_dir, &config);
+        let result = run_list(source_dir, source_dir, &config);
         assert!(
             result.is_ok(),
             "Should work with custom root_entry: {result:?}"

@@ -17,9 +17,11 @@ use std::path::PathBuf;
 /// Returns an error if the state directory cannot be determined or created
 pub fn get_db_path() -> Result<PathBuf> {
     let state_dir = dirs::state_dir().ok_or(Error::StateDirectory)?;
+    prepare_db_path(&state_dir)
+}
 
-    // Ensure state directory exists
-    std::fs::create_dir_all(&state_dir).map_err(|e| Error::DatabaseTransaction {
+fn prepare_db_path(state_dir: &std::path::Path) -> Result<PathBuf> {
+    std::fs::create_dir_all(state_dir).map_err(|e| Error::DatabaseTransaction {
         operation: "create_dir_all",
         source: Box::new(e),
     })?;
@@ -229,12 +231,12 @@ mod tests {
     }
 
     #[test]
-    fn test_get_db_path() {
-        let result = get_db_path();
-        assert!(result.is_ok());
-
-        let path = result.unwrap();
-        assert!(path.to_string_lossy().contains("state.db"));
+    fn test_get_db_path() -> Result<()> {
+        let temp = tempfile::tempdir()?;
+        let state_dir = temp.path().join("state");
+        assert_eq!(prepare_db_path(&state_dir)?, state_dir.join("state.db"));
+        assert!(state_dir.is_dir());
+        Ok(())
     }
 
     #[test]
@@ -644,18 +646,6 @@ mod tests {
     }
 
     #[test]
-    fn test_db_path_contains_state_db() {
-        let path = get_db_path().expect("Failed to get db path");
-        let path_str = path.to_string_lossy();
-
-        // Should end with state.db
-        assert!(path_str.ends_with("state.db"));
-
-        // Should be in a guisu-related directory
-        assert!(path_str.contains("guisu") || path_str.contains(".local/state"));
-    }
-
-    #[test]
     fn test_save_get_delete_cycle() {
         let (mut _temp, mut db) = test_db_setup();
 
@@ -910,13 +900,10 @@ mod tests {
     }
 
     #[test]
-    fn test_db_path_consistency() {
-        let (_temp, _db) = test_db_setup();
-
-        let path1 = get_db_path().expect("Failed to get path 1");
-        let path2 = get_db_path().expect("Failed to get path 2");
-
-        assert_eq!(path1, path2);
-        assert!(path1.to_string_lossy().contains("state.db"));
+    fn test_db_path_consistency() -> Result<()> {
+        let temp = tempfile::tempdir()?;
+        let state_dir = temp.path().join("state");
+        assert_eq!(prepare_db_path(&state_dir)?, prepare_db_path(&state_dir)?);
+        Ok(())
     }
 }

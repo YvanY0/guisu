@@ -169,12 +169,16 @@ mod tests {
 
     #[test]
     fn username_resolves_via_user_or_username() {
-        let env = Env::system();
-        // At least one of USER/USERNAME is set on every supported
-        // platform; the helper just picks the first one that exists.
-        assert!(
-            env.get("USER").is_some() || env.get("USERNAME").is_some(),
-            "neither USER nor USERNAME is set in this environment",
-        );
+        for (user, username, expected) in [
+            (Some("unix"), Some("windows"), Some("unix")),
+            (None, Some("windows"), Some("windows")),
+            (None, None, None),
+        ] {
+            let env = Env::with_overrides(HashMap::from([
+                ("USER".into(), user.map(str::to_owned)),
+                ("USERNAME".into(), username.map(str::to_owned)),
+            ]));
+            assert_eq!(env.username().as_deref(), expected);
+        }
     }
 }

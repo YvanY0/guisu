@@ -12,18 +12,6 @@ use tracing_subscriber::{EnvFilter, Layer, fmt, layer::SubscriberExt, util::Subs
 /// * `verbose` - Enable debug/trace level logging
 /// * `log_file` - Optional path to write logs to a file
 ///
-/// # Examples
-/// ```ignore
-/// // Basic usage with info level
-/// init(false, None)?;
-///
-/// // Verbose mode with debug level
-/// init(true, None)?;
-///
-/// // Write logs to file
-/// init(true, Some(Path::new("debug.log")))?;
-/// ```
-///
 /// # Errors
 ///
 /// Returns an error if:

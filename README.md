@@ -20,8 +20,11 @@ cargo install --path crates/cli
 guisu info       # verify the binary resolves your source dir
 ```
 
-Pre-built binaries are linked from the
-[releases page](https://github.com/YvanY0/guisu/releases) once they ship.
+On Linux with Nix, see [Nix installation](https://yvany0.github.io/guisu/installation/#nix-without-flakes)
+to build `guisu` from GitHub's `main` branch without flakes or a local checkout.
+
+Pre-built binaries are available on the
+[releases page](https://github.com/YvanY0/guisu/releases).
 
 ## Documentation
 

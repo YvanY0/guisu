@@ -791,19 +791,21 @@ impl TargetState {
     ///
     /// # Examples
     ///
-    /// ```ignore
-    /// use guisu_engine::state::{SourceState, TargetState};
-    /// use guisu_engine::processor::ContentProcessor;
+    /// ```
     /// use guisu_core::path::AbsPath;
+    /// use guisu_engine::content::{NoOpDecryptor, NoOpRenderer};
+    /// use guisu_engine::processor::ContentProcessor;
+    /// use guisu_engine::state::{SourceState, TargetState};
     /// use serde_json::json;
     ///
-    /// let source_dir = AbsPath::new("/home/user/.local/share/guisu".into())?;
-    /// let source = SourceState::read(source_dir)?;
+    /// let dir = tempfile::tempdir()?;
+    /// std::fs::write(dir.path().join("config.txt"), "example")?;
+    /// let source = SourceState::read(AbsPath::new(dir.path().to_path_buf())?)?;
     ///
-    /// // Create processor with decryptor and renderer
-    /// let processor = ContentProcessor::new(my_decryptor, my_renderer);
-    /// let context = json!({});
-    /// let target = TargetState::from_source(&source, &processor, &context)?;
+    /// let processor = ContentProcessor::new(NoOpDecryptor, NoOpRenderer);
+    /// let target = TargetState::from_source(&source, &processor, &json!({}))?;
+    /// assert_eq!(target.len(), 1);
+    /// # Ok::<(), guisu_engine::Error>(())
     /// ```
     ///
     /// # Errors

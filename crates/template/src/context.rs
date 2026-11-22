@@ -389,24 +389,7 @@ impl SystemInfo {
                 .or_else(|_| fs::read_to_string("/usr/lib/os-release"))
                 .unwrap_or_default();
 
-            let mut name = String::new();
-            let mut id = String::new();
-            let mut version = String::new();
-
-            for line in os_release_content.lines() {
-                let line = line.trim();
-                if line.is_empty() || line.starts_with('#') {
-                    continue;
-                }
-
-                if let Some(value) = line.strip_prefix("NAME=") {
-                    name = Self::unquote(value);
-                } else if let Some(value) = line.strip_prefix("ID=") {
-                    id = Self::unquote(value);
-                } else if let Some(value) = line.strip_prefix("VERSION_ID=") {
-                    version = Self::unquote(value);
-                }
-            }
+            let (name, mut id, version) = Self::parse_os_release(&os_release_content);
 
             // If we couldn't detect from os-release, try some fallbacks
             if id.is_empty() {
@@ -428,6 +411,25 @@ impl SystemInfo {
         {
             (String::new(), String::new(), String::new())
         }
+    }
+
+    #[cfg(target_os = "linux")]
+    fn parse_os_release(content: &str) -> (String, String, String) {
+        let mut name = String::new();
+        let mut id = String::new();
+        let mut version = String::new();
+
+        for line in content.lines().map(str::trim) {
+            if let Some(value) = line.strip_prefix("NAME=") {
+                name = Self::unquote(value);
+            } else if let Some(value) = line.strip_prefix("ID=") {
+                id = Self::unquote(value);
+            } else if let Some(value) = line.strip_prefix("VERSION_ID=") {
+                version = Self::unquote(value);
+            }
+        }
+
+        (name, id, version)
     }
 
     /// Remove quotes from a string value
@@ -701,15 +703,14 @@ mod tests {
 
     #[test]
     #[cfg(target_os = "linux")]
-    fn test_detect_distro() {
-        let (name, id, _version) = SystemInfo::detect_distro();
-
-        // On Linux, should detect some distribution info
-        // At minimum, one of these should be non-empty
-        assert!(
-            !name.is_empty() || !id.is_empty(),
-            "Should detect at least distro name or ID on Linux"
+    fn test_parse_os_release() {
+        let (name, id, version) = SystemInfo::parse_os_release(
+            "# Fixture\nNAME=\"NixOS\"\nID=nixos\nVERSION_ID=\"26.05\"\n",
         );
+        assert_eq!(name, "NixOS");
+        assert_eq!(id, "nixos");
+        assert_eq!(version, "26.05");
+        assert_eq!(SystemInfo::parse_os_release(""), Default::default());
     }
 
     #[test]

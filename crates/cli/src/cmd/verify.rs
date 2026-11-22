@@ -238,7 +238,7 @@ fn matches_wanted_remove_path(wanted_paths: &[std::path::PathBuf], declared: &st
     if wanted_paths.is_empty() {
         return true;
     }
-    let normalized = declared.trim_prefix("~/");
+    let normalized = declared.strip_prefix("~/").unwrap_or(declared);
     wanted_paths
         .iter()
         .any(|p| p.as_path() == std::path::Path::new(normalized))

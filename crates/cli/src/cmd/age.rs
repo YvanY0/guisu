@@ -352,7 +352,7 @@ fn display_migration_file_list(
     if !encrypted_files.is_empty() {
         println!("\n{}", "Encrypted files (.age):".cyan());
         for file in encrypted_files {
-            let relative = file.trim_prefix(source_dir);
+            let relative = file.strip_prefix(source_dir).unwrap_or(file);
             println!("  • {}", relative.display());
         }
     }
@@ -360,7 +360,7 @@ fn display_migration_file_list(
     if !inline_files.is_empty() {
         println!("\n{}", "Files with inline encryption:".cyan());
         for file in inline_files {
-            let relative = file.trim_prefix(source_dir);
+            let relative = file.strip_prefix(source_dir).unwrap_or(file);
             println!("  • {}", relative.display());
         }
     }
@@ -382,7 +382,7 @@ fn perform_file_migrations(
 
     // Migrate .age files
     for file in encrypted_files {
-        let relative = file.trim_prefix(source_dir);
+        let relative = file.strip_prefix(source_dir).unwrap_or(file);
         print!("  Migrating {} ... ", relative.display());
         io::stdout().flush()?;
 
@@ -401,7 +401,7 @@ fn perform_file_migrations(
 
     // Migrate files with inline encryption
     for file in inline_files {
-        let relative = file.trim_prefix(source_dir);
+        let relative = file.strip_prefix(source_dir).unwrap_or(file);
         print!("  Migrating {} ... ", relative.display());
         io::stdout().flush()?;
 

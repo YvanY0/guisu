@@ -412,16 +412,18 @@ mod tests {
     use super::*;
 
     #[test]
-    fn find_working_tree_current_dir() {
-        let cwd = std::env::current_dir().unwrap();
-        let result = find_working_tree(&cwd);
-        assert!(
-            result.is_some(),
-            "Should find a git repo from the working directory"
+    fn find_working_tree_from_subdirectory() -> Result<()> {
+        let temp = tempfile::tempdir()?;
+        let repo = git2::Repository::init(temp.path()).map_err(git_err)?;
+        let root = temp.path().canonicalize()?;
+        let nested = guisu_core::path::AbsPath::new(root.join("nested"))?;
+        crate::System::create_dir_all(&crate::RealSystem, &nested, None)?;
+
+        assert_eq!(
+            find_working_tree(nested.as_path()).as_deref(),
+            repo.workdir()
         );
-        let workdir = result.unwrap();
-        assert!(workdir.exists());
-        assert!(workdir.join(".git").exists());
+        Ok(())
     }
 
     #[test]

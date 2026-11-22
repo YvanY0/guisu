@@ -20,8 +20,8 @@ use crate::Result;
 ///
 /// # Examples
 ///
-/// ```ignore
-/// use guisu_core::TemplateRenderer;
+/// ```
+/// use guisu_core::{Result, TemplateRenderer};
 /// use serde::Serialize;
 ///
 /// #[derive(Serialize)]
@@ -49,9 +49,14 @@ pub trait TemplateRenderer {
     ///
     /// # Examples
     ///
-    /// ```ignore
-    /// let context = serde_json::json!({"username": "Alice"});
-    /// let result = renderer.render_str("Hello {{ username }}!", &context)?;
+    /// ```
+    /// use guisu_core::{Result, TemplateRenderer};
+    /// use serde_json::json;
+    ///
+    /// fn render_greeting(renderer: &dyn TemplateRenderer) -> Result<String> {
+    ///     let context = json!({"username": "Alice"});
+    ///     renderer.render_str("Hello {{ username }}!", &context)
+    /// }
     /// ```
     fn render_str(&self, template: &str, context: &serde_json::Value) -> Result<String>;
 
