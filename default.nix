@@ -1,4 +1,6 @@
-{ pkgs ? import <nixpkgs> { } }:
+{
+  pkgs ? import <nixpkgs> { },
+}:
 {
   guisu = pkgs.callPackage ./nix/package.nix { };
 }

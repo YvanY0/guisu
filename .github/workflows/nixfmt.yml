@@ -1,0 +1,36 @@
+name: Nix formatting
+
+on:
+  pull_request:
+    paths:
+      - "**/*.nix"
+      - ".github/workflows/nixfmt.yml"
+  push:
+    branches: [main]
+    paths:
+      - "**/*.nix"
+      - ".github/workflows/nixfmt.yml"
+
+permissions:
+  contents: read
+
+jobs:
+  nixfmt:
+    name: nixfmt --check
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+
+      # Keep this version in sync with the nixfmt rev in
+      # .pre-commit-config.yaml so local and CI agree on formatting.
+      - name: Install nixfmt
+        run: |
+          curl -fsSL -o "$RUNNER_TEMP/nixfmt" \
+            https://github.com/NixOS/nixfmt/releases/download/v1.5.0/nixfmt
+          chmod +x "$RUNNER_TEMP/nixfmt"
+          echo "$RUNNER_TEMP" >> "$GITHUB_PATH"
+
+      - name: Check Nix formatting
+        run: git ls-files '*.nix' | xargs nixfmt --check
