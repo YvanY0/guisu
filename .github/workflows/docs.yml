@@ -1,41 +1,117 @@
 name: docs
 on:
   pull_request:
+    paths:
+      - 'docs/**'
+      - 'mkdocs.yml'
+      - '.github/workflows/docs.yml'
   push:
     branches: [main]
-  workflow_dispatch:  # 'Run workflow' button on the Actions tab
+    paths:
+      - 'docs/**'
+      - 'mkdocs.yml'
+      - '.github/workflows/docs.yml'
+  # dist creates the GitHub Release on a version tag; publishing the matching
+  # docs version piggybacks on that event.
+  release:
+    types: [published]
+  workflow_dispatch:
+    inputs:
+      ref:
+        description: "The commit SHA, tag, or branch to publish. Uses the default branch if not specified."
+        default: ""
+        type: string
 permissions:
   contents: read
+# No cancel-in-progress: a cancelled release deploy would leave gh-pages
+# half-pushed.
 concurrency:
   group: docs
-  cancel-in-progress: true
+  cancel-in-progress: false
 jobs:
   build:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+          ref: ${{ inputs.ref || github.sha }}
       - uses: astral-sh/setup-uv@v7
         with:
           enable-cache: true
           python-version: '3.12'
-      # strict: true is set in mkdocs.yml
-      - name: Build
-        run: uvx --from zensical zensical build
 
-      # Generate llms.txt + llms-full.txt from the built site so LLM
-      # tools (Claude/Cursor/...) can pull guisu docs as plain markdown
-      # instead of scraping HTML. Output lands in site/ and ships with
-      # the GH Pages artifact.
-      - name: Generate llms.txt
-        run: uvx --from llmstxt-standalone llmstxt-standalone build --site-dir site/
+      - name: Resolve documentation version
+        id: docs
+        run: |
+          if [[ "$GITHUB_EVENT_NAME" == "push" ]]; then
+            version="dev"
+          elif [[ "$GITHUB_EVENT_NAME" == "release" ]]; then
+            version="${GITHUB_REF_NAME#v}"
+          else
+            version="dev"
+          fi
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+
+      # strict: true is set on the CLI; catches broken links on PRs.
+      - name: Build
+        if: github.event_name == 'pull_request'
+        run: uvx --from zensical zensical build --strict
+
+      # mike records each version into the gh-pages branch. The Zensical
+      # fork of mike (git-only, no PyPI release) needs zensical in the same
+      # environment because it invokes the build itself; --with composes
+      # both into one uvx env. dev tracks main; release tags deploy as
+      # "<version>" aliased to "latest".
+      - name: Deploy versioned docs to gh-pages
+        if: github.event_name != 'pull_request'
+        env:
+          VERSION: ${{ steps.docs.outputs.version }}
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+
+          if [[ "$VERSION" == "dev" ]]; then
+            uvx --from zensical --with 'mike @ git+https://github.com/squidfunk/mike.git' \
+              mike deploy "$VERSION"
+          else
+            # Pages artifacts cannot contain symbolic links, hence redirect aliases.
+            uvx --from zensical --with 'mike @ git+https://github.com/squidfunk/mike.git' \
+              mike deploy --update-aliases --alias-type redirect "$VERSION" latest
+            uvx --from zensical --with 'mike @ git+https://github.com/squidfunk/mike.git' \
+              mike set-default latest
+          fi
+
+      - name: Push gh-pages
+        if: github.event_name != 'pull_request'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh auth setup-git
+          git push origin gh-pages
+
+      # The Pages site keeps serving unversioned URLs. Materialize the root
+      # version at the site root and regenerate llms.txt for it (version
+      # subdirectories carry their own from the llmstxt plugin).
+      - name: Prepare Pages artifact
+        if: github.event_name != 'pull_request'
+        run: |
+          git worktree add published gh-pages
+          root_version="$(python3 -c 'import json; versions = json.load(open("published/versions.json")); print(next((item["version"] for item in versions if "latest" in item["aliases"]), "dev"))')"
+          cp -a "published/$root_version/." published/
+          uvx --from llmstxt-standalone llmstxt-standalone build --site-dir published --output-dir published
 
       - name: Upload artifact
+        if: github.event_name != 'pull_request'
         uses: actions/upload-pages-artifact@v5
         with:
-          path: site
+          include-hidden-files: true
+          path: ./published
+
   deploy:
     needs: build
-    if: github.event_name == 'workflow_dispatch' || (github.event_name == 'push' && github.ref == 'refs/heads/main')
+    if: github.event_name != 'pull_request'
     permissions:
       pages: write
       id-token: write

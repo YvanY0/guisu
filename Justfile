@@ -34,11 +34,9 @@ check:
     cargo check --workspace --all-targets --all-features
 
 # Build the docs site into site/ (strict mode catches broken links).
+# llms.txt / llms-full.txt come from the llmstxt plugin in mkdocs.yml.
 docs-build:
 	uvx --from zensical zensical build --strict
-	# Generate llms.txt + llms-full.txt so LLM tools can fetch guisu docs
-	# as plain markdown. Re-run whenever you add/change a doc page.
-	uvx --from llmstxt-standalone llmstxt-standalone build --site-dir site/
 
 # Serve the docs site at http://localhost:3000 with live reload.
 docs-serve:
