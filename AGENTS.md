@@ -45,6 +45,17 @@ Read the per-crate `AGENTS.md` before editing that crate.
   `#[expect(reason = "...")]` over `#[allow(...)]` so a future fix
   becomes a compile error instead of silently re-enabling the lint.
 
+## Writing Style
+
+- Write natural, direct English that sounds like a human collaborator, not
+  a template or an AI-generated response.
+- Avoid canned introductions, generic filler, repetition, and unnecessary
+  summaries.
+- Avoid dash-heavy prose, especially em dashes or `-` used to join
+  thoughts. Prefer a period, comma, colon, or an explicit conjunction. For
+  example, prefer `This is safe because the fallback still validates the
+  state.` over `This is safe - the fallback still validates the state.`
+
 ## GitHub Interaction
 
 Draft GitHub comments locally. Do not post comments, submit reviews,
