@@ -65,6 +65,50 @@ theme:
     text: Inter
     code: JetBrains Mono
 
+# Zensical native plugin implementations (no extra packages needed):
+# minify shrinks HTML; llmstxt emits
+# llms.txt / llms-full.txt so LLM tools can pull the docs as plain markdown
+# instead of scraping HTML.
+plugins:
+  - minify:
+      minify_html: true
+  - llmstxt:
+      markdown_description: |
+        Documentation for Guisu, a Rust dotfile manager built on a three-state
+        model: Source (version-controlled repo) → Target (rendered files) →
+        Destination (home directory symlinks). Guisu templates dotfiles,
+        encrypts secrets with age, and reconciles drift across machines.
+
+        When fetching documentation, request explicit `.md` paths (for example,
+        `https://yvanyo.github.io/guisu/user-guide/templates.md`) to get clean
+        markdown instead of rendered HTML.
+      full_output: llms-full.txt
+      sections:
+        Getting Started:
+          - index.md
+          - installation.md
+          - getting-started/init.md
+          - getting-started/add.md
+          - getting-started/apply.md
+        User Guide:
+          - user-guide/file-attributes.md
+          - user-guide/templates.md
+          - user-guide/encryption.md
+          - user-guide/vault.md
+          - user-guide/hooks.md
+          - user-guide/config.md
+        Reference:
+          - reference/commands.md
+          - reference/template-functions.md
+          - reference/configuration.md
+        Developer Guide:
+          - developer-guide/architecture.md
+          - developer-guide/three-state-model.md
+          - developer-guide/data-flow.md
+          - developer-guide/crates.md
+          - developer-guide/error-handling.md
+          - developer-guide/contributing.md
+
 nav:
   - Introduction: index.md
   - Installation: installation.md

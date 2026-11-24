@@ -1,9 +1,17 @@
 name: docs
 on:
   pull_request:
+    paths:
+      - 'docs/**'
+      - 'mkdocs.yml'
+      - '.github/workflows/docs.yml'
   push:
     branches: [main]
-  workflow_dispatch:  # 'Run workflow' button on the Actions tab
+    paths:
+      - 'docs/**'
+      - 'mkdocs.yml'
+      - '.github/workflows/docs.yml'
+  workflow_dispatch:
 permissions:
   contents: read
 concurrency:
@@ -18,24 +26,17 @@ jobs:
         with:
           enable-cache: true
           python-version: '3.12'
-      # strict: true is set in mkdocs.yml
       - name: Build
-        run: uvx --from zensical zensical build
-
-      # Generate llms.txt + llms-full.txt from the built site so LLM
-      # tools (Claude/Cursor/...) can pull guisu docs as plain markdown
-      # instead of scraping HTML. Output lands in site/ and ships with
-      # the GH Pages artifact.
-      - name: Generate llms.txt
-        run: uvx --from llmstxt-standalone llmstxt-standalone build --site-dir site/
-
+        run: uvx --from zensical zensical build --strict
       - name: Upload artifact
+        if: github.event_name != 'pull_request'
         uses: actions/upload-pages-artifact@v5
         with:
           path: site
+
   deploy:
     needs: build
-    if: github.event_name == 'workflow_dispatch' || (github.event_name == 'push' && github.ref == 'refs/heads/main')
+    if: github.event_name != 'pull_request'
     permissions:
       pages: write
       id-token: write
